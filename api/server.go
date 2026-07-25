@@ -40,8 +40,14 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 }
 
 func (server *Server) setupRouter() {
-	router := gin.Default()
+	router := gin.New()
 
+	router.Use(gin.Logger(), gin.Recovery())
+	_ = router.SetTrustedProxies(nil)
+
+	router.GET("/", func(ctx *gin.Context) {
+		ctx.JSON(200, gin.H{"message": "Monierave API is running"})
+	})
 	router.POST("/users", server.CreateUser)
 	router.POST("/users/login", server.loginUser)
 
