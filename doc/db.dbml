@@ -1,0 +1,84 @@
+Project Monierave {
+database_type: 'PostgreSQL'
+Note: 'Monierave Database'
+}
+
+Table users as U {
+  username varchar [pk]
+  hashed_password varchar [not null]
+  full_name varchar [not null]
+  email varchar [not null]
+  password_changed_at timestamptz [not null, default: '0001-01-01 00:00:00Z']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    `lower(email)` [unique]
+  }
+}
+
+Table accounts as A {
+  id bigserial [pk]
+  owner varchar [not null, ref: > U.username]
+  balance bigint [not null]
+  currency varchar [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    owner
+    (owner, currency) [unique]
+  }
+
+  checks {
+    `balance >= 0`
+  }
+}
+
+Table entries {
+  id bigserial [pk]
+  account_id bigint [not null, ref: > A.id]
+  amount bigint [not null, note: 'can be negative or positive']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    account_id
+  }
+}
+
+Table transfers {
+  id bigserial [pk]
+  from_account_id bigint [not null, ref: > A.id]
+  to_account_id bigint [not null, ref: > A.id]
+  amount bigint [not null, note: 'must be positive']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    from_account_id
+    to_account_id
+    (from_account_id, to_account_id)
+  }
+
+  checks {
+    `amount > 0`
+  }
+}
+
+Table sessions {
+  id uuid [pk]
+  username varchar [not null, ref: > U.username]
+  refresh_token varchar [not null]
+  user_agent varchar [not null]
+  client_ip varchar [not null]
+  is_blocked boolean [not null, default: false]
+  expires_at timestamptz [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    username
+    refresh_token [unique]
+  }
+}
+
+Enum Currency {
+  USD
+  EUR
+}
