@@ -3,7 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
-	"fmt"
+	"log"
 	"net/http"
 
 	db "github.com/faelic/monierave/db/sqlc"
@@ -33,8 +33,8 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 
 	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 	if fromAccount.Owner != authPayLoad.Username {
-		err := errors.New("from account does not belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		log.Printf("from account does not belong to the authenticated user")
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
 		return
 	}
 
@@ -51,10 +51,11 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 	result, err := server.store.TransferTx(ctx, arg)
 	if err != nil {
 		if errors.Is(err, db.ErrInsufficientBalance) {
-			ctx.JSON(http.StatusBadRequest, errorResponse(err))
+			ctx.JSON(http.StatusBadRequest, errorResponse(ErrInsufficientBalance))
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		log.Printf("transfer failed from account %d to %d: %v", req.FromAccountID, req.ToAccountID, err)
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrTransferFailed))
 		return
 	}
 
@@ -65,16 +66,16 @@ func (server *Server) validAccount(ctx *gin.Context, accountID int64, currency s
 	account, err := server.store.GetAccount(ctx, accountID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			ctx.JSON(http.StatusNotFound, errorResponse(err))
+			ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
 			return account, false
 		}
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return account, false
 	}
 
 	if account.Currency != currency {
-		err := fmt.Errorf("account %d currency mismatch: %s vs %s", account.ID, account.Currency, currency)
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		log.Printf("account %d currency mismatch: %s vs %s", account.ID, account.Currency, currency)
+		ctx.JSON(http.StatusBadRequest, errorResponse(ErrCurrencyMismatch))
 		return account, false
 	}
 

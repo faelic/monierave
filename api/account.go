@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 
 	db "github.com/faelic/monierave/db/sqlc"
@@ -36,11 +37,11 @@ func (server *Server) createAccount(ctx *gin.Context) {
 		if errors.As(err, &pgErr) {
 			switch pgErr.Code {
 			case "23503", "23505":
-				ctx.JSON(http.StatusForbidden, errorResponse(err))
+				ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
 				return
 			}
 		}
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 	ctx.JSON(http.StatusOK, account)
@@ -62,18 +63,17 @@ func (server *Server) getAccount(ctx *gin.Context) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			ctx.JSON(http.StatusNotFound, errorResponse(err))
+			ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
 			return
 		}
 
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
 	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 	if account.Owner != authPayLoad.Username {
-		err := errors.New("account does not belong to the authenticated user")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(err))
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
 		return
 	}
 
@@ -103,7 +103,7 @@ func (server *Server) listAccount(ctx *gin.Context) {
 
 	accounts, err := server.store.ListAccount(ctx, arg)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
@@ -123,9 +123,29 @@ func (server *Server) deleteAccount(ctx *gin.Context) {
 		return
 	}
 
-	err := server.store.DeleteAccount(ctx, req.ID)
+	account, err := server.store.GetAccount(ctx, req.ID)
+
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		if err == sql.ErrNoRows {
+			ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+			return
+		}
+
+		log.Printf("failed to get account %d before delete: %v", req.ID, err)
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+
+	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	if account.Owner != authPayLoad.Username {
+		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
+		return
+	}
+
+	err = server.store.DeleteAccount(ctx, req.ID)
+	if err != nil {
+		log.Printf("failed to delete account %d: %v", req.ID, err)
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
@@ -161,11 +181,30 @@ func (server *Server) updateAccount(ctx *gin.Context) {
 		Balance: bodyReq.Balance,
 	}
 
-	account, err := server.store.UpdateAccount(ctx, arg)
+	account, err := server.store.GetAccount(ctx, arg.ID)
+
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		if err == sql.ErrNoRows {
+			ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+			return
+		}
+
+		log.Printf("failed to get account %d before delete: %v", arg.ID, err)
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, account)
+	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	if account.Owner != authPayLoad.Username {
+		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
+		return
+	}
+
+	updatedAccount, err := server.store.UpdateAccount(ctx, arg)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedAccount)
 }

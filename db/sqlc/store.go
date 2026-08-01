@@ -145,7 +145,7 @@ func addMoney(
 			return account1, account2, ErrInsufficientBalance
 		}
 
-		return account1, account2, ErrInsufficientBalance
+		return account1, account2, err
 	}
 	return
 }
