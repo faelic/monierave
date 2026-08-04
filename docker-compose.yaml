@@ -17,19 +17,70 @@ services:
       retries: 10
       start_period: 10s
 
-  api:
+  redis:
+    image: redis:7.4-alpine
+    container_name: monierave-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
     build:
       context: .
       dockerfile: Dockerfile
     image: monierave:latest
-    container_name: monierave-api
+    container_name: monierave-migrate
     env_file:
       - app.env
     depends_on:
       postgres:
         condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - migrate -path /app/db/migration -database "$$DB_SOURCE" -verbose up
+
+  api:
+    image: monierave:latest
+    container_name: monierave-api
+    env_file:
+      - app.env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
+    command: ["/app/main", "api"]
+    restart: unless-stopped
+
+  relay:
+    image: monierave:latest
+    container_name: monierave-relay
+    env_file:
+      - app.env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command: ["/app/main", "relay"]
+    restart: unless-stopped
+
+  worker:
+    image: monierave:latest
+    container_name: monierave-worker
+    env_file:
+      - app.env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command: ["/app/main", "worker"]
     restart: unless-stopped
 
 volumes:

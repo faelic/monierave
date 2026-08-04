@@ -32,7 +32,13 @@ test:
 	go test -v -cover ./...
 
 server:
-	go run main.go
+	go run main.go api
+
+relay:
+	go run main.go relay
+
+worker:
+	go run main.go worker
 
 mock:
 	mockgen -destination db/mock/store.go -package mockdb github.com/faelic/monierave/db/sqlc Store
@@ -43,5 +49,6 @@ db_docs:
 db_schema:
 	dbml2sql --postgres -o doc/schema.sql doc/db.dbml
 
-
-.PHONY: postgres createdb dropdb migrateup migrateup1 migratedown migratedown1 db_schema db_docs sqlc server mock 
+redis:
+	docker run --name redis -p 6379:6379 -d redis:7.4-alpine
+.PHONY: postgres createdb dropdb migrateup migrateup1 migratedown migratedown1 db_schema db_docs sqlc server relay worker mock redis

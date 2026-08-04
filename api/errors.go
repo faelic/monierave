@@ -19,4 +19,9 @@ var (
 	ErrCurrencyMismatch    = errors.New("account currency mismatch")
 	ErrInsufficientBalance = errors.New("insufficient balance")
 	ErrTransferFailed      = errors.New("transfer failed")
+	ErrUserNotFound        = errors.New("user not found")
+
+	ErrUsernameAlreadyExists  = errors.New("username already exists")
+	ErrEmailAlreadyExists     = errors.New("email already exists")
+	ErrVerficationEmailFailed = errors.New("failed to send verification code")
 )

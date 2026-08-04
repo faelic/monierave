@@ -1,4 +1,3 @@
-# Build stage
 FROM golang:1.26.4-bookworm AS builder
 
 WORKDIR /app
@@ -7,25 +6,37 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o main main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/main .
 
-# Runtime stage
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS migrate
 
-WORKDIR /app
+ARG TARGETARCH
+ARG MIGRATE_VERSION=v4.19.1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl tar && \
+    curl -fsSL "https://github.com/golang-migrate/migrate/releases/download/${MIGRATE_VERSION}/migrate.linux-${TARGETARCH}.tar.gz" | tar -xz && \
+    mv migrate /usr/local/bin/migrate && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/main .
-COPY db/migration ./db/migration
-COPY start.sh .
+FROM debian:bookworm-slim AS runtime
 
-RUN curl -L https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar -xz && \
-    mv migrate /usr/local/bin/migrate && \
-    chmod +x /app/start.sh
+WORKDIR /app
+
+ENV GIN_MODE=release
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system monierave && \
+    useradd --system --gid monierave --home-dir /app --no-create-home monierave
+
+COPY --from=builder --chown=monierave:monierave /out/main /app/main
+COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
+COPY --chown=monierave:monierave db/migration /app/db/migration
 
 EXPOSE 8080
 
-CMD ["/app/start.sh"]
+USER monierave
+
+CMD ["/app/main", "api"]

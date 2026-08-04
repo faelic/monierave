@@ -78,6 +78,74 @@ Table sessions {
   }
 }
 
+Table email_jobs {
+  id uuid [pk]
+  parent_job_id uuid [ref: > email_jobs.id]
+  job_type varchar [not null]
+  username varchar [not null, ref: > U.username]
+  recipient varchar [not null]
+  payload jsonb [not null, default: `'{}'::jsonb`]
+  status varchar [not null, default: 'pending']
+  attempt_count integer [not null, default: 0]
+  max_attempts integer [not null, default: 10]
+  provider_message_id varchar
+  last_error text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  queued_at timestamptz
+  processing_at timestamptz
+  last_attempt_at timestamptz
+  sent_at timestamptz
+  dead_lettered_at timestamptz
+
+  indexes {
+    (status, created_at)
+    username
+    parent_job_id
+  }
+}
+
+Table outbox_events {
+  id uuid [pk]
+  email_job_id uuid [not null, unique, ref: > email_jobs.id]
+  event_type varchar [not null]
+  payload jsonb [not null]
+  status varchar [not null, default: 'pending']
+  publish_attempts integer [not null, default: 0]
+  available_at timestamptz [not null, default: `now()`]
+  claimed_by varchar
+  claimed_until timestamptz
+  last_error text
+  created_at timestamptz [not null, default: `now()`]
+  published_at timestamptz
+
+  indexes {
+    (available_at, created_at)
+  }
+}
+
+Table audit_logs {
+  id bigserial [pk]
+  entity_type varchar [not null]
+  entity_id uuid [not null]
+  correlation_id uuid [not null]
+  event_type varchar [not null]
+  actor varchar [not null]
+  from_state varchar
+  to_state varchar
+  message text
+  metadata jsonb [not null, default: `'{}'::jsonb`]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Append-only audit history. No foreign keys so records survive operational data cleanup.'
+
+  indexes {
+    (entity_type, entity_id, created_at, id)
+    (correlation_id, created_at, id)
+    (created_at, id)
+  }
+}
+
 Enum Currency {
   USD
   EUR

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
@@ -61,6 +62,7 @@ func (server *Server) setupRouter() {
 	authRoutes.DELETE("/accounts/:id", server.deleteAccount)
 
 	authRoutes.POST("/transfers", server.createTransfer)
+	authRoutes.PATCH("/users/me", server.updateUser)
 
 	server.router = router
 }
@@ -68,6 +70,10 @@ func (server *Server) setupRouter() {
 // Start runs the http server on a particular address
 func (server *Server) Start(address string) error {
 	return server.router.Run(address)
+}
+
+func (server *Server) Handler() http.Handler {
+	return server.router
 }
 
 func errorResponse(err error) gin.H {

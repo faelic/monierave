@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/faelic/monierave/db/util"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,6 +22,174 @@ func createTransferTestAccount(t *testing.T) Account {
 	require.NotEmpty(t, account)
 
 	return account
+}
+
+func TestCreateUserTxCreatesEmailJobAndOutboxEvent(t *testing.T) {
+	hashedPassword, err := util.HashPassword(util.RandomString(8))
+	require.NoError(t, err)
+
+	arg := CreateUserParams{
+		Username:       util.RandomOwner(),
+		HashedPassword: hashedPassword,
+		FullName:       util.RandomOwner(),
+		Email:          util.RandomEmail(),
+	}
+	result, err := testStore.CreateUserTx(context.Background(), arg)
+	require.NoError(t, err)
+
+	require.Equal(t, arg.Username, result.User.Username)
+	require.Equal(t, EmailJobTypeVerifyEmail, result.EmailJob.JobType)
+	require.Equal(t, arg.Username, result.EmailJob.Username)
+	require.Equal(t, arg.Email, result.EmailJob.Recipient)
+	require.Equal(t, "pending", result.EmailJob.Status)
+	require.Equal(t, DefaultEmailMaxAttempts, result.EmailJob.MaxAttempts)
+	require.Equal(t, result.EmailJob.ID, result.OutboxEvent.EmailJobID)
+	require.Equal(t, OutboxEventTypeEmailReady, result.OutboxEvent.EventType)
+	require.Equal(t, "pending", result.OutboxEvent.Status)
+
+	storedJob, err := testQueries.GetEmailJob(context.Background(), result.EmailJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, result.EmailJob.ID, storedJob.ID)
+
+	storedEvent, err := testQueries.GetOutboxEvent(context.Background(), result.OutboxEvent.ID)
+	require.NoError(t, err)
+	require.Equal(t, result.OutboxEvent.ID, storedEvent.ID)
+
+	auditLogs, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: result.EmailJob.ID, Limit: 20},
+	)
+	require.NoError(t, err)
+	requireAuditEvent(t, auditLogs, "email_job_created")
+	requireAuditEvent(t, auditLogs, "outbox_event_created")
+}
+
+func TestReplayEmailJobTxCreatesLinkedJob(t *testing.T) {
+	hashedPassword, err := util.HashPassword(util.RandomString(8))
+	require.NoError(t, err)
+
+	created, err := testStore.CreateUserTx(context.Background(), CreateUserParams{
+		Username:       util.RandomOwner(),
+		HashedPassword: hashedPassword,
+		FullName:       util.RandomOwner(),
+		Email:          util.RandomEmail(),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.MarkEmailJobDeadLetter(context.Background(), MarkEmailJobDeadLetterParams{
+		ID:        created.EmailJob.ID,
+		LastError: pgtype.Text{String: "provider rejected message", Valid: true},
+	})
+	require.NoError(t, err)
+
+	replayed, err := testStore.ReplayEmailJobTx(context.Background(), created.EmailJob.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, created.EmailJob.ID, replayed.EmailJob.ID)
+	require.Equal(t, created.EmailJob.ID, replayed.EmailJob.ParentJobID)
+	require.Equal(t, "pending", replayed.EmailJob.Status)
+	require.Equal(t, replayed.EmailJob.ID, replayed.OutboxEvent.EmailJobID)
+
+	originalAuditLogs, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: created.EmailJob.ID, Limit: 20},
+	)
+	require.NoError(t, err)
+	requireAuditEvent(t, originalAuditLogs, "email_dead_lettered")
+	requireAuditEvent(t, originalAuditLogs, "email_job_replayed")
+
+	replayAuditLogs, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: replayed.EmailJob.ID, Limit: 20},
+	)
+	require.NoError(t, err)
+	requireAuditEvent(t, replayAuditLogs, "email_job_replay_created")
+	requireAuditEvent(t, replayAuditLogs, "outbox_event_created")
+	requireAuditEvent(t, replayAuditLogs, "email_job_replayed")
+}
+
+func TestAuditLogsAreAppendOnly(t *testing.T) {
+	hashedPassword, err := util.HashPassword(util.RandomString(8))
+	require.NoError(t, err)
+
+	created, err := testStore.CreateUserTx(context.Background(), CreateUserParams{
+		Username:       util.RandomOwner(),
+		HashedPassword: hashedPassword,
+		FullName:       util.RandomOwner(),
+		Email:          util.RandomEmail(),
+	})
+	require.NoError(t, err)
+
+	auditLogs, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: created.EmailJob.ID, Limit: 20},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, auditLogs)
+
+	_, err = testDB.Exec(
+		context.Background(),
+		"UPDATE audit_logs SET actor = 'tampered' WHERE id = $1",
+		auditLogs[0].ID,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "append-only")
+
+	_, err = testDB.Exec(context.Background(), "TRUNCATE audit_logs")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "append-only")
+}
+
+func TestEmailJobLifecycleCreatesAuditHistory(t *testing.T) {
+	hashedPassword, err := util.HashPassword(util.RandomString(8))
+	require.NoError(t, err)
+
+	created, err := testStore.CreateUserTx(context.Background(), CreateUserParams{
+		Username:       util.RandomOwner(),
+		HashedPassword: hashedPassword,
+		FullName:       util.RandomOwner(),
+		Email:          util.RandomEmail(),
+	})
+	require.NoError(t, err)
+
+	_, err = testQueries.MarkEmailJobQueued(context.Background(), created.EmailJob.ID)
+	require.NoError(t, err)
+	_, err = testQueries.StartEmailJobAttempt(context.Background(), created.EmailJob.ID)
+	require.NoError(t, err)
+	_, err = testQueries.MarkEmailJobRetrying(context.Background(), MarkEmailJobRetryingParams{
+		ID:        created.EmailJob.ID,
+		LastError: pgtype.Text{String: "temporary provider failure", Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = testQueries.StartEmailJobAttempt(context.Background(), created.EmailJob.ID)
+	require.NoError(t, err)
+	_, err = testQueries.MarkEmailJobSent(context.Background(), MarkEmailJobSentParams{
+		ID: created.EmailJob.ID,
+		ProviderMessageID: pgtype.Text{
+			String: "provider-message-id",
+			Valid:  true,
+		},
+	})
+	require.NoError(t, err)
+
+	auditLogs, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: created.EmailJob.ID, Limit: 30},
+	)
+	require.NoError(t, err)
+	requireAuditEvent(t, auditLogs, "email_job_queued")
+	requireAuditEvent(t, auditLogs, "email_attempt_started")
+	requireAuditEvent(t, auditLogs, "email_send_failed")
+	requireAuditEvent(t, auditLogs, "email_sent")
+}
+
+func requireAuditEvent(t *testing.T, logs []AuditLog, eventType string) {
+	t.Helper()
+	for _, entry := range logs {
+		if entry.EventType == eventType {
+			return
+		}
+	}
+	require.Failf(t, "missing audit event", "expected %q in %#v", eventType, logs)
 }
 
 func TestTransferTx(t *testing.T) {
