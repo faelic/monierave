@@ -12,29 +12,48 @@ import (
 
 type Querier interface {
 	AddAccountBalance(ctx context.Context, arg AddAccountBalanceParams) (Account, error)
+	ClaimOutboxEvents(ctx context.Context, arg ClaimOutboxEventsParams) ([]OutboxEvent, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
+	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
+	CreateEmailJob(ctx context.Context, arg CreateEmailJobParams) (EmailJob, error)
 	CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry, error)
+	CreateOutboxEvent(ctx context.Context, arg CreateOutboxEventParams) (OutboxEvent, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTransfer(ctx context.Context, arg CreateTransferParams) (Transfer, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAccount(ctx context.Context, id int64) error
 	DeleteEntry(ctx context.Context, id int64) error
+	DeleteExpiredPublishedOutboxEvents(ctx context.Context, publishedAt pgtype.Timestamptz) (int64, error)
+	DeleteExpiredSentEmailJobs(ctx context.Context, sentAt pgtype.Timestamptz) (int64, error)
 	DeleteSession(ctx context.Context, id pgtype.UUID) error
 	DeleteTransfer(ctx context.Context, id int64) error
 	GetAccount(ctx context.Context, id int64) (Account, error)
 	GetAccountForUpdate(ctx context.Context, id int64) (Account, error)
+	GetEmailJob(ctx context.Context, id pgtype.UUID) (EmailJob, error)
 	GetEntry(ctx context.Context, id int64) (Entry, error)
+	GetOutboxEvent(ctx context.Context, id pgtype.UUID) (OutboxEvent, error)
 	GetSession(ctx context.Context, id pgtype.UUID) (Session, error)
 	GetTransfer(ctx context.Context, id int64) (Transfer, error)
 	GetUser(ctx context.Context, username string) (User, error)
 	ListAccount(ctx context.Context, arg ListAccountParams) ([]Account, error)
+	ListAuditLogsByJob(ctx context.Context, arg ListAuditLogsByJobParams) ([]AuditLog, error)
+	ListDeadLetterEmailJobs(ctx context.Context, limit int32) ([]EmailJob, error)
 	ListEntry(ctx context.Context, arg ListEntryParams) ([]Entry, error)
+	ListRecentAuditLogs(ctx context.Context, limit int32) ([]AuditLog, error)
 	ListSessions(ctx context.Context, username string) ([]Session, error)
 	ListTransfer(ctx context.Context, arg ListTransferParams) ([]Transfer, error)
+	MarkEmailJobDeadLetter(ctx context.Context, arg MarkEmailJobDeadLetterParams) (EmailJob, error)
+	MarkEmailJobQueued(ctx context.Context, id pgtype.UUID) (EmailJob, error)
+	MarkEmailJobRetrying(ctx context.Context, arg MarkEmailJobRetryingParams) (EmailJob, error)
+	MarkEmailJobSent(ctx context.Context, arg MarkEmailJobSentParams) (EmailJob, error)
+	MarkOutboxEventPublished(ctx context.Context, id pgtype.UUID) (OutboxEvent, error)
+	ReleaseOutboxEvent(ctx context.Context, arg ReleaseOutboxEventParams) (OutboxEvent, error)
+	StartEmailJobAttempt(ctx context.Context, id pgtype.UUID) (EmailJob, error)
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
 	UpdateEntry(ctx context.Context, arg UpdateEntryParams) (Entry, error)
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
 	UpdateTransfer(ctx context.Context, arg UpdateTransferParams) (Transfer, error)
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

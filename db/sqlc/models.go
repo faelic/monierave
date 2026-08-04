@@ -61,12 +61,63 @@ type Account struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Append-only audit history. Intentionally has no foreign keys so records survive entity retention cleanup.
+type AuditLog struct {
+	ID            int64              `json:"id"`
+	EntityType    string             `json:"entity_type"`
+	EntityID      pgtype.UUID        `json:"entity_id"`
+	CorrelationID pgtype.UUID        `json:"correlation_id"`
+	EventType     string             `json:"event_type"`
+	Actor         string             `json:"actor"`
+	FromState     pgtype.Text        `json:"from_state"`
+	ToState       pgtype.Text        `json:"to_state"`
+	Message       pgtype.Text        `json:"message"`
+	Metadata      []byte             `json:"metadata"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type EmailJob struct {
+	ID                pgtype.UUID        `json:"id"`
+	ParentJobID       pgtype.UUID        `json:"parent_job_id"`
+	JobType           string             `json:"job_type"`
+	Username          string             `json:"username"`
+	Recipient         string             `json:"recipient"`
+	Payload           []byte             `json:"payload"`
+	Status            string             `json:"status"`
+	AttemptCount      int32              `json:"attempt_count"`
+	MaxAttempts       int32              `json:"max_attempts"`
+	ProviderMessageID pgtype.Text        `json:"provider_message_id"`
+	LastError         pgtype.Text        `json:"last_error"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	QueuedAt          pgtype.Timestamptz `json:"queued_at"`
+	ProcessingAt      pgtype.Timestamptz `json:"processing_at"`
+	LastAttemptAt     pgtype.Timestamptz `json:"last_attempt_at"`
+	SentAt            pgtype.Timestamptz `json:"sent_at"`
+	DeadLetteredAt    pgtype.Timestamptz `json:"dead_lettered_at"`
+}
+
 type Entry struct {
 	ID        int64 `json:"id"`
 	AccountID int64 `json:"account_id"`
 	// can be negative or positive
 	Amount    int64              `json:"amount"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type OutboxEvent struct {
+	ID              pgtype.UUID        `json:"id"`
+	EmailJobID      pgtype.UUID        `json:"email_job_id"`
+	EventType       string             `json:"event_type"`
+	Payload         []byte             `json:"payload"`
+	Status          string             `json:"status"`
+	PublishAttempts int32              `json:"publish_attempts"`
+	AvailableAt     pgtype.Timestamptz `json:"available_at"`
+	ClaimedBy       pgtype.Text        `json:"claimed_by"`
+	ClaimedUntil    pgtype.Timestamptz `json:"claimed_until"`
+	LastError       pgtype.Text        `json:"last_error"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 }
 
 type Session struct {

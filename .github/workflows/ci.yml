@@ -1,4 +1,4 @@
-name: ci-test
+name: CI
 
 on:
   push:
@@ -6,31 +6,51 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Test
+    name: Build and test
     runs-on: ubuntu-latest
 
     services:
       postgres:
         image: postgres:18-bookworm
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: monierave
+          POSTGRES_PASSWORD: monierave
+          POSTGRES_DB: monierave_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U favour -d simple_bank"
+          --health-cmd="pg_isready -U monierave -d monierave_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
 
     env:
-      DB_SOURCE: ${{ secrets.DB_SOURCE }}
+      DB_SOURCE: postgresql://monierave:monierave@localhost:5432/monierave_test?sslmode=disable
       SERVER_ADDRESS: 0.0.0.0:8080
-      SECRET_KEY: ${{ secrets.SECRET_KEY }}
-      ACCESS_TOKEN_DURATION: ${{ secrets.ACCESS_TOKEN_DURATION }}
+      SECRET_KEY: 12345678901234567890123456789012
+      ACCESS_TOKEN_DURATION: 15m
+      REFRESH_TOKEN_DURATION: 24h
+      REDIS_ADDRESS: localhost:6379
+      MAILER_PROVIDER: log
+      WORKER_CONCURRENCY: 10
+      RELAY_BATCH_SIZE: 50
+      RELAY_POLL_INTERVAL: 1s
+      RELAY_CLAIM_LEASE: 30s
 
     steps:
       - uses: actions/checkout@v4
@@ -39,28 +59,30 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26.4"
-
-      - name: Create app.env
-        run: |
-          echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" >> app.env
-          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> app.env
-          echo "POSTGRES_DB=${{ secrets.POSTGRES_DB }}" >> app.env
-          echo "DB_SOURCE=${DB_SOURCE}" >> app.env
-          echo "SERVER_ADDRESS=${SERVER_ADDRESS}" >> app.env
-          echo "SECRET_KEY=${SECRET_KEY}" >> app.env
-          echo "ACCESS_TOKEN_DURATION=${ACCESS_TOKEN_DURATION}" >> app.env
+          cache: true
 
       - name: Install golang migrate
         run: |
-          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar xvz
-          sudo mv migrate /usr/bin/
-          which migrate
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar -xz
+          sudo install migrate /usr/local/bin/migrate
 
       - name: Run migrations
-        run: make migrateup
+        run: migrate -path db/migration -database "$DB_SOURCE" -verbose up
 
-      - name: Build
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build application
         run: go build -v ./...
 
-      - name: Test
-        run: make test
+      - name: Run tests
+        run: go test -race -cover ./...
+
+      - name: Build production image
+        run: docker build --tag monierave:ci .
