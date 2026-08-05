@@ -11,6 +11,7 @@ import (
 	"github.com/faelic/monierave/db/util"
 	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,20 +25,30 @@ type createUserRequest struct {
 }
 
 type userResponse struct {
-	Username          string             `json:"username"`
-	FullName          string             `json:"full_name"`
-	Email             string             `json:"email"`
-	PasswordChangedAt pgtype.Timestamptz `json:"password_changed_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Username                  string             `json:"username"`
+	FullName                  string             `json:"full_name"`
+	Email                     string             `json:"email"`
+	EmailVerifiedAt           pgtype.Timestamptz `json:"email_verified_at"`
+	EmailDeliverabilityStatus string             `json:"email_deliverability_status"`
+	EmailBouncedAt            pgtype.Timestamptz `json:"email_bounced_at"`
+	AccountStatus             string             `json:"account_status"`
+	RegistrationExpiresAt     pgtype.Timestamptz `json:"registration_expires_at"`
+	PasswordChangedAt         pgtype.Timestamptz `json:"password_changed_at"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
 }
 
 func newUserResponse(user db.User) userResponse {
 	return userResponse{
-		Username:          user.Username,
-		FullName:          user.FullName,
-		Email:             user.Email,
-		PasswordChangedAt: user.PasswordChangedAt,
-		CreatedAt:         user.CreatedAt,
+		Username:                  user.Username,
+		FullName:                  user.FullName,
+		Email:                     user.Email,
+		EmailVerifiedAt:           user.EmailVerifiedAt,
+		EmailDeliverabilityStatus: user.EmailDeliverabilityStatus,
+		EmailBouncedAt:            user.EmailBouncedAt,
+		AccountStatus:             user.AccountStatus,
+		RegistrationExpiresAt:     user.RegistrationExpiresAt,
+		PasswordChangedAt:         user.PasswordChangedAt,
+		CreatedAt:                 user.CreatedAt,
 	}
 }
 
@@ -211,19 +222,19 @@ func (server *Server) updateUser(ctx *gin.Context) {
 
 	if req.FullName != nil {
 		arg.FullName = pgtype.Text{
-			String: *req.FullName,
+			String: strings.TrimSpace(*req.FullName),
 			Valid:  true,
 		}
 	}
 
 	if req.Email != nil {
 		arg.Email = pgtype.Text{
-			String: strings.ToLower(*req.Email),
+			String: strings.ToLower(strings.TrimSpace(*req.Email)),
 			Valid:  true,
 		}
 	}
 
-	user, err := server.store.UpdateUser(ctx, arg)
+	result, err := server.store.UpdateUserTx(ctx, arg)
 	if err != nil {
 		var pgErr *pgconn.PgError
 
@@ -246,6 +257,153 @@ func (server *Server) updateUser(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, newUserResponse(user))
+	ctx.JSON(http.StatusOK, newUserResponse(result.User))
 
+}
+
+type emailStatusResponse struct {
+	Email                 string             `json:"email"`
+	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
+	DeliverabilityStatus  string             `json:"deliverability_status"`
+	BouncedAt             pgtype.Timestamptz `json:"bounced_at"`
+	LatestJob             *emailJobStatus    `json:"latest_job,omitempty"`
+	AccountStatus         string             `json:"account_status"`
+	RegistrationExpiresAt pgtype.Timestamptz `json:"registration_expires_at"`
+	AllowedFeatures       []string           `json:"allowed_features,omitempty"`
+	RestrictedFeatures    []string           `json:"restricted_features,omitempty"`
+}
+
+type emailJobStatus struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkerStatus      string             `json:"worker_status"`
+	DeliveryStatus    string             `json:"delivery_status"`
+	ProviderMessageID pgtype.Text        `json:"provider_message_id"`
+	AcceptedAt        pgtype.Timestamptz `json:"accepted_at"`
+	DeliveredAt       pgtype.Timestamptz `json:"delivered_at"`
+	BouncedAt         pgtype.Timestamptz `json:"bounced_at"`
+	BounceType        pgtype.Text        `json:"bounce_type"`
+	BounceSubtype     pgtype.Text        `json:"bounce_subtype"`
+	BounceMessage     pgtype.Text        `json:"bounce_message"`
+}
+
+func (server *Server) getUserEmailStatus(ctx *gin.Context) {
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
+	user, err := server.store.GetUser(ctx, authPayload.Username)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, errorResponse(ErrUserNotFound))
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+
+	response := emailStatusResponse{
+		Email:                 user.Email,
+		VerifiedAt:            user.EmailVerifiedAt,
+		DeliverabilityStatus:  user.EmailDeliverabilityStatus,
+		BouncedAt:             user.EmailBouncedAt,
+		AccountStatus:         user.AccountStatus,
+		RegistrationExpiresAt: user.RegistrationExpiresAt,
+	}
+	if user.AccountStatus != db.AccountStatusActive || !user.EmailVerifiedAt.Valid {
+		response.AllowedFeatures = unverifiedAllowedFeatures
+		response.RestrictedFeatures = unverifiedRestrictedFeatures
+	}
+
+	job, err := server.store.GetLatestEmailJobForCurrentAddress(ctx, authPayload.Username)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+	if err == nil {
+		response.LatestJob = &emailJobStatus{
+			ID:                job.ID,
+			WorkerStatus:      job.Status,
+			DeliveryStatus:    job.DeliveryStatus,
+			ProviderMessageID: job.ProviderMessageID,
+			AcceptedAt:        job.AcceptedAt,
+			DeliveredAt:       job.DeliveredAt,
+			BouncedAt:         job.BouncedAt,
+			BounceType:        job.BounceType,
+			BounceSubtype:     job.BounceSubtype,
+			BounceMessage:     job.BounceMessage,
+		}
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+type verifyEmailRequest struct {
+	Token string `form:"token" binding:"required"`
+}
+
+func (server *Server) verifyUserEmail(ctx *gin.Context) {
+	var req verifyEmailRequest
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidToken))
+		return
+	}
+
+	payload, err := server.emailVerificationMaker.Verify(req.Token)
+	if err != nil {
+		if errors.Is(err, token.ErrExpiredToken) {
+			ctx.JSON(http.StatusGone, errorResponse(ErrExpiredToken))
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidToken))
+		return
+	}
+
+	jobID, err := uuid.Parse(payload.JobID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidToken))
+		return
+	}
+	user, err := server.store.VerifyUserEmailTx(ctx, db.VerifyUserEmailTxParams{
+		Username: payload.Username,
+		Email:    payload.Email,
+		JobID:    pgtype.UUID{Bytes: jobID, Valid: true},
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, db.ErrEmailVerificationAddressStale),
+			errors.Is(err, db.ErrEmailVerificationJobMismatch):
+			ctx.JSON(http.StatusConflict, errorResponse(ErrInvalidToken))
+		case errors.Is(err, db.ErrRegistrationDisabled):
+			ctx.JSON(http.StatusGone, errorResponse(ErrRegistrationExpired))
+		default:
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		}
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "email verified successfully",
+		"user":    newUserResponse(user),
+	})
+}
+
+func (server *Server) resendUserEmailVerification(ctx *gin.Context) {
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	result, err := server.store.RequestEmailVerificationTx(ctx, authPayload.Username)
+	if err != nil {
+		switch {
+		case errors.Is(err, db.ErrEmailAlreadyVerified):
+			ctx.JSON(http.StatusConflict, errorResponse(ErrEmailAlreadyVerified))
+		case errors.Is(err, db.ErrEmailVerificationCooldown):
+			ctx.JSON(http.StatusTooManyRequests, errorResponse(ErrVerificationCooldown))
+		case errors.Is(err, pgx.ErrNoRows):
+			ctx.JSON(http.StatusNotFound, errorResponse(ErrUserNotFound))
+		default:
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		}
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"message": "verification email queued",
+		"job_id":  result.EmailJob.ID,
+	})
 }

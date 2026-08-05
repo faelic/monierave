@@ -12,6 +12,14 @@ import (
 
 var ErrEmailJobNotDeadLetter = errors.New("email job is not dead-lettered")
 
+var (
+	ErrEmailAlreadyVerified          = errors.New("email is already verified")
+	ErrEmailVerificationCooldown     = errors.New("wait before requesting another verification email")
+	ErrEmailVerificationJobMismatch  = errors.New("verification token does not match the email job")
+	ErrEmailVerificationAddressStale = errors.New("verification token is for an old email address")
+	ErrRegistrationDisabled          = errors.New("registration is disabled")
+)
+
 const (
 	EmailJobTypeVerifyEmail   = "verify_email"
 	OutboxEventTypeEmailReady = "email_job.ready"
@@ -23,6 +31,24 @@ const (
 	EmailJobStatusRetrying   = "retrying"
 	EmailJobStatusSent       = "sent"
 	EmailJobStatusDeadLetter = "dead_letter"
+
+	EmailDeliveryStatusPending    = "pending"
+	EmailDeliveryStatusAccepted   = "accepted"
+	EmailDeliveryStatusDelivered  = "delivered"
+	EmailDeliveryStatusDelayed    = "delayed"
+	EmailDeliveryStatusBounced    = "bounced"
+	EmailDeliveryStatusFailed     = "failed"
+	EmailDeliveryStatusSuppressed = "suppressed"
+	EmailDeliveryStatusComplained = "complained"
+
+	EmailDeliverabilityUnknown       = "unknown"
+	EmailDeliverabilityPending       = "pending"
+	EmailDeliverabilityDeliverable   = "deliverable"
+	EmailDeliverabilityUndeliverable = "undeliverable"
+
+	AccountStatusPending  = "pending"
+	AccountStatusActive   = "active"
+	AccountStatusDisabled = "disabled"
 )
 
 type CreateUserTxResult struct {
@@ -58,42 +84,57 @@ func (store *SQLStore) CreateUserTx(ctx context.Context, arg CreateUserParams) (
 			return err
 		}
 
-		jobID := newPGUUID()
-		jobPayload, err := json.Marshal(emailJobPayload{
-			Username:  result.User.Username,
-			Recipient: result.User.Email,
-		})
-		if err != nil {
-			return fmt.Errorf("marshal email job payload: %w", err)
-		}
-
-		result.EmailJob, err = q.CreateEmailJob(ctx, CreateEmailJobParams{
-			ID:          jobID,
-			JobType:     EmailJobTypeVerifyEmail,
-			Username:    result.User.Username,
-			Recipient:   result.User.Email,
-			Payload:     jobPayload,
-			MaxAttempts: DefaultEmailMaxAttempts,
-		})
-		if err != nil {
-			return err
-		}
-
-		eventPayload, err := json.Marshal(outboxEmailPayload{JobID: uuidString(jobID)})
-		if err != nil {
-			return fmt.Errorf("marshal outbox payload: %w", err)
-		}
-
-		result.OutboxEvent, err = q.CreateOutboxEvent(ctx, CreateOutboxEventParams{
-			ID:         newPGUUID(),
-			EmailJobID: jobID,
-			EventType:  OutboxEventTypeEmailReady,
-			Payload:    eventPayload,
-		})
+		result.EmailJob, result.OutboxEvent, err = createVerificationEmailJob(
+			ctx,
+			q,
+			result.User.Username,
+			result.User.Email,
+		)
 		return err
 	})
 
 	return result, err
+}
+
+func createVerificationEmailJob(
+	ctx context.Context,
+	q *Queries,
+	username string,
+	recipient string,
+) (EmailJob, OutboxEvent, error) {
+	jobID := newPGUUID()
+	jobPayload, err := json.Marshal(emailJobPayload{
+		Username:  username,
+		Recipient: recipient,
+	})
+	if err != nil {
+		return EmailJob{}, OutboxEvent{}, fmt.Errorf("marshal email job payload: %w", err)
+	}
+
+	job, err := q.CreateEmailJob(ctx, CreateEmailJobParams{
+		ID:          jobID,
+		JobType:     EmailJobTypeVerifyEmail,
+		Username:    username,
+		Recipient:   recipient,
+		Payload:     jobPayload,
+		MaxAttempts: DefaultEmailMaxAttempts,
+	})
+	if err != nil {
+		return EmailJob{}, OutboxEvent{}, err
+	}
+
+	eventPayload, err := json.Marshal(outboxEmailPayload{JobID: uuidString(jobID)})
+	if err != nil {
+		return EmailJob{}, OutboxEvent{}, fmt.Errorf("marshal outbox payload: %w", err)
+	}
+
+	event, err := q.CreateOutboxEvent(ctx, CreateOutboxEventParams{
+		ID:         newPGUUID(),
+		EmailJobID: jobID,
+		EventType:  OutboxEventTypeEmailReady,
+		Payload:    eventPayload,
+	})
+	return job, event, err
 }
 
 type ReplayEmailJobTxResult struct {

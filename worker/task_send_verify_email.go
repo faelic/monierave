@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/mailer"
@@ -75,11 +77,16 @@ func (processor *RedisTaskProcessor) ProcessTaskSendVerifyEmail(ctx context.Cont
 		return fmt.Errorf("start email job attempt: %w", err)
 	}
 
+	emailPayload, err := processor.verificationEmailPayload(job, payload.JobID)
+	if err != nil {
+		return fmt.Errorf("create verification email link: %v: %w", err, asynq.SkipRetry)
+	}
+
 	providerMessageID, sendErr := processor.mailer.SendVerificationEmail(ctx, mailer.VerificationEmail{
 		JobID:     payload.JobID,
 		Username:  job.Username,
 		Recipient: job.Recipient,
-		Payload:   job.Payload,
+		Payload:   emailPayload,
 	})
 	if sendErr != nil {
 		if mailer.IsPermanent(sendErr) || job.AttemptCount >= job.MaxAttempts {
@@ -120,6 +127,39 @@ func (processor *RedisTaskProcessor) ProcessTaskSendVerifyEmail(ctx context.Cont
 		Int32("attempt", job.AttemptCount).
 		Msg("verification email accepted by provider")
 	return nil
+}
+
+func (processor *RedisTaskProcessor) verificationEmailPayload(
+	job db.EmailJob,
+	jobID string,
+) ([]byte, error) {
+	if processor.emailVerificationMaker == nil {
+		return job.Payload, nil
+	}
+
+	value, err := processor.emailVerificationMaker.Create(
+		job.Username,
+		job.Recipient,
+		jobID,
+		processor.emailVerificationDuration,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload map[string]any
+	if len(job.Payload) > 0 {
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("decode email job payload: %w", err)
+		}
+	}
+	if payload == nil {
+		payload = make(map[string]any)
+	}
+	payload["verification_url"] = strings.TrimRight(processor.publicAPIURL, "/") +
+		"/users/verify-email?token=" + url.QueryEscape(value)
+
+	return json.Marshal(payload)
 }
 
 func parseJobID(value string) (pgtype.UUID, error) {

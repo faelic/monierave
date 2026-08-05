@@ -16,11 +16,14 @@ INSERT INTO users (
   username,
   hashed_password,
   full_name,
-  email
+  email,
+  email_deliverability_status,
+  account_status,
+  registration_expires_at
 ) VALUES (
-  $1, $2, $3, $4
+  $1, $2, $3, $4, 'pending', 'pending', now() + interval '7 days'
 )
-RETURNING username, hashed_password, full_name, email, password_changed_at, created_at
+RETURNING username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at
 `
 
 type CreateUserParams struct {
@@ -45,12 +48,62 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Email,
 		&i.PasswordChangedAt,
 		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
 	)
 	return i, err
 }
 
+const disableExpiredPendingUser = `-- name: DisableExpiredPendingUser :one
+UPDATE users
+SET account_status = 'disabled'
+WHERE username = $1
+  AND account_status = 'pending'
+  AND registration_expires_at <= now()
+RETURNING username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at
+`
+
+func (q *Queries) DisableExpiredPendingUser(ctx context.Context, username string) (User, error) {
+	row := q.db.QueryRow(ctx, disableExpiredPendingUser, username)
+	var i User
+	err := row.Scan(
+		&i.Username,
+		&i.HashedPassword,
+		&i.FullName,
+		&i.Email,
+		&i.PasswordChangedAt,
+		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
+	)
+	return i, err
+}
+
+const disableExpiredPendingUsers = `-- name: DisableExpiredPendingUsers :execrows
+UPDATE users
+SET account_status = 'disabled'
+WHERE account_status = 'pending'
+  AND registration_expires_at <= now()
+`
+
+func (q *Queries) DisableExpiredPendingUsers(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, disableExpiredPendingUsers)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getUser = `-- name: GetUser :one
-SELECT username, hashed_password, full_name, email, password_changed_at, created_at FROM users
+SELECT username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at FROM users
 WHERE username = $1 LIMIT 1
 `
 
@@ -64,6 +117,184 @@ func (q *Queries) GetUser(ctx context.Context, username string) (User, error) {
 		&i.Email,
 		&i.PasswordChangedAt,
 		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
+	)
+	return i, err
+}
+
+const getUserForUpdate = `-- name: GetUserForUpdate :one
+SELECT username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at FROM users
+WHERE username = $1
+LIMIT 1
+FOR UPDATE
+`
+
+func (q *Queries) GetUserForUpdate(ctx context.Context, username string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserForUpdate, username)
+	var i User
+	err := row.Scan(
+		&i.Username,
+		&i.HashedPassword,
+		&i.FullName,
+		&i.Email,
+		&i.PasswordChangedAt,
+		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
+	)
+	return i, err
+}
+
+const markUserEmailVerified = `-- name: MarkUserEmailVerified :one
+UPDATE users
+SET
+  email_verified_at = COALESCE(email_verified_at, now()),
+  email_deliverability_status = 'deliverable',
+  email_deliverability_updated_at = now(),
+  email_bounced_at = NULL,
+  account_status = 'active',
+  registration_expires_at = NULL
+WHERE username = $1
+  AND lower(email) = lower($2)
+RETURNING username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at
+`
+
+type MarkUserEmailVerifiedParams struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+func (q *Queries) MarkUserEmailVerified(ctx context.Context, arg MarkUserEmailVerifiedParams) (User, error) {
+	row := q.db.QueryRow(ctx, markUserEmailVerified, arg.Username, arg.Email)
+	var i User
+	err := row.Scan(
+		&i.Username,
+		&i.HashedPassword,
+		&i.FullName,
+		&i.Email,
+		&i.PasswordChangedAt,
+		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
+	)
+	return i, err
+}
+
+const restartUserEmailVerification = `-- name: RestartUserEmailVerification :one
+UPDATE users
+SET
+  account_status = 'pending',
+  registration_expires_at = CASE
+    WHEN account_status = 'disabled' THEN now() + interval '7 days'
+    ELSE registration_expires_at
+  END,
+  email_verified_at = NULL,
+  email_deliverability_status = 'pending',
+  email_deliverability_updated_at = NULL,
+  email_bounced_at = NULL
+WHERE username = $1
+RETURNING username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at
+`
+
+func (q *Queries) RestartUserEmailVerification(ctx context.Context, username string) (User, error) {
+	row := q.db.QueryRow(ctx, restartUserEmailVerification, username)
+	var i User
+	err := row.Scan(
+		&i.Username,
+		&i.HashedPassword,
+		&i.FullName,
+		&i.Email,
+		&i.PasswordChangedAt,
+		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
+	)
+	return i, err
+}
+
+const updateCurrentUserEmailDeliverability = `-- name: UpdateCurrentUserEmailDeliverability :one
+UPDATE users
+SET
+  email_deliverability_status = $1,
+  email_deliverability_updated_at = $2,
+  email_bounced_at = CASE
+    WHEN $3::timestamptz IS NOT NULL
+      THEN $3
+    WHEN $1::varchar = 'deliverable'
+      THEN NULL
+    ELSE email_bounced_at
+  END,
+  email_verified_at = CASE
+    WHEN $1::varchar = 'undeliverable'
+      THEN NULL
+    ELSE email_verified_at
+  END,
+  account_status = CASE
+    WHEN $1::varchar = 'undeliverable'
+      THEN 'pending'
+    ELSE account_status
+  END,
+  registration_expires_at = CASE
+    WHEN $1::varchar = 'undeliverable'
+      THEN now() + interval '7 days'
+    ELSE registration_expires_at
+  END
+WHERE username = $4
+  AND lower(email) = lower($5)
+  AND (
+    email_deliverability_updated_at IS NULL
+    OR email_deliverability_updated_at <= $2
+  )
+RETURNING username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at
+`
+
+type UpdateCurrentUserEmailDeliverabilityParams struct {
+	DeliverabilityStatus string             `json:"deliverability_status"`
+	OccurredAt           pgtype.Timestamptz `json:"occurred_at"`
+	BouncedAt            pgtype.Timestamptz `json:"bounced_at"`
+	Username             string             `json:"username"`
+	Recipient            string             `json:"recipient"`
+}
+
+func (q *Queries) UpdateCurrentUserEmailDeliverability(ctx context.Context, arg UpdateCurrentUserEmailDeliverabilityParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateCurrentUserEmailDeliverability,
+		arg.DeliverabilityStatus,
+		arg.OccurredAt,
+		arg.BouncedAt,
+		arg.Username,
+		arg.Recipient,
+	)
+	var i User
+	err := row.Scan(
+		&i.Username,
+		&i.HashedPassword,
+		&i.FullName,
+		&i.Email,
+		&i.PasswordChangedAt,
+		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
 	)
 	return i, err
 }
@@ -74,12 +305,48 @@ SET
   hashed_password = COALESCE($1, hashed_password),
   full_name = COALESCE($2, full_name),
   email = COALESCE($3, email),
+  email_verified_at = CASE
+    WHEN $3 IS NOT NULL
+      AND lower($3::varchar) <> lower(email)
+      THEN NULL
+    ELSE email_verified_at
+  END,
+  email_deliverability_status = CASE
+    WHEN $3 IS NOT NULL
+      AND lower($3::varchar) <> lower(email)
+      THEN 'pending'
+    ELSE email_deliverability_status
+  END,
+  email_deliverability_updated_at = CASE
+    WHEN $3 IS NOT NULL
+      AND lower($3::varchar) <> lower(email)
+      THEN NULL
+    ELSE email_deliverability_updated_at
+  END,
+  email_bounced_at = CASE
+    WHEN $3 IS NOT NULL
+      AND lower($3::varchar) <> lower(email)
+      THEN NULL
+    ELSE email_bounced_at
+  END,
+  account_status = CASE
+    WHEN $3 IS NOT NULL
+      AND lower($3::varchar) <> lower(email)
+      THEN 'pending'
+    ELSE account_status
+  END,
+  registration_expires_at = CASE
+    WHEN $3 IS NOT NULL
+      AND lower($3::varchar) <> lower(email)
+      THEN now() + interval '7 days'
+    ELSE registration_expires_at
+  END,
   password_changed_at = CASE
     WHEN $1 IS NOT NULL THEN now()
     ELSE password_changed_at
   END
 WHERE username = $4
-RETURNING username, hashed_password, full_name, email, password_changed_at, created_at
+RETURNING username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at
 `
 
 type UpdateUserParams struct {
@@ -104,6 +371,12 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Email,
 		&i.PasswordChangedAt,
 		&i.CreatedAt,
+		&i.EmailVerifiedAt,
+		&i.EmailDeliverabilityStatus,
+		&i.EmailDeliverabilityUpdatedAt,
+		&i.EmailBouncedAt,
+		&i.AccountStatus,
+		&i.RegistrationExpiresAt,
 	)
 	return i, err
 }

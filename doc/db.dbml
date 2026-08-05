@@ -1,6 +1,11 @@
 Project Monierave {
-database_type: 'PostgreSQL'
-Note: 'Monierave Database'
+  database_type: 'PostgreSQL'
+  Note: 'Database schema for the Monierave API'
+}
+
+Enum Currency {
+  USD
+  EUR
 }
 
 Table users as U {
@@ -8,12 +13,25 @@ Table users as U {
   hashed_password varchar [not null]
   full_name varchar [not null]
   email varchar [not null]
-  password_changed_at timestamptz [not null, default: '0001-01-01 00:00:00Z']
+  password_changed_at timestamptz [not null, default: `TIMESTAMPTZ '0001-01-01 00:00:00Z'`]
   created_at timestamptz [not null, default: `now()`]
+  email_verified_at timestamptz
+  email_deliverability_status varchar [not null, default: 'unknown']
+  email_deliverability_updated_at timestamptz
+  email_bounced_at timestamptz
+  account_status varchar [not null, default: 'active', note: 'Pending accounts may only manage email verification; active accounts may use financial features; disabled registrations exceeded the verification window.']
+  registration_expires_at timestamptz [note: 'Unverified registrations expire after 24 hours.']
 
   indexes {
-    `lower(email)` [unique]
+    `lower(email)` [unique, name: 'users_email_lower_idx']
   }
+
+  checks {
+    `email_deliverability_status IN ('unknown', 'pending', 'deliverable', 'undeliverable')`
+    `account_status IN ('pending', 'active', 'disabled')`
+  }
+
+  Note: 'Application users and their email verification lifecycle.'
 }
 
 Table accounts as A {
@@ -24,8 +42,8 @@ Table accounts as A {
   created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    owner
-    (owner, currency) [unique]
+    owner [name: 'accounts_owner_idx']
+    (owner, currency) [unique, name: 'accounts_owner_currency_key']
   }
 
   checks {
@@ -36,11 +54,11 @@ Table accounts as A {
 Table entries {
   id bigserial [pk]
   account_id bigint [not null, ref: > A.id]
-  amount bigint [not null, note: 'can be negative or positive']
+  amount bigint [not null, note: 'Can be negative or positive']
   created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    account_id
+    account_id [name: 'entries_account_id_idx']
   }
 }
 
@@ -48,17 +66,18 @@ Table transfers {
   id bigserial [pk]
   from_account_id bigint [not null, ref: > A.id]
   to_account_id bigint [not null, ref: > A.id]
-  amount bigint [not null, note: 'must be positive']
+  amount bigint [not null]
   created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    from_account_id
-    to_account_id
-    (from_account_id, to_account_id)
+    from_account_id [name: 'transfers_from_account_id_idx']
+    to_account_id [name: 'transfers_to_account_id_idx']
+    (from_account_id, to_account_id) [name: 'transfers_from_to_account_id_idx']
   }
 
   checks {
     `amount > 0`
+    `from_account_id <> to_account_id`
   }
 }
 
@@ -73,8 +92,8 @@ Table sessions {
   created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    username
-    refresh_token [unique]
+    username [name: 'sessions_username_idx']
+    refresh_token [unique, name: 'sessions_refresh_token_idx']
   }
 }
 
@@ -85,7 +104,7 @@ Table email_jobs {
   username varchar [not null, ref: > U.username]
   recipient varchar [not null]
   payload jsonb [not null, default: `'{}'::jsonb`]
-  status varchar [not null, default: 'pending']
+  status varchar [not null, default: 'pending', note: 'Worker execution state. Sent means the email provider accepted the API request.']
   attempt_count integer [not null, default: 0]
   max_attempts integer [not null, default: 10]
   provider_message_id varchar
@@ -97,12 +116,30 @@ Table email_jobs {
   last_attempt_at timestamptz
   sent_at timestamptz
   dead_lettered_at timestamptz
+  delivery_status varchar [not null, default: 'pending', note: 'Recipient delivery state reported asynchronously by the email provider.']
+  delivery_event_at timestamptz
+  accepted_at timestamptz
+  delivered_at timestamptz
+  bounced_at timestamptz
+  bounce_type varchar
+  bounce_subtype varchar
+  bounce_message text
 
   indexes {
-    (status, created_at)
-    username
-    parent_job_id
+    (status, created_at) [name: 'email_jobs_status_created_at_idx']
+    username [name: 'email_jobs_username_idx']
+    parent_job_id [name: 'email_jobs_parent_job_id_idx', note: 'Partial index where parent_job_id IS NOT NULL.']
+    provider_message_id [unique, name: 'email_jobs_provider_message_id_idx', note: 'Partial unique index where provider_message_id IS NOT NULL.']
   }
+
+  checks {
+    `status IN ('pending', 'queued', 'processing', 'retrying', 'sent', 'dead_letter')`
+    `attempt_count >= 0`
+    `max_attempts > 0`
+    `delivery_status IN ('pending', 'accepted', 'delivered', 'delayed', 'bounced', 'failed', 'suppressed', 'complained')`
+  }
+
+  Note: 'Durable email work items. Dead-letter jobs remain here with status dead_letter and may be replayed using parent_job_id.'
 }
 
 Table outbox_events {
@@ -120,8 +157,15 @@ Table outbox_events {
   published_at timestamptz
 
   indexes {
-    (available_at, created_at)
+    (available_at, created_at) [name: 'outbox_events_claimable_idx', note: 'Partial index where status is pending or publishing.']
   }
+
+  checks {
+    `status IN ('pending', 'publishing', 'published')`
+    `publish_attempts >= 0`
+  }
+
+  Note: 'Transactional outbox records committed in the same database transaction as application state.'
 }
 
 Table audit_logs {
@@ -137,16 +181,30 @@ Table audit_logs {
   metadata jsonb [not null, default: `'{}'::jsonb`]
   created_at timestamptz [not null, default: `now()`]
 
-  Note: 'Append-only audit history. No foreign keys so records survive operational data cleanup.'
+  indexes {
+    (entity_type, entity_id, created_at, id) [name: 'audit_logs_entity_idx']
+    (correlation_id, created_at, id) [name: 'audit_logs_correlation_idx']
+    (created_at, id) [name: 'audit_logs_created_at_idx', note: 'Both columns are indexed in descending order.']
+  }
+
+  Note: 'Append-only audit history. Intentionally has no foreign keys so records survive entity retention cleanup. Database triggers reject updates, deletes, and truncation.'
+}
+
+Table email_delivery_events {
+  webhook_id varchar [pk]
+  email_job_id uuid
+  provider_message_id varchar [not null]
+  event_type varchar [not null]
+  occurred_at timestamptz [not null]
+  received_at timestamptz [not null, default: `now()`]
+  payload jsonb [not null]
 
   indexes {
-    (entity_type, entity_id, created_at, id)
-    (correlation_id, created_at, id)
-    (created_at, id)
+    (email_job_id, occurred_at) [name: 'email_delivery_events_job_idx', note: 'occurred_at is indexed in descending order.']
+    (provider_message_id, occurred_at) [name: 'email_delivery_events_provider_message_idx', note: 'occurred_at is indexed in descending order.']
   }
+
+  Note: 'Idempotent append-only record of verified email provider webhook events.'
 }
 
-Enum Currency {
-  USD
-  EUR
-}
+Ref: email_delivery_events.email_job_id > email_jobs.id [delete: set null]

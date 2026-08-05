@@ -1,4 +1,5 @@
 DB_URL=postgresql://favour:faelicdika@localhost:5432/simple_bank?sslmode=disable
+DB_TEST_URL=postgresql://favour:faelicdika@localhost:5432/monierave_test?sslmode=disable
 postgres:
 	docker run --name monierave-postgres --network bank-network -p 5432:5432 -e POSTGRES_USER=favour -e POSTGRES_PASSWORD=faelicdika -d postgres:18-bookworm
 createdb:
@@ -6,6 +7,15 @@ createdb:
 
 dropdb:
 	docker exec -it monierave-postgres dropdb --username=favour --if-exists simple_bank
+
+createtestdb:
+	docker exec -it monierave-postgres createdb --username=favour --owner=favour monierave_test
+
+droptestdb:
+	docker exec -it monierave-postgres dropdb --username=favour --if-exists monierave_test
+
+testmigrateup:
+	migrate -path db/migration -database "$(DB_TEST_URL)" -verbose up
 
 migrateup:
 	migrate -path db/migration -database "$(DB_URL)" -verbose up
@@ -29,7 +39,7 @@ sqlc:
 	sqlc generate
 
 test:
-	go test -v -cover ./...
+	DB_SOURCE="$(DB_TEST_URL)" MAILER_PROVIDER=log go test -v -cover ./...
 
 server:
 	go run main.go api
@@ -51,4 +61,4 @@ db_schema:
 
 redis:
 	docker run --name redis -p 6379:6379 -d redis:7.4-alpine
-.PHONY: postgres createdb dropdb migrateup migrateup1 migratedown migratedown1 db_schema db_docs sqlc server relay worker mock redis
+.PHONY: postgres createdb dropdb createtestdb droptestdb testmigrateup migrateup migrateup1 migratedown migratedown1 db_schema db_docs sqlc server relay worker mock redis

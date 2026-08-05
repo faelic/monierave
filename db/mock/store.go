@@ -102,6 +102,21 @@ func (mr *MockStoreMockRecorder) CreateAuditLog(ctx, arg any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAuditLog", reflect.TypeOf((*MockStore)(nil).CreateAuditLog), ctx, arg)
 }
 
+// CreateEmailDeliveryEvent mocks base method.
+func (m *MockStore) CreateEmailDeliveryEvent(ctx context.Context, arg db.CreateEmailDeliveryEventParams) (db.EmailDeliveryEvent, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateEmailDeliveryEvent", ctx, arg)
+	ret0, _ := ret[0].(db.EmailDeliveryEvent)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateEmailDeliveryEvent indicates an expected call of CreateEmailDeliveryEvent.
+func (mr *MockStoreMockRecorder) CreateEmailDeliveryEvent(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEmailDeliveryEvent", reflect.TypeOf((*MockStore)(nil).CreateEmailDeliveryEvent), ctx, arg)
+}
+
 // CreateEmailJob mocks base method.
 func (m *MockStore) CreateEmailJob(ctx context.Context, arg db.CreateEmailJobParams) (db.EmailJob, error) {
 	m.ctrl.T.Helper()
@@ -293,6 +308,36 @@ func (mr *MockStoreMockRecorder) DeleteTransfer(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteTransfer", reflect.TypeOf((*MockStore)(nil).DeleteTransfer), ctx, id)
 }
 
+// DisableExpiredPendingUser mocks base method.
+func (m *MockStore) DisableExpiredPendingUser(ctx context.Context, username string) (db.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DisableExpiredPendingUser", ctx, username)
+	ret0, _ := ret[0].(db.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DisableExpiredPendingUser indicates an expected call of DisableExpiredPendingUser.
+func (mr *MockStoreMockRecorder) DisableExpiredPendingUser(ctx, username any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableExpiredPendingUser", reflect.TypeOf((*MockStore)(nil).DisableExpiredPendingUser), ctx, username)
+}
+
+// DisableExpiredPendingUsers mocks base method.
+func (m *MockStore) DisableExpiredPendingUsers(ctx context.Context) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DisableExpiredPendingUsers", ctx)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DisableExpiredPendingUsers indicates an expected call of DisableExpiredPendingUsers.
+func (mr *MockStoreMockRecorder) DisableExpiredPendingUsers(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableExpiredPendingUsers", reflect.TypeOf((*MockStore)(nil).DisableExpiredPendingUsers), ctx)
+}
+
 // GetAccount mocks base method.
 func (m *MockStore) GetAccount(ctx context.Context, id int64) (db.Account, error) {
 	m.ctrl.T.Helper()
@@ -323,6 +368,21 @@ func (mr *MockStoreMockRecorder) GetAccountForUpdate(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountForUpdate", reflect.TypeOf((*MockStore)(nil).GetAccountForUpdate), ctx, id)
 }
 
+// GetEmailDeliveryEvent mocks base method.
+func (m *MockStore) GetEmailDeliveryEvent(ctx context.Context, webhookID string) (db.EmailDeliveryEvent, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEmailDeliveryEvent", ctx, webhookID)
+	ret0, _ := ret[0].(db.EmailDeliveryEvent)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEmailDeliveryEvent indicates an expected call of GetEmailDeliveryEvent.
+func (mr *MockStoreMockRecorder) GetEmailDeliveryEvent(ctx, webhookID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailDeliveryEvent", reflect.TypeOf((*MockStore)(nil).GetEmailDeliveryEvent), ctx, webhookID)
+}
+
 // GetEmailJob mocks base method.
 func (m *MockStore) GetEmailJob(ctx context.Context, id pgtype.UUID) (db.EmailJob, error) {
 	m.ctrl.T.Helper()
@@ -338,6 +398,21 @@ func (mr *MockStoreMockRecorder) GetEmailJob(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailJob", reflect.TypeOf((*MockStore)(nil).GetEmailJob), ctx, id)
 }
 
+// GetEmailJobByProviderMessageID mocks base method.
+func (m *MockStore) GetEmailJobByProviderMessageID(ctx context.Context, providerMessageID pgtype.Text) (db.EmailJob, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEmailJobByProviderMessageID", ctx, providerMessageID)
+	ret0, _ := ret[0].(db.EmailJob)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetEmailJobByProviderMessageID indicates an expected call of GetEmailJobByProviderMessageID.
+func (mr *MockStoreMockRecorder) GetEmailJobByProviderMessageID(ctx, providerMessageID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailJobByProviderMessageID", reflect.TypeOf((*MockStore)(nil).GetEmailJobByProviderMessageID), ctx, providerMessageID)
+}
+
 // GetEntry mocks base method.
 func (m *MockStore) GetEntry(ctx context.Context, id int64) (db.Entry, error) {
 	m.ctrl.T.Helper()
@@ -351,6 +426,21 @@ func (m *MockStore) GetEntry(ctx context.Context, id int64) (db.Entry, error) {
 func (mr *MockStoreMockRecorder) GetEntry(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEntry", reflect.TypeOf((*MockStore)(nil).GetEntry), ctx, id)
+}
+
+// GetLatestEmailJobForCurrentAddress mocks base method.
+func (m *MockStore) GetLatestEmailJobForCurrentAddress(ctx context.Context, username string) (db.EmailJob, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLatestEmailJobForCurrentAddress", ctx, username)
+	ret0, _ := ret[0].(db.EmailJob)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLatestEmailJobForCurrentAddress indicates an expected call of GetLatestEmailJobForCurrentAddress.
+func (mr *MockStoreMockRecorder) GetLatestEmailJobForCurrentAddress(ctx, username any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestEmailJobForCurrentAddress", reflect.TypeOf((*MockStore)(nil).GetLatestEmailJobForCurrentAddress), ctx, username)
 }
 
 // GetOutboxEvent mocks base method.
@@ -413,6 +503,21 @@ func (mr *MockStoreMockRecorder) GetUser(ctx, username any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUser", reflect.TypeOf((*MockStore)(nil).GetUser), ctx, username)
 }
 
+// GetUserForUpdate mocks base method.
+func (m *MockStore) GetUserForUpdate(ctx context.Context, username string) (db.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUserForUpdate", ctx, username)
+	ret0, _ := ret[0].(db.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUserForUpdate indicates an expected call of GetUserForUpdate.
+func (mr *MockStoreMockRecorder) GetUserForUpdate(ctx, username any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserForUpdate", reflect.TypeOf((*MockStore)(nil).GetUserForUpdate), ctx, username)
+}
+
 // ListAccount mocks base method.
 func (m *MockStore) ListAccount(ctx context.Context, arg db.ListAccountParams) ([]db.Account, error) {
 	m.ctrl.T.Helper()
@@ -456,6 +561,21 @@ func (m *MockStore) ListDeadLetterEmailJobs(ctx context.Context, limit int32) ([
 func (mr *MockStoreMockRecorder) ListDeadLetterEmailJobs(ctx, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDeadLetterEmailJobs", reflect.TypeOf((*MockStore)(nil).ListDeadLetterEmailJobs), ctx, limit)
+}
+
+// ListEmailDeliveryEventsByJob mocks base method.
+func (m *MockStore) ListEmailDeliveryEventsByJob(ctx context.Context, arg db.ListEmailDeliveryEventsByJobParams) ([]db.EmailDeliveryEvent, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEmailDeliveryEventsByJob", ctx, arg)
+	ret0, _ := ret[0].([]db.EmailDeliveryEvent)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEmailDeliveryEventsByJob indicates an expected call of ListEmailDeliveryEventsByJob.
+func (mr *MockStoreMockRecorder) ListEmailDeliveryEventsByJob(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEmailDeliveryEventsByJob", reflect.TypeOf((*MockStore)(nil).ListEmailDeliveryEventsByJob), ctx, arg)
 }
 
 // ListEntry mocks base method.
@@ -593,6 +713,36 @@ func (mr *MockStoreMockRecorder) MarkOutboxEventPublished(ctx, id any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkOutboxEventPublished", reflect.TypeOf((*MockStore)(nil).MarkOutboxEventPublished), ctx, id)
 }
 
+// MarkUserEmailVerified mocks base method.
+func (m *MockStore) MarkUserEmailVerified(ctx context.Context, arg db.MarkUserEmailVerifiedParams) (db.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkUserEmailVerified", ctx, arg)
+	ret0, _ := ret[0].(db.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MarkUserEmailVerified indicates an expected call of MarkUserEmailVerified.
+func (mr *MockStoreMockRecorder) MarkUserEmailVerified(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkUserEmailVerified", reflect.TypeOf((*MockStore)(nil).MarkUserEmailVerified), ctx, arg)
+}
+
+// ProcessEmailDeliveryEventTx mocks base method.
+func (m *MockStore) ProcessEmailDeliveryEventTx(ctx context.Context, arg db.ProcessEmailDeliveryEventParams) (db.ProcessEmailDeliveryEventResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ProcessEmailDeliveryEventTx", ctx, arg)
+	ret0, _ := ret[0].(db.ProcessEmailDeliveryEventResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ProcessEmailDeliveryEventTx indicates an expected call of ProcessEmailDeliveryEventTx.
+func (mr *MockStoreMockRecorder) ProcessEmailDeliveryEventTx(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessEmailDeliveryEventTx", reflect.TypeOf((*MockStore)(nil).ProcessEmailDeliveryEventTx), ctx, arg)
+}
+
 // ReleaseOutboxEvent mocks base method.
 func (m *MockStore) ReleaseOutboxEvent(ctx context.Context, arg db.ReleaseOutboxEventParams) (db.OutboxEvent, error) {
 	m.ctrl.T.Helper()
@@ -621,6 +771,36 @@ func (m *MockStore) ReplayEmailJobTx(ctx context.Context, jobID pgtype.UUID) (db
 func (mr *MockStoreMockRecorder) ReplayEmailJobTx(ctx, jobID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReplayEmailJobTx", reflect.TypeOf((*MockStore)(nil).ReplayEmailJobTx), ctx, jobID)
+}
+
+// RequestEmailVerificationTx mocks base method.
+func (m *MockStore) RequestEmailVerificationTx(ctx context.Context, username string) (db.RequestEmailVerificationTxResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RequestEmailVerificationTx", ctx, username)
+	ret0, _ := ret[0].(db.RequestEmailVerificationTxResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RequestEmailVerificationTx indicates an expected call of RequestEmailVerificationTx.
+func (mr *MockStoreMockRecorder) RequestEmailVerificationTx(ctx, username any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestEmailVerificationTx", reflect.TypeOf((*MockStore)(nil).RequestEmailVerificationTx), ctx, username)
+}
+
+// RestartUserEmailVerification mocks base method.
+func (m *MockStore) RestartUserEmailVerification(ctx context.Context, username string) (db.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RestartUserEmailVerification", ctx, username)
+	ret0, _ := ret[0].(db.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RestartUserEmailVerification indicates an expected call of RestartUserEmailVerification.
+func (mr *MockStoreMockRecorder) RestartUserEmailVerification(ctx, username any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestartUserEmailVerification", reflect.TypeOf((*MockStore)(nil).RestartUserEmailVerification), ctx, username)
 }
 
 // StartEmailJobAttempt mocks base method.
@@ -666,6 +846,36 @@ func (m *MockStore) UpdateAccount(ctx context.Context, arg db.UpdateAccountParam
 func (mr *MockStoreMockRecorder) UpdateAccount(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAccount", reflect.TypeOf((*MockStore)(nil).UpdateAccount), ctx, arg)
+}
+
+// UpdateCurrentUserEmailDeliverability mocks base method.
+func (m *MockStore) UpdateCurrentUserEmailDeliverability(ctx context.Context, arg db.UpdateCurrentUserEmailDeliverabilityParams) (db.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateCurrentUserEmailDeliverability", ctx, arg)
+	ret0, _ := ret[0].(db.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateCurrentUserEmailDeliverability indicates an expected call of UpdateCurrentUserEmailDeliverability.
+func (mr *MockStoreMockRecorder) UpdateCurrentUserEmailDeliverability(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateCurrentUserEmailDeliverability", reflect.TypeOf((*MockStore)(nil).UpdateCurrentUserEmailDeliverability), ctx, arg)
+}
+
+// UpdateEmailJobDelivery mocks base method.
+func (m *MockStore) UpdateEmailJobDelivery(ctx context.Context, arg db.UpdateEmailJobDeliveryParams) (db.EmailJob, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateEmailJobDelivery", ctx, arg)
+	ret0, _ := ret[0].(db.EmailJob)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateEmailJobDelivery indicates an expected call of UpdateEmailJobDelivery.
+func (mr *MockStoreMockRecorder) UpdateEmailJobDelivery(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateEmailJobDelivery", reflect.TypeOf((*MockStore)(nil).UpdateEmailJobDelivery), ctx, arg)
 }
 
 // UpdateEntry mocks base method.
@@ -726,4 +936,34 @@ func (m *MockStore) UpdateUser(ctx context.Context, arg db.UpdateUserParams) (db
 func (mr *MockStoreMockRecorder) UpdateUser(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUser", reflect.TypeOf((*MockStore)(nil).UpdateUser), ctx, arg)
+}
+
+// UpdateUserTx mocks base method.
+func (m *MockStore) UpdateUserTx(ctx context.Context, arg db.UpdateUserParams) (db.UpdateUserTxResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateUserTx", ctx, arg)
+	ret0, _ := ret[0].(db.UpdateUserTxResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateUserTx indicates an expected call of UpdateUserTx.
+func (mr *MockStoreMockRecorder) UpdateUserTx(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUserTx", reflect.TypeOf((*MockStore)(nil).UpdateUserTx), ctx, arg)
+}
+
+// VerifyUserEmailTx mocks base method.
+func (m *MockStore) VerifyUserEmailTx(ctx context.Context, arg db.VerifyUserEmailTxParams) (db.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VerifyUserEmailTx", ctx, arg)
+	ret0, _ := ret[0].(db.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// VerifyUserEmailTx indicates an expected call of VerifyUserEmailTx.
+func (mr *MockStoreMockRecorder) VerifyUserEmailTx(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VerifyUserEmailTx", reflect.TypeOf((*MockStore)(nil).VerifyUserEmailTx), ctx, arg)
 }

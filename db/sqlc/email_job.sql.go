@@ -23,7 +23,7 @@ INSERT INTO email_jobs (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at
+RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message
 `
 
 type CreateEmailJobParams struct {
@@ -66,6 +66,14 @@ func (q *Queries) CreateEmailJob(ctx context.Context, arg CreateEmailJobParams) 
 		&i.LastAttemptAt,
 		&i.SentAt,
 		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
 	)
 	return i, err
 }
@@ -85,7 +93,7 @@ func (q *Queries) DeleteExpiredSentEmailJobs(ctx context.Context, sentAt pgtype.
 }
 
 const getEmailJob = `-- name: GetEmailJob :one
-SELECT id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at FROM email_jobs
+SELECT id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message FROM email_jobs
 WHERE id = $1
 LIMIT 1
 `
@@ -112,12 +120,104 @@ func (q *Queries) GetEmailJob(ctx context.Context, id pgtype.UUID) (EmailJob, er
 		&i.LastAttemptAt,
 		&i.SentAt,
 		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
+	)
+	return i, err
+}
+
+const getEmailJobByProviderMessageID = `-- name: GetEmailJobByProviderMessageID :one
+SELECT id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message FROM email_jobs
+WHERE provider_message_id = $1
+LIMIT 1
+`
+
+func (q *Queries) GetEmailJobByProviderMessageID(ctx context.Context, providerMessageID pgtype.Text) (EmailJob, error) {
+	row := q.db.QueryRow(ctx, getEmailJobByProviderMessageID, providerMessageID)
+	var i EmailJob
+	err := row.Scan(
+		&i.ID,
+		&i.ParentJobID,
+		&i.JobType,
+		&i.Username,
+		&i.Recipient,
+		&i.Payload,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.ProviderMessageID,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.QueuedAt,
+		&i.ProcessingAt,
+		&i.LastAttemptAt,
+		&i.SentAt,
+		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
+	)
+	return i, err
+}
+
+const getLatestEmailJobForCurrentAddress = `-- name: GetLatestEmailJobForCurrentAddress :one
+SELECT email_jobs.id, email_jobs.parent_job_id, email_jobs.job_type, email_jobs.username, email_jobs.recipient, email_jobs.payload, email_jobs.status, email_jobs.attempt_count, email_jobs.max_attempts, email_jobs.provider_message_id, email_jobs.last_error, email_jobs.created_at, email_jobs.updated_at, email_jobs.queued_at, email_jobs.processing_at, email_jobs.last_attempt_at, email_jobs.sent_at, email_jobs.dead_lettered_at, email_jobs.delivery_status, email_jobs.delivery_event_at, email_jobs.accepted_at, email_jobs.delivered_at, email_jobs.bounced_at, email_jobs.bounce_type, email_jobs.bounce_subtype, email_jobs.bounce_message
+FROM email_jobs
+JOIN users ON users.username = email_jobs.username
+WHERE email_jobs.username = $1
+  AND lower(email_jobs.recipient) = lower(users.email)
+ORDER BY email_jobs.created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestEmailJobForCurrentAddress(ctx context.Context, username string) (EmailJob, error) {
+	row := q.db.QueryRow(ctx, getLatestEmailJobForCurrentAddress, username)
+	var i EmailJob
+	err := row.Scan(
+		&i.ID,
+		&i.ParentJobID,
+		&i.JobType,
+		&i.Username,
+		&i.Recipient,
+		&i.Payload,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.ProviderMessageID,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.QueuedAt,
+		&i.ProcessingAt,
+		&i.LastAttemptAt,
+		&i.SentAt,
+		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
 	)
 	return i, err
 }
 
 const listDeadLetterEmailJobs = `-- name: ListDeadLetterEmailJobs :many
-SELECT id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at FROM email_jobs
+SELECT id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message FROM email_jobs
 WHERE status = 'dead_letter'
 ORDER BY dead_lettered_at DESC
 LIMIT $1
@@ -151,6 +251,14 @@ func (q *Queries) ListDeadLetterEmailJobs(ctx context.Context, limit int32) ([]E
 			&i.LastAttemptAt,
 			&i.SentAt,
 			&i.DeadLetteredAt,
+			&i.DeliveryStatus,
+			&i.DeliveryEventAt,
+			&i.AcceptedAt,
+			&i.DeliveredAt,
+			&i.BouncedAt,
+			&i.BounceType,
+			&i.BounceSubtype,
+			&i.BounceMessage,
 		); err != nil {
 			return nil, err
 		}
@@ -171,7 +279,7 @@ SET
   updated_at = now()
 WHERE id = $1
   AND status <> 'sent'
-RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at
+RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message
 `
 
 type MarkEmailJobDeadLetterParams struct {
@@ -201,6 +309,14 @@ func (q *Queries) MarkEmailJobDeadLetter(ctx context.Context, arg MarkEmailJobDe
 		&i.LastAttemptAt,
 		&i.SentAt,
 		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
 	)
 	return i, err
 }
@@ -212,7 +328,7 @@ SET
   queued_at = CASE WHEN status = 'pending' THEN now() ELSE queued_at END,
   updated_at = now()
 WHERE id = $1
-RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at
+RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message
 `
 
 func (q *Queries) MarkEmailJobQueued(ctx context.Context, id pgtype.UUID) (EmailJob, error) {
@@ -237,6 +353,14 @@ func (q *Queries) MarkEmailJobQueued(ctx context.Context, id pgtype.UUID) (Email
 		&i.LastAttemptAt,
 		&i.SentAt,
 		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
 	)
 	return i, err
 }
@@ -249,7 +373,7 @@ SET
   updated_at = now()
 WHERE id = $1
   AND status <> 'sent'
-RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at
+RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message
 `
 
 type MarkEmailJobRetryingParams struct {
@@ -279,6 +403,14 @@ func (q *Queries) MarkEmailJobRetrying(ctx context.Context, arg MarkEmailJobRetr
 		&i.LastAttemptAt,
 		&i.SentAt,
 		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
 	)
 	return i, err
 }
@@ -288,11 +420,16 @@ UPDATE email_jobs
 SET
   status = 'sent',
   provider_message_id = $2,
+  delivery_status = CASE
+    WHEN delivery_event_at IS NULL THEN 'accepted'
+    ELSE delivery_status
+  END,
+  accepted_at = COALESCE(accepted_at, now()),
   last_error = NULL,
   sent_at = now(),
   updated_at = now()
 WHERE id = $1
-RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at
+RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message
 `
 
 type MarkEmailJobSentParams struct {
@@ -322,6 +459,14 @@ func (q *Queries) MarkEmailJobSent(ctx context.Context, arg MarkEmailJobSentPara
 		&i.LastAttemptAt,
 		&i.SentAt,
 		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
 	)
 	return i, err
 }
@@ -336,7 +481,7 @@ SET
   updated_at = now()
 WHERE id = $1
   AND status IN ('pending', 'queued', 'processing', 'retrying')
-RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at
+RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message
 `
 
 func (q *Queries) StartEmailJobAttempt(ctx context.Context, id pgtype.UUID) (EmailJob, error) {
@@ -361,6 +506,111 @@ func (q *Queries) StartEmailJobAttempt(ctx context.Context, id pgtype.UUID) (Ema
 		&i.LastAttemptAt,
 		&i.SentAt,
 		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
+	)
+	return i, err
+}
+
+const updateEmailJobDelivery = `-- name: UpdateEmailJobDelivery :one
+UPDATE email_jobs
+SET
+  provider_message_id = COALESCE(provider_message_id, $1),
+  delivery_status = $2,
+  delivery_event_at = $3,
+  accepted_at = CASE
+    WHEN $2::varchar = 'accepted'
+      THEN COALESCE(accepted_at, $3)
+    ELSE accepted_at
+  END,
+  delivered_at = CASE
+    WHEN $2::varchar = 'delivered'
+      THEN $3
+    ELSE delivered_at
+  END,
+  bounced_at = CASE
+    WHEN $2::varchar IN ('bounced', 'suppressed')
+      THEN $3
+    ELSE bounced_at
+  END,
+  bounce_type = CASE
+    WHEN $2::varchar = 'bounced'
+      THEN $4
+    ELSE bounce_type
+  END,
+  bounce_subtype = CASE
+    WHEN $2::varchar = 'bounced'
+      THEN $5
+    ELSE bounce_subtype
+  END,
+  bounce_message = CASE
+    WHEN $2::varchar = 'bounced'
+      THEN $6
+    ELSE bounce_message
+  END,
+  updated_at = now()
+WHERE id = $7
+  AND (
+    delivery_event_at IS NULL
+    OR delivery_event_at <= $3
+  )
+RETURNING id, parent_job_id, job_type, username, recipient, payload, status, attempt_count, max_attempts, provider_message_id, last_error, created_at, updated_at, queued_at, processing_at, last_attempt_at, sent_at, dead_lettered_at, delivery_status, delivery_event_at, accepted_at, delivered_at, bounced_at, bounce_type, bounce_subtype, bounce_message
+`
+
+type UpdateEmailJobDeliveryParams struct {
+	ProviderMessageID pgtype.Text        `json:"provider_message_id"`
+	DeliveryStatus    string             `json:"delivery_status"`
+	OccurredAt        pgtype.Timestamptz `json:"occurred_at"`
+	BounceType        pgtype.Text        `json:"bounce_type"`
+	BounceSubtype     pgtype.Text        `json:"bounce_subtype"`
+	BounceMessage     pgtype.Text        `json:"bounce_message"`
+	ID                pgtype.UUID        `json:"id"`
+}
+
+func (q *Queries) UpdateEmailJobDelivery(ctx context.Context, arg UpdateEmailJobDeliveryParams) (EmailJob, error) {
+	row := q.db.QueryRow(ctx, updateEmailJobDelivery,
+		arg.ProviderMessageID,
+		arg.DeliveryStatus,
+		arg.OccurredAt,
+		arg.BounceType,
+		arg.BounceSubtype,
+		arg.BounceMessage,
+		arg.ID,
+	)
+	var i EmailJob
+	err := row.Scan(
+		&i.ID,
+		&i.ParentJobID,
+		&i.JobType,
+		&i.Username,
+		&i.Recipient,
+		&i.Payload,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.ProviderMessageID,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.QueuedAt,
+		&i.ProcessingAt,
+		&i.LastAttemptAt,
+		&i.SentAt,
+		&i.DeadLetteredAt,
+		&i.DeliveryStatus,
+		&i.DeliveryEventAt,
+		&i.AcceptedAt,
+		&i.DeliveredAt,
+		&i.BouncedAt,
+		&i.BounceType,
+		&i.BounceSubtype,
+		&i.BounceMessage,
 	)
 	return i, err
 }

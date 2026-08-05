@@ -198,11 +198,14 @@ func (relay *OutboxRelay) cleanup(ctx context.Context) {
 		ctx,
 		pgtype.Timestamptz{Time: now.Add(-relay.config.EmailRetention), Valid: true},
 	)
+	usersDisabled, usersErr := relay.store.DisableExpiredPendingUsers(ctx)
 
 	log.Info().
 		Err(outboxErr).
 		Err(jobsErr).
+		Err(usersErr).
 		Int64("outbox_events_deleted", outboxDeleted).
 		Int64("email_jobs_deleted", jobsDeleted).
+		Int64("pending_registrations_disabled", usersDisabled).
 		Msg("outbox retention cleanup completed")
 }

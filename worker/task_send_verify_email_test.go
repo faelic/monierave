@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"testing"
+	"time"
 
 	mockdb "github.com/faelic/monierave/db/mock"
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/mailer"
+	"github.com/faelic/monierave/token"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -80,6 +83,58 @@ func TestProcessTaskSendVerifyEmailSuccess(t *testing.T) {
 	require.Equal(t, job.Recipient, emailMailer.message.Recipient)
 }
 
+func TestProcessTaskSendVerifyEmailAddsSignedVerificationURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	emailMailer := &stubMailer{messageID: "provider-123"}
+	verificationMaker, err := token.NewEmailVerificationMaker(
+		"12345678901234567890123456789012",
+	)
+	require.NoError(t, err)
+	processor := &RedisTaskProcessor{
+		store:                     store,
+		mailer:                    emailMailer,
+		emailVerificationMaker:    verificationMaker,
+		publicAPIURL:              "https://api.example.com/",
+		emailVerificationDuration: 24 * time.Hour,
+	}
+
+	id := uuid.New()
+	job := db.EmailJob{
+		ID:           pgUUID(id),
+		Username:     "favour",
+		Recipient:    "favour@example.com",
+		Payload:      []byte(`{"username":"favour"}`),
+		Status:       db.EmailJobStatusQueued,
+		AttemptCount: 0,
+		MaxAttempts:  10,
+	}
+	started := job
+	started.Status = db.EmailJobStatusProcessing
+	started.AttemptCount = 1
+
+	store.EXPECT().GetEmailJob(gomock.Any(), pgUUID(id)).Return(job, nil)
+	store.EXPECT().StartEmailJobAttempt(gomock.Any(), pgUUID(id)).Return(started, nil)
+	store.EXPECT().MarkEmailJobSent(gomock.Any(), gomock.Any()).Return(started, nil)
+
+	err = processor.ProcessTaskSendVerifyEmail(context.Background(), newEmailTask(t, id))
+	require.NoError(t, err)
+
+	var payload struct {
+		VerificationURL string `json:"verification_url"`
+	}
+	require.NoError(t, json.Unmarshal(emailMailer.message.Payload, &payload))
+	parsedURL, err := url.Parse(payload.VerificationURL)
+	require.NoError(t, err)
+	require.Equal(t, "https://api.example.com/users/verify-email", parsedURL.Scheme+"://"+parsedURL.Host+parsedURL.Path)
+
+	verificationPayload, err := verificationMaker.Verify(parsedURL.Query().Get("token"))
+	require.NoError(t, err)
+	require.Equal(t, job.Username, verificationPayload.Username)
+	require.Equal(t, job.Recipient, verificationPayload.Email)
+	require.Equal(t, id.String(), verificationPayload.JobID)
+}
+
 func TestProcessTaskSendVerifyEmailAlreadySent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := mockdb.NewMockStore(ctrl)
@@ -95,6 +150,15 @@ func TestProcessTaskSendVerifyEmailAlreadySent(t *testing.T) {
 	err := processor.ProcessTaskSendVerifyEmail(context.Background(), newEmailTask(t, id))
 	require.NoError(t, err)
 	require.Zero(t, emailMailer.calls)
+}
+
+func TestRetryScheduleStaysWithinResendIdempotencyWindow(t *testing.T) {
+	var maximumElapsed time.Duration
+	for _, delay := range retrySchedule {
+		maximumElapsed += delay + delay/5
+	}
+
+	require.LessOrEqual(t, maximumElapsed, 20*time.Hour)
 }
 
 func TestProcessTaskSendVerifyEmailTransientFailure(t *testing.T) {
