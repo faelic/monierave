@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/faelic/monierave/db/util"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 

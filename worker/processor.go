@@ -8,6 +8,7 @@ import (
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/mailer"
+	"github.com/faelic/monierave/token"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog/log"
@@ -25,9 +26,12 @@ type TaskProcessor interface {
 }
 
 type RedisTaskProcessor struct {
-	server *asynq.Server
-	store  db.Store
-	mailer mailer.Mailer
+	server                    *asynq.Server
+	store                     db.Store
+	mailer                    mailer.Mailer
+	emailVerificationMaker    token.EmailVerificationMaker
+	publicAPIURL              string
+	emailVerificationDuration time.Duration
 }
 
 func NewRedisTaskProcessor(
@@ -35,6 +39,9 @@ func NewRedisTaskProcessor(
 	store db.Store,
 	emailMailer mailer.Mailer,
 	concurrency int,
+	emailVerificationMaker token.EmailVerificationMaker,
+	publicAPIURL string,
+	emailVerificationDuration time.Duration,
 ) TaskProcessor {
 	if concurrency <= 0 {
 		concurrency = 10
@@ -43,8 +50,11 @@ func NewRedisTaskProcessor(
 	configureRedisLogging()
 
 	processor := &RedisTaskProcessor{
-		store:  store,
-		mailer: emailMailer,
+		store:                     store,
+		mailer:                    emailMailer,
+		emailVerificationMaker:    emailVerificationMaker,
+		publicAPIURL:              publicAPIURL,
+		emailVerificationDuration: emailVerificationDuration,
 	}
 
 	server := asynq.NewServer(
@@ -85,9 +95,9 @@ var retrySchedule = []time.Duration{
 	30 * time.Minute,
 	time.Hour,
 	2 * time.Hour,
+	3 * time.Hour,
 	4 * time.Hour,
-	6 * time.Hour,
-	10 * time.Hour,
+	5 * time.Hour,
 }
 
 func retryDelay(retryCount int, _ error, _ *asynq.Task) time.Duration {

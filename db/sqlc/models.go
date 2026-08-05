@@ -76,13 +76,25 @@ type AuditLog struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
-type EmailJob struct {
-	ID                pgtype.UUID        `json:"id"`
-	ParentJobID       pgtype.UUID        `json:"parent_job_id"`
-	JobType           string             `json:"job_type"`
-	Username          string             `json:"username"`
-	Recipient         string             `json:"recipient"`
+// Idempotent append-only record of verified email provider webhook events.
+type EmailDeliveryEvent struct {
+	WebhookID         string             `json:"webhook_id"`
+	EmailJobID        pgtype.UUID        `json:"email_job_id"`
+	ProviderMessageID string             `json:"provider_message_id"`
+	EventType         string             `json:"event_type"`
+	OccurredAt        pgtype.Timestamptz `json:"occurred_at"`
+	ReceivedAt        pgtype.Timestamptz `json:"received_at"`
 	Payload           []byte             `json:"payload"`
+}
+
+type EmailJob struct {
+	ID          pgtype.UUID `json:"id"`
+	ParentJobID pgtype.UUID `json:"parent_job_id"`
+	JobType     string      `json:"job_type"`
+	Username    string      `json:"username"`
+	Recipient   string      `json:"recipient"`
+	Payload     []byte      `json:"payload"`
+	// Worker execution state. sent means the email provider accepted the API request.
 	Status            string             `json:"status"`
 	AttemptCount      int32              `json:"attempt_count"`
 	MaxAttempts       int32              `json:"max_attempts"`
@@ -95,6 +107,15 @@ type EmailJob struct {
 	LastAttemptAt     pgtype.Timestamptz `json:"last_attempt_at"`
 	SentAt            pgtype.Timestamptz `json:"sent_at"`
 	DeadLetteredAt    pgtype.Timestamptz `json:"dead_lettered_at"`
+	// Recipient delivery state reported asynchronously by the email provider.
+	DeliveryStatus  string             `json:"delivery_status"`
+	DeliveryEventAt pgtype.Timestamptz `json:"delivery_event_at"`
+	AcceptedAt      pgtype.Timestamptz `json:"accepted_at"`
+	DeliveredAt     pgtype.Timestamptz `json:"delivered_at"`
+	BouncedAt       pgtype.Timestamptz `json:"bounced_at"`
+	BounceType      pgtype.Text        `json:"bounce_type"`
+	BounceSubtype   pgtype.Text        `json:"bounce_subtype"`
+	BounceMessage   pgtype.Text        `json:"bounce_message"`
 }
 
 type Entry struct {
@@ -141,10 +162,17 @@ type Transfer struct {
 }
 
 type User struct {
-	Username          string             `json:"username"`
-	HashedPassword    string             `json:"hashed_password"`
-	FullName          string             `json:"full_name"`
-	Email             string             `json:"email"`
-	PasswordChangedAt pgtype.Timestamptz `json:"password_changed_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Username                     string             `json:"username"`
+	HashedPassword               string             `json:"hashed_password"`
+	FullName                     string             `json:"full_name"`
+	Email                        string             `json:"email"`
+	PasswordChangedAt            pgtype.Timestamptz `json:"password_changed_at"`
+	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
+	EmailVerifiedAt              pgtype.Timestamptz `json:"email_verified_at"`
+	EmailDeliverabilityStatus    string             `json:"email_deliverability_status"`
+	EmailDeliverabilityUpdatedAt pgtype.Timestamptz `json:"email_deliverability_updated_at"`
+	EmailBouncedAt               pgtype.Timestamptz `json:"email_bounced_at"`
+	// pending accounts may only manage email verification; active accounts may use financial features; disabled registrations exceeded the verification window.
+	AccountStatus         string             `json:"account_status"`
+	RegistrationExpiresAt pgtype.Timestamptz `json:"registration_expires_at"`
 }

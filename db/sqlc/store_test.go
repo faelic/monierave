@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/faelic/monierave/db/util"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -38,10 +39,20 @@ func TestCreateUserTxCreatesEmailJobAndOutboxEvent(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, arg.Username, result.User.Username)
+	require.Equal(t, EmailDeliverabilityPending, result.User.EmailDeliverabilityStatus)
+	require.Equal(t, AccountStatusPending, result.User.AccountStatus)
+	require.True(t, result.User.RegistrationExpiresAt.Valid)
+	require.WithinDuration(
+		t,
+		time.Now().Add(7*24*time.Hour),
+		result.User.RegistrationExpiresAt.Time,
+		time.Minute,
+	)
 	require.Equal(t, EmailJobTypeVerifyEmail, result.EmailJob.JobType)
 	require.Equal(t, arg.Username, result.EmailJob.Username)
 	require.Equal(t, arg.Email, result.EmailJob.Recipient)
 	require.Equal(t, "pending", result.EmailJob.Status)
+	require.Equal(t, EmailDeliveryStatusPending, result.EmailJob.DeliveryStatus)
 	require.Equal(t, DefaultEmailMaxAttempts, result.EmailJob.MaxAttempts)
 	require.Equal(t, result.EmailJob.ID, result.OutboxEvent.EmailJobID)
 	require.Equal(t, OutboxEventTypeEmailReady, result.OutboxEvent.EventType)
@@ -62,6 +73,277 @@ func TestCreateUserTxCreatesEmailJobAndOutboxEvent(t *testing.T) {
 	require.NoError(t, err)
 	requireAuditEvent(t, auditLogs, "email_job_created")
 	requireAuditEvent(t, auditLogs, "outbox_event_created")
+}
+
+func TestVerifyUserEmailTxActivatesMatchingCurrentAddress(t *testing.T) {
+	created := createUserWithEmailJob(t)
+
+	user, err := testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
+		Username: created.User.Username,
+		Email:    created.User.Email,
+		JobID:    created.EmailJob.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, AccountStatusActive, user.AccountStatus)
+	require.True(t, user.EmailVerifiedAt.Valid)
+	require.Equal(t, EmailDeliverabilityDeliverable, user.EmailDeliverabilityStatus)
+	require.False(t, user.RegistrationExpiresAt.Valid)
+
+	auditLogs, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: created.EmailJob.ID, Limit: 30},
+	)
+	require.NoError(t, err)
+	requireAuditEvent(t, auditLogs, "email_verified")
+}
+
+func TestVerifyUserEmailTxRejectsOldAddress(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	_, err := testStore.UpdateUserTx(context.Background(), UpdateUserParams{
+		Username: created.User.Username,
+		Email:    pgtype.Text{String: util.RandomEmail(), Valid: true},
+	})
+	require.NoError(t, err)
+
+	_, err = testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
+		Username: created.User.Username,
+		Email:    created.User.Email,
+		JobID:    created.EmailJob.ID,
+	})
+	require.ErrorIs(t, err, ErrEmailVerificationAddressStale)
+}
+
+func TestRequestEmailVerificationTxCooldownAndDisabledRecovery(t *testing.T) {
+	created := createUserWithEmailJob(t)
+
+	_, err := testStore.RequestEmailVerificationTx(
+		context.Background(),
+		created.User.Username,
+	)
+	require.ErrorIs(t, err, ErrEmailVerificationCooldown)
+
+	_, err = testDB.Exec(
+		context.Background(),
+		`UPDATE email_jobs SET created_at = now() - interval '2 minutes' WHERE id = $1`,
+		created.EmailJob.ID,
+	)
+	require.NoError(t, err)
+	_, err = testDB.Exec(
+		context.Background(),
+		`UPDATE users
+		 SET account_status = 'disabled', registration_expires_at = now() - interval '1 day'
+		 WHERE username = $1`,
+		created.User.Username,
+	)
+	require.NoError(t, err)
+
+	result, err := testStore.RequestEmailVerificationTx(
+		context.Background(),
+		created.User.Username,
+	)
+	require.NoError(t, err)
+	require.Equal(t, AccountStatusPending, result.User.AccountStatus)
+	require.True(t, result.User.RegistrationExpiresAt.Time.After(time.Now()))
+	require.NotEqual(t, created.EmailJob.ID, result.EmailJob.ID)
+	require.Equal(t, result.EmailJob.ID, result.OutboxEvent.EmailJobID)
+}
+
+func TestRequestEmailVerificationTxDoesNotExtendPendingDeadline(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	originalExpiry := created.User.RegistrationExpiresAt.Time
+	_, err := testDB.Exec(
+		context.Background(),
+		`UPDATE email_jobs SET created_at = now() - interval '2 minutes' WHERE id = $1`,
+		created.EmailJob.ID,
+	)
+	require.NoError(t, err)
+
+	result, err := testStore.RequestEmailVerificationTx(
+		context.Background(),
+		created.User.Username,
+	)
+	require.NoError(t, err)
+	require.WithinDuration(
+		t,
+		originalExpiry,
+		result.User.RegistrationExpiresAt.Time,
+		time.Second,
+	)
+}
+
+func TestDisableExpiredPendingUser(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	_, err := testDB.Exec(
+		context.Background(),
+		`UPDATE users SET registration_expires_at = now() - interval '1 second' WHERE username = $1`,
+		created.User.Username,
+	)
+	require.NoError(t, err)
+
+	user, err := testQueries.DisableExpiredPendingUser(
+		context.Background(),
+		created.User.Username,
+	)
+	require.NoError(t, err)
+	require.Equal(t, AccountStatusDisabled, user.AccountStatus)
+}
+
+func TestUpdateUserTxCreatesVerificationJobWhenEmailChanges(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	newEmail := util.RandomEmail()
+
+	result, err := testStore.UpdateUserTx(context.Background(), UpdateUserParams{
+		Username: created.User.Username,
+		Email:    pgtype.Text{String: newEmail, Valid: true},
+	})
+	require.NoError(t, err)
+	require.True(t, result.EmailChanged)
+	require.Equal(t, newEmail, result.User.Email)
+	require.Equal(t, EmailDeliverabilityPending, result.User.EmailDeliverabilityStatus)
+	require.False(t, result.User.EmailVerifiedAt.Valid)
+	require.Equal(t, newEmail, result.EmailJob.Recipient)
+	require.Equal(t, result.EmailJob.ID, result.OutboxEvent.EmailJobID)
+}
+
+func TestProcessPermanentBounceUpdatesJobAndCurrentUser(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	providerMessageID := "resend-" + util.RandomString(12)
+	markEmailJobAccepted(t, created.EmailJob.ID, providerMessageID)
+	occurredAt := time.Now().UTC()
+
+	arg := ProcessEmailDeliveryEventParams{
+		WebhookID:         "webhook-" + util.RandomString(12),
+		EventType:         "email.bounced",
+		ProviderMessageID: providerMessageID,
+		JobID:             created.EmailJob.ID,
+		OccurredAt:        occurredAt,
+		Payload:           []byte(`{"type":"email.bounced"}`),
+		DeliveryStatus:    EmailDeliveryStatusBounced,
+		BounceType:        "Permanent",
+		BounceSubtype:     "General",
+		BounceMessage:     "mailbox does not exist",
+	}
+
+	result, err := testStore.ProcessEmailDeliveryEventTx(context.Background(), arg)
+	require.NoError(t, err)
+	require.True(t, result.JobMatched)
+	require.True(t, result.StateUpdated)
+	require.True(t, result.UserStateUpdated)
+	require.Equal(t, EmailDeliveryStatusBounced, result.EmailJob.DeliveryStatus)
+	require.Equal(t, "Permanent", result.EmailJob.BounceType.String)
+	require.Equal(t, "General", result.EmailJob.BounceSubtype.String)
+	require.Equal(t, "mailbox does not exist", result.EmailJob.BounceMessage.String)
+
+	user, err := testQueries.GetUser(context.Background(), created.User.Username)
+	require.NoError(t, err)
+	require.Equal(t, EmailDeliverabilityUndeliverable, user.EmailDeliverabilityStatus)
+	require.WithinDuration(t, occurredAt, user.EmailBouncedAt.Time, time.Second)
+
+	storedEvent, err := testQueries.GetEmailDeliveryEvent(context.Background(), arg.WebhookID)
+	require.NoError(t, err)
+	require.Equal(t, created.EmailJob.ID, storedEvent.EmailJobID)
+
+	_, err = testDB.Exec(
+		context.Background(),
+		"UPDATE email_delivery_events SET event_type = 'tampered' WHERE webhook_id = $1",
+		arg.WebhookID,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "append-only")
+
+	auditLogs, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: created.EmailJob.ID, Limit: 30},
+	)
+	require.NoError(t, err)
+	requireAuditEvent(t, auditLogs, "email.bounced")
+
+	duplicate := arg
+	duplicate.DeliveryStatus = EmailDeliveryStatusDelivered
+	duplicate.OccurredAt = occurredAt.Add(time.Minute)
+	duplicateResult, err := testStore.ProcessEmailDeliveryEventTx(context.Background(), duplicate)
+	require.NoError(t, err)
+	require.True(t, duplicateResult.Duplicate)
+
+	job, err := testQueries.GetEmailJob(context.Background(), created.EmailJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, EmailDeliveryStatusBounced, job.DeliveryStatus)
+}
+
+func TestProcessEmailDeliveryEventDoesNotRegressOrChangeNewAddress(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	providerMessageID := "resend-" + util.RandomString(12)
+	markEmailJobAccepted(t, created.EmailJob.ID, providerMessageID)
+
+	changed, err := testStore.UpdateUserTx(context.Background(), UpdateUserParams{
+		Username: created.User.Username,
+		Email:    pgtype.Text{String: util.RandomEmail(), Valid: true},
+	})
+	require.NoError(t, err)
+	require.True(t, changed.EmailChanged)
+
+	deliveredAt := time.Now().UTC()
+	_, err = testStore.ProcessEmailDeliveryEventTx(
+		context.Background(),
+		ProcessEmailDeliveryEventParams{
+			WebhookID:         "webhook-delivered-" + util.RandomString(8),
+			EventType:         "email.delivered",
+			ProviderMessageID: providerMessageID,
+			JobID:             created.EmailJob.ID,
+			OccurredAt:        deliveredAt,
+			Payload:           []byte(`{"type":"email.delivered"}`),
+			DeliveryStatus:    EmailDeliveryStatusDelivered,
+		},
+	)
+	require.NoError(t, err)
+
+	_, err = testStore.ProcessEmailDeliveryEventTx(
+		context.Background(),
+		ProcessEmailDeliveryEventParams{
+			WebhookID:         "webhook-sent-" + util.RandomString(8),
+			EventType:         "email.sent",
+			ProviderMessageID: providerMessageID,
+			JobID:             created.EmailJob.ID,
+			OccurredAt:        deliveredAt.Add(-time.Minute),
+			Payload:           []byte(`{"type":"email.sent"}`),
+			DeliveryStatus:    EmailDeliveryStatusAccepted,
+		},
+	)
+	require.NoError(t, err)
+
+	job, err := testQueries.GetEmailJob(context.Background(), created.EmailJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, EmailDeliveryStatusDelivered, job.DeliveryStatus)
+
+	user, err := testQueries.GetUser(context.Background(), created.User.Username)
+	require.NoError(t, err)
+	require.Equal(t, changed.User.Email, user.Email)
+	require.Equal(t, EmailDeliverabilityPending, user.EmailDeliverabilityStatus)
+	require.False(t, user.EmailBouncedAt.Valid)
+}
+
+func createUserWithEmailJob(t *testing.T) CreateUserTxResult {
+	t.Helper()
+	hashedPassword, err := util.HashPassword(util.RandomString(8))
+	require.NoError(t, err)
+
+	result, err := testStore.CreateUserTx(context.Background(), CreateUserParams{
+		Username:       util.RandomOwner(),
+		HashedPassword: hashedPassword,
+		FullName:       util.RandomOwner(),
+		Email:          util.RandomEmail(),
+	})
+	require.NoError(t, err)
+	return result
+}
+
+func markEmailJobAccepted(t *testing.T, jobID pgtype.UUID, providerMessageID string) {
+	t.Helper()
+	_, err := testQueries.MarkEmailJobSent(context.Background(), MarkEmailJobSentParams{
+		ID:                jobID,
+		ProviderMessageID: pgtype.Text{String: providerMessageID, Valid: true},
+	})
+	require.NoError(t, err)
 }
 
 func TestReplayEmailJobTxCreatesLinkedJob(t *testing.T) {
@@ -165,7 +447,7 @@ func TestEmailJobLifecycleCreatesAuditHistory(t *testing.T) {
 	_, err = testQueries.MarkEmailJobSent(context.Background(), MarkEmailJobSentParams{
 		ID: created.EmailJob.ID,
 		ProviderMessageID: pgtype.Text{
-			String: "provider-message-id",
+			String: "provider-message-" + util.RandomString(12),
 			Valid:  true,
 		},
 	})

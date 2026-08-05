@@ -13,10 +13,11 @@ import (
 )
 
 type Server struct {
-	config     util.Config
-	store      db.Store
-	tokenMaker token.Maker
-	router     *gin.Engine
+	config                 util.Config
+	store                  db.Store
+	tokenMaker             token.Maker
+	emailVerificationMaker token.EmailVerificationMaker
+	router                 *gin.Engine
 }
 
 func NewServer(config util.Config, store db.Store) (*Server, error) {
@@ -24,11 +25,16 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not generate token maker: %w", err)
 	}
+	emailVerificationMaker, err := token.NewEmailVerificationMaker(config.SecretKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate email verification token maker: %w", err)
+	}
 
 	server := &Server{
-		config:     config,
-		store:      store,
-		tokenMaker: tokenMaker,
+		config:                 config,
+		store:                  store,
+		tokenMaker:             tokenMaker,
+		emailVerificationMaker: emailVerificationMaker,
 	}
 
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
@@ -51,18 +57,29 @@ func (server *Server) setupRouter() {
 	})
 	router.POST("/users", server.CreateUser)
 	router.POST("/users/login", server.loginUser)
+	router.GET("/users/verify-email", server.verifyUserEmail)
 	router.POST("/tokens/renew_access", server.renewAccessToken)
+	router.POST("/webhooks/resend", server.handleResendWebhook)
 
 	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker))
-
-	authRoutes.POST("/accounts", server.createAccount)
-	authRoutes.GET("/accounts/:id", server.getAccount)
-	authRoutes.GET("/accounts", server.listAccount)
-	authRoutes.PUT("/accounts/:id", server.updateAccount)
-	authRoutes.DELETE("/accounts/:id", server.deleteAccount)
-
-	authRoutes.POST("/transfers", server.createTransfer)
 	authRoutes.PATCH("/users/me", server.updateUser)
+	authRoutes.GET("/users/me/email-status", server.getUserEmailStatus)
+	authRoutes.POST("/users/me/resend-verification", server.resendUserEmailVerification)
+
+	financialMiddleware := []gin.HandlerFunc{authMiddleware(server.tokenMaker)}
+	if server.config.EnforceEmailVerification {
+		financialMiddleware = append(
+			financialMiddleware,
+			verifiedAccountMiddleware(server.store),
+		)
+	}
+	financialRoutes := router.Group("/").Use(financialMiddleware...)
+	financialRoutes.POST("/accounts", server.createAccount)
+	financialRoutes.GET("/accounts/:id", server.getAccount)
+	financialRoutes.GET("/accounts", server.listAccount)
+	financialRoutes.PUT("/accounts/:id", server.updateAccount)
+	financialRoutes.DELETE("/accounts/:id", server.deleteAccount)
+	financialRoutes.POST("/transfers", server.createTransfer)
 
 	server.router = router
 }

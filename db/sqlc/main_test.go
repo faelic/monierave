@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/faelic/monierave/db/util"
@@ -22,7 +23,18 @@ func TestMain(m *testing.M) {
 	}
 	ctx := context.Background()
 
-	connPool, err := pgxpool.New(ctx, config.DBSource)
+	poolConfig, err := pgxpool.ParseConfig(config.DBSource)
+	if err != nil {
+		log.Fatalf("invalid test database configuration: %v", err)
+	}
+	if !strings.HasSuffix(poolConfig.ConnConfig.Database, "_test") {
+		log.Fatalf(
+			"refusing to run database tests against %q; DB_SOURCE must use a dedicated *_test database",
+			poolConfig.ConnConfig.Database,
+		)
+	}
+
+	connPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		log.Printf("skipping db/sqlc tests: could not create database pool: %v", err)
 		os.Exit(0)

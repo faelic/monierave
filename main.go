@@ -18,6 +18,7 @@ import (
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
 	"github.com/faelic/monierave/mailer"
+	"github.com/faelic/monierave/token"
 	"github.com/faelic/monierave/worker"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -154,9 +155,13 @@ func runWorker(config util.Config) error {
 	}
 	defer pool.Close()
 
-	emailMailer, err := buildMailer(config.MailerProvider)
+	emailMailer, err := buildMailer(config)
 	if err != nil {
 		return err
+	}
+	emailVerificationMaker, err := token.NewEmailVerificationMaker(config.SecretKey)
+	if err != nil {
+		return fmt.Errorf("create email verification token maker: %w", err)
 	}
 
 	processor := worker.NewRedisTaskProcessor(
@@ -164,16 +169,21 @@ func runWorker(config util.Config) error {
 		store,
 		emailMailer,
 		config.WorkerConcurrency,
+		emailVerificationMaker,
+		config.PublicAPIURL,
+		config.EmailVerificationDuration,
 	)
 	return processor.Run()
 }
 
-func buildMailer(provider string) (mailer.Mailer, error) {
-	switch provider {
+func buildMailer(config util.Config) (mailer.Mailer, error) {
+	switch config.MailerProvider {
 	case "log":
 		return mailer.NewLogMailer(), nil
+	case "resend":
+		return mailer.NewResendMailer(config.ResendAPIKey, config.EmailFrom)
 	default:
-		return nil, fmt.Errorf("unsupported MAILER_PROVIDER %q", provider)
+		return nil, fmt.Errorf("unsupported MAILER_PROVIDER %q", config.MailerProvider)
 	}
 }
 

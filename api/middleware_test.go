@@ -1,15 +1,19 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	mockdb "github.com/faelic/monierave/db/mock"
+	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
 	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestAuthMiddleware(t *testing.T) {
@@ -98,4 +102,51 @@ func TestAuthMiddleware(t *testing.T) {
 			tc.checkResponse(t, recorder)
 		})
 	}
+}
+
+func TestVerifiedAccountMiddlewareDescribesRestrictedFeatures(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	username := util.RandomOwner()
+
+	store.EXPECT().
+		GetUser(gomock.Any(), username).
+		Return(db.User{
+			Username:      username,
+			AccountStatus: db.AccountStatusPending,
+		}, nil)
+
+	server.router.GET(
+		"/verified-test",
+		authMiddleware(server.tokenMaker),
+		verifiedAccountMiddleware(store),
+		func(ctx *gin.Context) {
+			ctx.Status(http.StatusOK)
+		},
+	)
+	request, err := http.NewRequest(http.MethodGet, "/verified-test", nil)
+	require.NoError(t, err)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		username,
+		time.Minute,
+	)
+
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+
+	var response struct {
+		Error              string   `json:"error"`
+		AllowedFeatures    []string `json:"allowed_features"`
+		RestrictedFeatures []string `json:"restricted_features"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, ErrEmailVerificationRequired.Error(), response.Error)
+	require.Contains(t, response.AllowedFeatures, "change profile details or email address")
+	require.Contains(t, response.RestrictedFeatures, "send money or create transfers")
 }

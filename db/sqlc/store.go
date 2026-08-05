@@ -12,8 +12,12 @@ import (
 type Store interface {
 	Querier
 	CreateUserTx(ctx context.Context, arg CreateUserParams) (CreateUserTxResult, error)
+	ProcessEmailDeliveryEventTx(ctx context.Context, arg ProcessEmailDeliveryEventParams) (ProcessEmailDeliveryEventResult, error)
+	RequestEmailVerificationTx(ctx context.Context, username string) (RequestEmailVerificationTxResult, error)
 	ReplayEmailJobTx(ctx context.Context, jobID pgtype.UUID) (ReplayEmailJobTxResult, error)
 	TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
+	UpdateUserTx(ctx context.Context, arg UpdateUserParams) (UpdateUserTxResult, error)
+	VerifyUserEmailTx(ctx context.Context, arg VerifyUserEmailTxParams) (User, error)
 }
 
 // store provides function to execute db queries and transactions
@@ -44,6 +48,5 @@ func (store *SQLStore) execTx(ctx context.Context, fn func(*Queries) error) erro
 		}
 		return err
 	}
-
 	return tx.Commit(ctx)
 }

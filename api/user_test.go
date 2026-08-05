@@ -2,21 +2,26 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	mockdb "github.com/faelic/monierave/db/mock"
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
 	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -386,6 +391,173 @@ func TestLoginUserAPI(t *testing.T) {
 			tc.checkResponse(t, recorder, server.tokenMaker)
 		})
 	}
+}
+
+func TestUpdateUserEmailUsesTransactionalOutbox(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	user, err := randomUser(util.RandomString(8))
+	require.NoError(t, err)
+	newEmail := "new-address@example.com"
+
+	store.EXPECT().
+		UpdateUserTx(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, arg db.UpdateUserParams) (db.UpdateUserTxResult, error) {
+			require.Equal(t, user.Username, arg.Username)
+			require.True(t, arg.Email.Valid)
+			require.Equal(t, newEmail, arg.Email.String)
+
+			updated := user
+			updated.Email = newEmail
+			updated.EmailDeliverabilityStatus = db.EmailDeliverabilityPending
+			return db.UpdateUserTxResult{
+				User:         updated,
+				EmailChanged: true,
+			}, nil
+		})
+
+	body, err := json.Marshal(gin.H{"email": "NEW-ADDRESS@EXAMPLE.COM"})
+	require.NoError(t, err)
+	request, err := http.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader(body))
+	require.NoError(t, err)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		user.Username,
+		time.Minute,
+	)
+
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	requireBodyMatchUser(t, recorder.Body, db.User{
+		Username:                  user.Username,
+		FullName:                  user.FullName,
+		Email:                     newEmail,
+		EmailDeliverabilityStatus: db.EmailDeliverabilityPending,
+	})
+}
+
+func TestGetUserEmailStatus(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	user, err := randomUser(util.RandomString(8))
+	require.NoError(t, err)
+	user.EmailDeliverabilityStatus = db.EmailDeliverabilityUndeliverable
+	user.EmailBouncedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	job := db.EmailJob{
+		ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		Username:       user.Username,
+		Recipient:      user.Email,
+		Status:         db.EmailJobStatusSent,
+		DeliveryStatus: db.EmailDeliveryStatusBounced,
+		BounceType:     pgtype.Text{String: "Permanent", Valid: true},
+		BounceSubtype:  pgtype.Text{String: "General", Valid: true},
+		BounceMessage:  pgtype.Text{String: "mailbox does not exist", Valid: true},
+	}
+
+	store.EXPECT().GetUser(gomock.Any(), user.Username).Return(user, nil)
+	store.EXPECT().
+		GetLatestEmailJobForCurrentAddress(gomock.Any(), user.Username).
+		Return(job, nil)
+
+	request, err := http.NewRequest(http.MethodGet, "/users/me/email-status", nil)
+	require.NoError(t, err)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		user.Username,
+		time.Minute,
+	)
+
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response emailStatusResponse
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, user.Email, response.Email)
+	require.Equal(t, db.EmailDeliverabilityUndeliverable, response.DeliverabilityStatus)
+	require.NotNil(t, response.LatestJob)
+	require.Equal(t, db.EmailDeliveryStatusBounced, response.LatestJob.DeliveryStatus)
+	require.Equal(t, "Permanent", response.LatestJob.BounceType.String)
+}
+
+func TestVerifyUserEmail(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	user, err := randomUser(util.RandomString(8))
+	require.NoError(t, err)
+	jobID := uuid.New()
+	value, err := server.emailVerificationMaker.Create(
+		user.Username,
+		user.Email,
+		jobID.String(),
+		time.Hour,
+	)
+	require.NoError(t, err)
+
+	verifiedUser := user
+	verifiedUser.AccountStatus = db.AccountStatusActive
+	verifiedUser.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	store.EXPECT().
+		VerifyUserEmailTx(gomock.Any(), db.VerifyUserEmailTxParams{
+			Username: user.Username,
+			Email:    user.Email,
+			JobID:    pgtype.UUID{Bytes: jobID, Valid: true},
+		}).
+		Return(verifiedUser, nil)
+
+	request, err := http.NewRequest(
+		http.MethodGet,
+		"/users/verify-email?token="+url.QueryEscape(value),
+		nil,
+	)
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "email verified successfully")
+}
+
+func TestResendUserEmailVerification(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	username := util.RandomOwner()
+	jobID := uuid.New()
+
+	store.EXPECT().
+		RequestEmailVerificationTx(gomock.Any(), username).
+		Return(db.RequestEmailVerificationTxResult{
+			EmailJob: db.EmailJob{ID: pgtype.UUID{Bytes: jobID, Valid: true}},
+		}, nil)
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		"/users/me/resend-verification",
+		nil,
+	)
+	require.NoError(t, err)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		username,
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusAccepted, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "verification email queued")
 }
 
 type stringVerifier interface {
