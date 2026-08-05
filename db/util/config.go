@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -13,10 +14,16 @@ import (
 
 type Config struct {
 	DBSource                  string        `mapstructure:"DB_SOURCE"`
+	DBTestSource              string        `mapstructure:"DB_TEST_SOURCE"`
 	ServerAddress             string        `mapstructure:"SERVER_ADDRESS"`
 	SecretKey                 string        `mapstructure:"SECRET_KEY"`
 	AccessTokenDuration       time.Duration `mapstructure:"ACCESS_TOKEN_DURATION"`
 	RefreshTokenDuration      time.Duration `mapstructure:"REFRESH_TOKEN_DURATION"`
+	RefreshCookieName         string        `mapstructure:"REFRESH_COOKIE_NAME"`
+	RefreshCookieDomain       string        `mapstructure:"REFRESH_COOKIE_DOMAIN"`
+	RefreshCookieSecure       bool          `mapstructure:"REFRESH_COOKIE_SECURE"`
+	RefreshCookieSameSite     string        `mapstructure:"REFRESH_COOKIE_SAME_SITE"`
+	AllowedOrigins            string        `mapstructure:"ALLOWED_ORIGINS"`
 	RedisAddress              string        `mapstructure:"REDIS_ADDRESS"`
 	MailerProvider            string        `mapstructure:"MAILER_PROVIDER"`
 	WorkerConcurrency         int           `mapstructure:"WORKER_CONCURRENCY"`
@@ -36,10 +43,16 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.AutomaticEnv()
 
 	_ = viper.BindEnv("DB_SOURCE")
+	_ = viper.BindEnv("DB_TEST_SOURCE")
 	_ = viper.BindEnv("SERVER_ADDRESS")
 	_ = viper.BindEnv("SECRET_KEY")
 	_ = viper.BindEnv("ACCESS_TOKEN_DURATION")
 	_ = viper.BindEnv("REFRESH_TOKEN_DURATION")
+	_ = viper.BindEnv("REFRESH_COOKIE_NAME")
+	_ = viper.BindEnv("REFRESH_COOKIE_DOMAIN")
+	_ = viper.BindEnv("REFRESH_COOKIE_SECURE")
+	_ = viper.BindEnv("REFRESH_COOKIE_SAME_SITE")
+	_ = viper.BindEnv("ALLOWED_ORIGINS")
 	_ = viper.BindEnv("REDIS_ADDRESS")
 	_ = viper.BindEnv("MAILER_PROVIDER")
 	_ = viper.BindEnv("WORKER_CONCURRENCY")
@@ -54,6 +67,9 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("ENFORCE_EMAIL_VERIFICATION")
 
 	viper.SetDefault("MAILER_PROVIDER", "log")
+	viper.SetDefault("REFRESH_COOKIE_NAME", "monierave_refresh")
+	viper.SetDefault("REFRESH_COOKIE_SECURE", true)
+	viper.SetDefault("REFRESH_COOKIE_SAME_SITE", "lax")
 	viper.SetDefault("WORKER_CONCURRENCY", 10)
 	viper.SetDefault("RELAY_BATCH_SIZE", 50)
 	viper.SetDefault("RELAY_POLL_INTERVAL", time.Second)
@@ -93,6 +109,28 @@ func ValidateAPIConfig(config Config) error {
 	}
 	if config.RefreshTokenDuration <= 0 {
 		return fmt.Errorf("REFRESH_TOKEN_DURATION must be greater than 0")
+	}
+	if config.RefreshCookieName == "" {
+		return fmt.Errorf("REFRESH_COOKIE_NAME is required")
+	}
+	switch config.RefreshCookieSameSite {
+	case "strict", "lax", "none":
+	default:
+		return fmt.Errorf("REFRESH_COOKIE_SAME_SITE must be strict, lax, or none")
+	}
+	if config.RefreshCookieSameSite == "none" && !config.RefreshCookieSecure {
+		return fmt.Errorf("REFRESH_COOKIE_SECURE must be true when SameSite is none")
+	}
+	for _, origin := range strings.Split(config.AllowedOrigins, ",") {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Host == "" ||
+			(parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("ALLOWED_ORIGINS must contain absolute HTTP or HTTPS origins")
+		}
 	}
 	return nil
 }

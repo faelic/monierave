@@ -39,7 +39,7 @@ sqlc:
 	sqlc generate
 
 test:
-	DB_SOURCE="$(DB_TEST_URL)" MAILER_PROVIDER=log go test -v -cover ./...
+	DB_TEST_SOURCE="$(DB_TEST_URL)" MAILER_PROVIDER=log go test -v -cover ./...
 
 server:
 	go run main.go api

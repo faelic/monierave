@@ -10,10 +10,19 @@ import (
 
 // Payload contains the payload data of the token
 type Payload struct {
-	ID       uuid.UUID `json:"id"`
-	Username string    `json:"username"`
+	ID        uuid.UUID `json:"token_id"`
+	SessionID uuid.UUID `json:"sid"`
+	Username  string    `json:"username"`
+	TokenType Type      `json:"token_type"`
 	jwt.RegisteredClaims
 }
+
+type Type string
+
+const (
+	TypeAccess  Type = "access"
+	TypeRefresh Type = "refresh"
+)
 
 // different types of errors returned by verifying token
 var (
@@ -22,27 +31,36 @@ var (
 )
 
 // Payload creates a new payload with a specific username and duration
-func NewPayload(username string, duration time.Duration) (*Payload, error) {
+func NewPayload(
+	username string,
+	sessionID uuid.UUID,
+	tokenType Type,
+	issuer string,
+	audience string,
+	duration time.Duration,
+) (*Payload, error) {
+	if username == "" || sessionID == uuid.Nil || duration == 0 {
+		return nil, ErrInvalidToken
+	}
 	tokenID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
 	}
 
+	now := time.Now().UTC()
 	payload := &Payload{
-		ID:       tokenID,
-		Username: username,
+		ID:        tokenID,
+		SessionID: sessionID,
+		Username:  username,
+		TokenType: tokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
+			ID:        tokenID.String(),
+			Issuer:    issuer,
+			Audience:  jwt.ClaimStrings{audience},
+			Subject:   username,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
 		},
 	}
 	return payload, nil
-}
-
-func (payload *Payload) Valid() error {
-	if time.Now().After(payload.ExpiresAt.Time) {
-		return ErrExpiredToken
-	}
-
-	return nil
 }

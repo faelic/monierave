@@ -84,16 +84,20 @@ Table transfers {
 Table sessions {
   id uuid [pk]
   username varchar [not null, ref: > U.username]
-  refresh_token varchar [not null]
+  refresh_token_hash bytea [not null, note: 'SHA-256 hash of the current refresh token; raw refresh tokens are never persisted.']
+  refresh_token_id uuid [not null]
   user_agent varchar [not null]
   client_ip varchar [not null]
-  is_blocked boolean [not null, default: false]
   expires_at timestamptz [not null]
   created_at timestamptz [not null, default: `now()`]
+  last_refreshed_at timestamptz
+  revoked_at timestamptz [note: 'Non-null means every access and refresh token bound to this session is revoked.']
+  revoked_reason varchar
 
   indexes {
     username [name: 'sessions_username_idx']
-    refresh_token [unique, name: 'sessions_refresh_token_idx']
+    refresh_token_hash [unique, name: 'sessions_refresh_token_hash_idx']
+    (username, expires_at) [name: 'sessions_active_username_idx', note: 'Partial index where revoked_at IS NULL.']
   }
 }
 

@@ -12,11 +12,16 @@ import (
 type Store interface {
 	Querier
 	CreateUserTx(ctx context.Context, arg CreateUserParams) (CreateUserTxResult, error)
+	CreateSessionTx(ctx context.Context, arg CreateSessionParams) (Session, error)
 	ProcessEmailDeliveryEventTx(ctx context.Context, arg ProcessEmailDeliveryEventParams) (ProcessEmailDeliveryEventResult, error)
 	RequestEmailVerificationTx(ctx context.Context, username string) (RequestEmailVerificationTxResult, error)
 	ReplayEmailJobTx(ctx context.Context, jobID pgtype.UUID) (ReplayEmailJobTxResult, error)
+	RevokeAllUserSessionsTx(ctx context.Context, username, reason, eventType string) error
+	RevokeSessionTx(ctx context.Context, id pgtype.UUID, reason, actor string) error
+	RotateRefreshTokenTx(ctx context.Context, arg RotateRefreshTokenTxParams) (Session, error)
 	TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
-	UpdateUserTx(ctx context.Context, arg UpdateUserParams) (UpdateUserTxResult, error)
+	UpdateUserTx(ctx context.Context, arg UpdateUserTxParams) (UpdateUserTxResult, error)
+	ValidateSession(ctx context.Context, id pgtype.UUID, username string) error
 	VerifyUserEmailTx(ctx context.Context, arg VerifyUserEmailTxParams) (User, error)
 }
 

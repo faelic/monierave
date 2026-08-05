@@ -99,9 +99,11 @@ func TestVerifyUserEmailTxActivatesMatchingCurrentAddress(t *testing.T) {
 
 func TestVerifyUserEmailTxRejectsOldAddress(t *testing.T) {
 	created := createUserWithEmailJob(t)
-	_, err := testStore.UpdateUserTx(context.Background(), UpdateUserParams{
-		Username: created.User.Username,
-		Email:    pgtype.Text{String: util.RandomEmail(), Valid: true},
+	_, err := testStore.UpdateUserTx(context.Background(), UpdateUserTxParams{
+		UpdateUserParams: UpdateUserParams{
+			Username: created.User.Username,
+			Email:    pgtype.Text{String: util.RandomEmail(), Valid: true},
+		},
 	})
 	require.NoError(t, err)
 
@@ -192,9 +194,11 @@ func TestUpdateUserTxCreatesVerificationJobWhenEmailChanges(t *testing.T) {
 	created := createUserWithEmailJob(t)
 	newEmail := util.RandomEmail()
 
-	result, err := testStore.UpdateUserTx(context.Background(), UpdateUserParams{
-		Username: created.User.Username,
-		Email:    pgtype.Text{String: newEmail, Valid: true},
+	result, err := testStore.UpdateUserTx(context.Background(), UpdateUserTxParams{
+		UpdateUserParams: UpdateUserParams{
+			Username: created.User.Username,
+			Email:    pgtype.Text{String: newEmail, Valid: true},
+		},
 	})
 	require.NoError(t, err)
 	require.True(t, result.EmailChanged)
@@ -275,9 +279,11 @@ func TestProcessEmailDeliveryEventDoesNotRegressOrChangeNewAddress(t *testing.T)
 	providerMessageID := "resend-" + util.RandomString(12)
 	markEmailJobAccepted(t, created.EmailJob.ID, providerMessageID)
 
-	changed, err := testStore.UpdateUserTx(context.Background(), UpdateUserParams{
-		Username: created.User.Username,
-		Email:    pgtype.Text{String: util.RandomEmail(), Valid: true},
+	changed, err := testStore.UpdateUserTx(context.Background(), UpdateUserTxParams{
+		UpdateUserParams: UpdateUserParams{
+			Username: created.User.Username,
+			Email:    pgtype.Text{String: util.RandomEmail(), Valid: true},
+		},
 	})
 	require.NoError(t, err)
 	require.True(t, changed.EmailChanged)

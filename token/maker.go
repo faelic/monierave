@@ -1,11 +1,23 @@
 package token
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // maker is an interface for managing tokens
 type Maker interface {
-	// creates a new token for a specific username and duration
-	CreateToken(username string, duration time.Duration) (string, *Payload, error)
-	// checks if the token is valid or not
-	VerifyToken(token string) (*Payload, error)
+	CreateAccessToken(
+		username string,
+		sessionID uuid.UUID,
+		duration time.Duration,
+	) (string, *Payload, error)
+	CreateRefreshToken(
+		username string,
+		sessionID uuid.UUID,
+		duration time.Duration,
+	) (string, *Payload, error)
+	VerifyAccessToken(value string) (*Payload, error)
+	VerifyRefreshToken(value string) (*Payload, error)
 }

@@ -142,14 +142,19 @@ type OutboxEvent struct {
 }
 
 type Session struct {
-	ID           pgtype.UUID        `json:"id"`
-	Username     string             `json:"username"`
-	RefreshToken string             `json:"refresh_token"`
-	UserAgent    string             `json:"user_agent"`
-	ClientIp     string             `json:"client_ip"`
-	IsBlocked    bool               `json:"is_blocked"`
-	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID        pgtype.UUID        `json:"id"`
+	Username  string             `json:"username"`
+	UserAgent string             `json:"user_agent"`
+	ClientIp  string             `json:"client_ip"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// SHA-256 hash of the current refresh token; raw refresh tokens are never persisted.
+	RefreshTokenHash []byte             `json:"refresh_token_hash"`
+	RefreshTokenID   pgtype.UUID        `json:"refresh_token_id"`
+	LastRefreshedAt  pgtype.Timestamptz `json:"last_refreshed_at"`
+	// Non-null means every access and refresh token bound to this session is revoked.
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason pgtype.Text        `json:"revoked_reason"`
 }
 
 type Transfer struct {

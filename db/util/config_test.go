@@ -77,11 +77,13 @@ func TestValidateWorkerConfig(t *testing.T) {
 
 func TestValidateAPIConfigDoesNotRequireWebhookSecret(t *testing.T) {
 	err := ValidateAPIConfig(Config{
-		DBSource:             "postgresql://localhost/database",
-		ServerAddress:        "0.0.0.0:8080",
-		SecretKey:            "12345678901234567890123456789012",
-		AccessTokenDuration:  time.Minute,
-		RefreshTokenDuration: time.Hour,
+		DBSource:              "postgresql://localhost/database",
+		ServerAddress:         "0.0.0.0:8080",
+		SecretKey:             "12345678901234567890123456789012",
+		AccessTokenDuration:   time.Minute,
+		RefreshTokenDuration:  time.Hour,
+		RefreshCookieName:     "monierave_refresh",
+		RefreshCookieSameSite: "lax",
 	})
 
 	require.NoError(t, err)
