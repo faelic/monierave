@@ -10,6 +10,7 @@ import (
 	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 	authorizationPayloadKey = "authorization_payload"
 )
 
-func authMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
+func authMiddleware(tokenMaker token.Maker, store db.Store) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		authorizationHeader := ctx.GetHeader(authorizationHeaderKey)
 
@@ -41,19 +42,40 @@ func authMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
 		}
 
 		accessToken := fields[1]
-		payload, err := tokenMaker.VerifyToken(accessToken)
+		payload, err := tokenMaker.VerifyAccessToken(accessToken)
 		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
 			return
 		}
 
+		err = store.ValidateSession(ctx, pgtype.UUID{
+			Bytes: payload.SessionID,
+			Valid: true,
+		}, payload.Username)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) ||
+				errors.Is(err, db.ErrSessionExpired) ||
+				errors.Is(err, db.ErrSessionRevoked) ||
+				errors.Is(err, db.ErrSessionMismatch) {
+				ctx.AbortWithStatusJSON(
+					http.StatusUnauthorized,
+					errorResponse(ErrUnauthorized),
+				)
+				return
+			}
+			ctx.AbortWithStatusJSON(
+				http.StatusInternalServerError,
+				errorResponse(ErrInternalServer),
+			)
+			return
+		}
 		ctx.Set(authorizationPayloadKey, payload)
 		ctx.Next()
 	}
 }
 
 var unverifiedAllowedFeatures = []string{
-	"login and refresh access tokens",
+	"login, refresh access tokens, and log out",
 	"view email verification status",
 	"change profile details or email address",
 	"request another verification email",

@@ -106,12 +106,10 @@ type loginUserRequest struct {
 }
 
 type loginUserResponse struct {
-	SessionID             pgtype.UUID  `json:"session_id"`
-	AccessToken           string       `json:"access_token"`
-	AccessTokenExpiresAt  time.Time    `json:"access_token_expires_at"`
-	RefreshToken          string       `json:"refresh_token"`
-	RefreshTokenExpiresAt time.Time    `json:"refresh_token_expires_at"`
-	User                  userResponse `json:"user"`
+	SessionID            pgtype.UUID  `json:"session_id"`
+	AccessToken          string       `json:"access_token"`
+	AccessTokenExpiresAt time.Time    `json:"access_token_expires_at"`
+	User                 userResponse `json:"user"`
 }
 
 func (server *Server) loginUser(ctx *gin.Context) {
@@ -138,32 +136,40 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		return
 	}
 
-	accessToken, accessPayload, err := server.tokenMaker.CreateToken(user.Username, server.config.AccessTokenDuration)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
-		return
-	}
-
-	refreshToken, refreshPayload, err := server.tokenMaker.CreateToken(
+	sessionUUID := uuid.New()
+	refreshToken, refreshPayload, err := server.tokenMaker.CreateRefreshToken(
 		user.Username,
+		sessionUUID,
 		server.config.RefreshTokenDuration,
 	)
-
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
-	session, err := server.store.CreateSession(ctx, db.CreateSessionParams{
+	accessToken, accessPayload, err := server.tokenMaker.CreateAccessToken(
+		user.Username,
+		sessionUUID,
+		server.config.AccessTokenDuration,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+
+	session, err := server.store.CreateSessionTx(ctx, db.CreateSessionParams{
 		ID: pgtype.UUID{
+			Bytes: sessionUUID,
+			Valid: true,
+		},
+		Username:         refreshPayload.Username,
+		RefreshTokenHash: token.Hash(refreshToken),
+		RefreshTokenID: pgtype.UUID{
 			Bytes: refreshPayload.ID,
 			Valid: true,
 		},
-		Username:     refreshPayload.Username,
-		RefreshToken: refreshToken,
-		UserAgent:    ctx.Request.UserAgent(),
-		ClientIp:     ctx.ClientIP(),
-		IsBlocked:    false,
+		UserAgent: ctx.Request.UserAgent(),
+		ClientIp:  ctx.ClientIP(),
 		ExpiresAt: pgtype.Timestamptz{
 			Time:  refreshPayload.ExpiresAt.Time,
 			Valid: true,
@@ -175,22 +181,22 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		return
 	}
 
+	server.setRefreshCookie(ctx, refreshToken, refreshPayload.ExpiresAt.Time)
 	rsp := loginUserResponse{
-		SessionID:             session.ID,
-		AccessToken:           accessToken,
-		AccessTokenExpiresAt:  accessPayload.ExpiresAt.Time,
-		RefreshToken:          refreshToken,
-		RefreshTokenExpiresAt: refreshPayload.ExpiresAt.Time,
-		User:                  newUserResponse(user),
+		SessionID:            session.ID,
+		AccessToken:          accessToken,
+		AccessTokenExpiresAt: accessPayload.ExpiresAt.Time,
+		User:                 newUserResponse(user),
 	}
 
 	ctx.JSON(http.StatusOK, rsp)
 }
 
 type updateUserRequest struct {
-	Password *string `json:"password" binding:"omitempty,min=6"`
-	FullName *string `json:"full_name" binding:"omitempty"`
-	Email    *string `json:"email" binding:"omitempty,email"`
+	CurrentPassword *string `json:"current_password"`
+	Password        *string `json:"password" binding:"omitempty,min=6"`
+	FullName        *string `json:"full_name" binding:"omitempty"`
+	Email           *string `json:"email" binding:"omitempty,email"`
 }
 
 func (server *Server) updateUser(ctx *gin.Context) {
@@ -203,32 +209,52 @@ func (server *Server) updateUser(ctx *gin.Context) {
 
 	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	arg := db.UpdateUserParams{
-		Username: authPayLoad.Username,
+	arg := db.UpdateUserTxParams{
+		UpdateUserParams: db.UpdateUserParams{
+			Username: authPayLoad.Username,
+		},
 	}
 
 	if req.Password != nil {
+		if req.CurrentPassword == nil {
+			ctx.JSON(http.StatusBadRequest, errorResponse(ErrCurrentPasswordRequired))
+			return
+		}
+		currentUser, err := server.store.GetUser(ctx, authPayLoad.Username)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				ctx.JSON(http.StatusNotFound, errorResponse(ErrUserNotFound))
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+			return
+		}
+		if err := util.CheckPassword(*req.CurrentPassword, currentUser.HashedPassword); err != nil {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidCredentials))
+			return
+		}
 		hashedpassword, err := util.HashPassword(*req.Password)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 			return
 		}
 
-		arg.HashedPassword = pgtype.Text{
+		arg.UpdateUserParams.HashedPassword = pgtype.Text{
 			String: hashedpassword,
 			Valid:  true,
 		}
+		arg.RevokeSessions = true
 	}
 
 	if req.FullName != nil {
-		arg.FullName = pgtype.Text{
+		arg.UpdateUserParams.FullName = pgtype.Text{
 			String: strings.TrimSpace(*req.FullName),
 			Valid:  true,
 		}
 	}
 
 	if req.Email != nil {
-		arg.Email = pgtype.Text{
+		arg.UpdateUserParams.Email = pgtype.Text{
 			String: strings.ToLower(strings.TrimSpace(*req.Email)),
 			Valid:  true,
 		}
@@ -257,6 +283,9 @@ func (server *Server) updateUser(ctx *gin.Context) {
 		return
 	}
 
+	if arg.RevokeSessions {
+		server.clearRefreshCookie(ctx)
+	}
 	ctx.JSON(http.StatusOK, newUserResponse(result.User))
 
 }

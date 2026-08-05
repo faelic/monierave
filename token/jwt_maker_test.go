@@ -6,67 +6,73 @@ import (
 
 	"github.com/faelic/monierave/db/util"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-func TestJWTMaker(t *testing.T) {
+func TestJWTMakerCreatesTypedSessionTokens(t *testing.T) {
 	maker, err := NewJWTMaker(util.RandomString(32))
 	require.NoError(t, err)
-	require.NotEmpty(t, maker)
 
 	username := util.RandomOwner()
-	duration := time.Minute
-
+	sessionID := uuid.New()
 	issuedAt := time.Now()
-	expiredAt := issuedAt.Add(duration)
 
-	JWTToken, payload, err := maker.CreateToken(username, duration)
+	access, accessPayload, err := maker.CreateAccessToken(username, sessionID, time.Minute)
 	require.NoError(t, err)
-	require.NotEmpty(t, JWTToken)
-	require.NotEmpty(t, payload)
-
-	payload, err = maker.VerifyToken(JWTToken)
+	verifiedAccess, err := maker.VerifyAccessToken(access)
 	require.NoError(t, err)
-	require.NotEmpty(t, payload)
+	require.Equal(t, accessPayload.ID, verifiedAccess.ID)
+	require.Equal(t, sessionID, verifiedAccess.SessionID)
+	require.Equal(t, username, verifiedAccess.Username)
+	require.Equal(t, TypeAccess, verifiedAccess.TokenType)
+	require.WithinDuration(t, issuedAt, verifiedAccess.IssuedAt.Time, time.Second)
 
-	require.NotEmpty(t, payload.ID)
-	require.Equal(t, username, payload.Username)
-	require.WithinDuration(t, issuedAt, payload.IssuedAt.Time, time.Second)
-	require.WithinDuration(t, expiredAt, payload.ExpiresAt.Time, time.Second)
-}
-
-func TestExpiredJWTToken(t *testing.T) {
-	maker, err := NewJWTMaker(util.RandomString(32))
+	refresh, _, err := maker.CreateRefreshToken(username, sessionID, time.Hour)
 	require.NoError(t, err)
-	require.NotEmpty(t, maker)
-
-	username := util.RandomOwner()
-	JWTToken, payload, err := maker.CreateToken(username, -time.Minute)
+	verifiedRefresh, err := maker.VerifyRefreshToken(refresh)
 	require.NoError(t, err)
-	require.NotEmpty(t, JWTToken)
-	require.NotEmpty(t, payload)
+	require.Equal(t, TypeRefresh, verifiedRefresh.TokenType)
 
-	payload, err = maker.VerifyToken(JWTToken)
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrExpiredToken)
-	require.Nil(t, payload)
-
-}
-
-func TestInvalidJWTTokenAlgNone(t *testing.T) {
-	payload, err := NewPayload(util.RandomOwner(), time.Minute)
-	require.NoError(t, err)
-	require.NotEmpty(t, payload)
-
-	jwtToken := jwt.NewWithClaims(jwt.SigningMethodNone, payload)
-	token, err := jwtToken.SignedString(jwt.UnsafeAllowNoneSignatureType)
-	require.NoError(t, err)
-
-	maker, err := NewJWTMaker(util.RandomString(32))
-	require.NoError(t, err)
-
-	payload, err = maker.VerifyToken(token)
-	require.Error(t, err)
+	_, err = maker.VerifyRefreshToken(access)
 	require.ErrorIs(t, err, ErrInvalidToken)
-	require.Nil(t, payload)
+	_, err = maker.VerifyAccessToken(refresh)
+	require.ErrorIs(t, err, ErrInvalidToken)
+}
+
+func TestJWTMakerRejectsExpiredToken(t *testing.T) {
+	maker, err := NewJWTMaker(util.RandomString(32))
+	require.NoError(t, err)
+
+	value, payload, err := maker.CreateAccessToken(
+		util.RandomOwner(),
+		uuid.New(),
+		-time.Minute,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, value)
+	require.NotNil(t, payload)
+	_, err = maker.VerifyAccessToken(value)
+	require.ErrorIs(t, err, ErrExpiredToken)
+}
+
+func TestJWTMakerRejectsAlgNone(t *testing.T) {
+	payload, err := NewPayload(
+		util.RandomOwner(),
+		uuid.New(),
+		TypeAccess,
+		tokenIssuer,
+		accessTokenAudience,
+		time.Minute,
+	)
+	require.NoError(t, err)
+
+	unsigned := jwt.NewWithClaims(jwt.SigningMethodNone, payload)
+	value, err := unsigned.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	require.NoError(t, err)
+
+	maker, err := NewJWTMaker(util.RandomString(32))
+	require.NoError(t, err)
+	_, err = maker.VerifyAccessToken(value)
+	require.ErrorIs(t, err, ErrInvalidToken)
 }

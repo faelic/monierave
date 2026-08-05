@@ -23,7 +23,11 @@ func TestMain(m *testing.M) {
 	}
 	ctx := context.Background()
 
-	poolConfig, err := pgxpool.ParseConfig(config.DBSource)
+	testDBSource := config.DBTestSource
+	if testDBSource == "" {
+		testDBSource = config.DBSource
+	}
+	poolConfig, err := pgxpool.ParseConfig(testDBSource)
 	if err != nil {
 		log.Fatalf("invalid test database configuration: %v", err)
 	}

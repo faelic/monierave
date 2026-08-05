@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +38,7 @@ func TestEmailVerificationTokenRejectsExpiredAndAccessTokens(t *testing.T) {
 
 	accessMaker, err := NewJWTMaker(secret)
 	require.NoError(t, err)
-	accessToken, _, err := accessMaker.CreateToken("favour", time.Minute)
+	accessToken, _, err := accessMaker.CreateAccessToken("favour", uuid.New(), time.Minute)
 	require.NoError(t, err)
 	_, err = maker.Verify(accessToken)
 	require.ErrorIs(t, err, ErrInvalidToken)

@@ -221,27 +221,31 @@ func TestLoginUserAPI(t *testing.T) {
 					Times(1).
 					DoAndReturn(func(ctx any, arg db.CreateSessionParams) (db.Session, error) {
 						require.Equal(t, user.Username, arg.Username)
-						require.NotEmpty(t, arg.RefreshToken)
+						require.Len(t, arg.RefreshTokenHash, 32)
+						require.True(t, arg.RefreshTokenID.Valid)
 						require.NotEmpty(t, arg.UserAgent)
 						require.NotEmpty(t, arg.ClientIp)
-						require.False(t, arg.IsBlocked)
 						require.True(t, arg.ID.Valid)
 						require.True(t, arg.ExpiresAt.Valid)
 
 						return db.Session{
-							ID:           arg.ID,
-							Username:     arg.Username,
-							RefreshToken: arg.RefreshToken,
-							UserAgent:    arg.UserAgent,
-							ClientIp:     arg.ClientIp,
-							IsBlocked:    arg.IsBlocked,
-							ExpiresAt:    arg.ExpiresAt,
+							ID:               arg.ID,
+							Username:         arg.Username,
+							RefreshTokenHash: arg.RefreshTokenHash,
+							RefreshTokenID:   arg.RefreshTokenID,
+							UserAgent:        arg.UserAgent,
+							ClientIp:         arg.ClientIp,
+							ExpiresAt:        arg.ExpiresAt,
 						}, nil
 					})
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder, tokenMaker stringVerifier) {
 				require.Equal(t, http.StatusOK, recorder.Code)
 				requireBodyMatchLoginUser(t, recorder.Body, user, tokenMaker)
+				require.NotContains(t, recorder.Body.String(), "refresh_token")
+				cookies := recorder.Result().Cookies()
+				require.Len(t, cookies, 1)
+				require.True(t, cookies[0].HttpOnly)
 			},
 		},
 		{
@@ -403,7 +407,7 @@ func TestUpdateUserEmailUsesTransactionalOutbox(t *testing.T) {
 
 	store.EXPECT().
 		UpdateUserTx(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, arg db.UpdateUserParams) (db.UpdateUserTxResult, error) {
+		DoAndReturn(func(_ context.Context, arg db.UpdateUserTxParams) (db.UpdateUserTxResult, error) {
 			require.Equal(t, user.Username, arg.Username)
 			require.True(t, arg.Email.Valid)
 			require.Equal(t, newEmail, arg.Email.String)
@@ -561,7 +565,7 @@ func TestResendUserEmailVerification(t *testing.T) {
 }
 
 type stringVerifier interface {
-	VerifyToken(token string) (*token.Payload, error)
+	VerifyAccessToken(token string) (*token.Payload, error)
 }
 
 func randomUser(password string) (db.User, error) {
@@ -601,17 +605,12 @@ func requireBodyMatchLoginUser(t *testing.T, body *bytes.Buffer, user db.User, t
 
 	require.True(t, gotRsp.SessionID.Valid)
 	require.NotEmpty(t, gotRsp.AccessToken)
-	require.NotEmpty(t, gotRsp.RefreshToken)
 	require.False(t, gotRsp.AccessTokenExpiresAt.IsZero())
-	require.False(t, gotRsp.RefreshTokenExpiresAt.IsZero())
 
-	accessPayload, err := tokenMaker.VerifyToken(gotRsp.AccessToken)
+	accessPayload, err := tokenMaker.VerifyAccessToken(gotRsp.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, user.Username, accessPayload.Username)
-
-	refreshPayload, err := tokenMaker.VerifyToken(gotRsp.RefreshToken)
-	require.NoError(t, err)
-	require.Equal(t, user.Username, refreshPayload.Username)
+	require.Equal(t, uuid.UUID(gotRsp.SessionID.Bytes), accessPayload.SessionID)
 
 	require.Equal(t, user.Username, gotRsp.User.Username)
 	require.Equal(t, user.FullName, gotRsp.User.FullName)

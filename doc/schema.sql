@@ -53,12 +53,15 @@ CREATE TABLE "transfers" (
 CREATE TABLE "sessions" (
   "id" uuid PRIMARY KEY,
   "username" varchar NOT NULL,
-  "refresh_token" varchar NOT NULL,
+  "refresh_token_hash" bytea NOT NULL,
+  "refresh_token_id" uuid NOT NULL,
   "user_agent" varchar NOT NULL,
   "client_ip" varchar NOT NULL,
-  "is_blocked" boolean NOT NULL DEFAULT false,
   "expires_at" timestamptz NOT NULL,
-  "created_at" timestamptz NOT NULL DEFAULT (now())
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  "last_refreshed_at" timestamptz,
+  "revoked_at" timestamptz,
+  "revoked_reason" varchar
 );
 
 CREATE TABLE "email_jobs" (
@@ -151,7 +154,10 @@ CREATE INDEX "transfers_from_to_account_id_idx" ON "transfers" ("from_account_id
 
 CREATE INDEX "sessions_username_idx" ON "sessions" ("username");
 
-CREATE UNIQUE INDEX "sessions_refresh_token_idx" ON "sessions" ("refresh_token");
+CREATE UNIQUE INDEX "sessions_refresh_token_hash_idx" ON "sessions" ("refresh_token_hash");
+
+CREATE INDEX "sessions_active_username_idx" ON "sessions" ("username", "expires_at")
+WHERE "revoked_at" IS NULL;
 
 CREATE INDEX "email_jobs_status_created_at_idx" ON "email_jobs" ("status", "created_at");
 
@@ -177,6 +183,10 @@ CREATE INDEX "email_delivery_events_job_idx" ON "email_delivery_events" ("email_
 CREATE INDEX "email_delivery_events_provider_message_idx" ON "email_delivery_events" ("provider_message_id", "occurred_at" DESC);
 
 COMMENT ON TABLE "users" IS 'Application users and their email verification lifecycle.';
+
+COMMENT ON COLUMN "sessions"."refresh_token_hash" IS 'SHA-256 hash of the current refresh token; raw refresh tokens are never persisted.';
+
+COMMENT ON COLUMN "sessions"."revoked_at" IS 'Non-null means every access and refresh token bound to this session is revoked.';
 
 COMMENT ON COLUMN "users"."account_status" IS 'Pending accounts may only manage email verification; active accounts may use financial features; disabled registrations exceeded the verification window.';
 

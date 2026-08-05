@@ -1,18 +1,25 @@
 package token
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
-const minSecretKeySize = 32
+const (
+	minSecretKeySize     = 32
+	tokenIssuer          = "monierave"
+	accessTokenAudience  = "monierave-api"
+	refreshTokenAudience = "monierave-refresh"
+)
 
-// JWTMaker is a json web token maker
 type JWTMaker struct {
-	secretKey string
+	accessKey  []byte
+	refreshKey []byte
 }
 
 func NewJWTMaker(secretKey string) (Maker, error) {
@@ -20,42 +27,116 @@ func NewJWTMaker(secretKey string) (Maker, error) {
 		return nil, fmt.Errorf("invalid key size, must be at least %d characters", minSecretKeySize)
 	}
 
-	return &JWTMaker{secretKey: secretKey}, nil
+	accessKey := sha256.Sum256([]byte(secretKey + ":" + accessTokenAudience))
+	refreshKey := sha256.Sum256([]byte(secretKey + ":" + refreshTokenAudience))
+	return &JWTMaker{accessKey: accessKey[:], refreshKey: refreshKey[:]}, nil
 }
 
-// creates a new token for a specific username and duration
-func (maker *JWTMaker) CreateToken(username string, duration time.Duration) (string, *Payload, error) {
-	payload, err := NewPayload(username, duration)
+func (maker *JWTMaker) CreateAccessToken(
+	username string,
+	sessionID uuid.UUID,
+	duration time.Duration,
+) (string, *Payload, error) {
+	return maker.createToken(
+		username,
+		sessionID,
+		TypeAccess,
+		accessTokenAudience,
+		duration,
+		maker.accessKey,
+	)
+}
+
+func (maker *JWTMaker) CreateRefreshToken(
+	username string,
+	sessionID uuid.UUID,
+	duration time.Duration,
+) (string, *Payload, error) {
+	return maker.createToken(
+		username,
+		sessionID,
+		TypeRefresh,
+		refreshTokenAudience,
+		duration,
+		maker.refreshKey,
+	)
+}
+
+func (maker *JWTMaker) VerifyAccessToken(value string) (*Payload, error) {
+	return maker.verifyToken(
+		value,
+		TypeAccess,
+		accessTokenAudience,
+		maker.accessKey,
+	)
+}
+
+func (maker *JWTMaker) VerifyRefreshToken(value string) (*Payload, error) {
+	return maker.verifyToken(
+		value,
+		TypeRefresh,
+		refreshTokenAudience,
+		maker.refreshKey,
+	)
+}
+
+func (maker *JWTMaker) createToken(
+	username string,
+	sessionID uuid.UUID,
+	tokenType Type,
+	audience string,
+	duration time.Duration,
+	key []byte,
+) (string, *Payload, error) {
+	payload, err := NewPayload(
+		username,
+		sessionID,
+		tokenType,
+		tokenIssuer,
+		audience,
+		duration,
+	)
 	if err != nil {
-		return "", payload, err
+		return "", nil, err
 	}
 
-	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, payload)
-	token, err := jwtToken.SignedString([]byte(maker.secretKey))
-	return token, payload, err
+	value, err := jwt.NewWithClaims(jwt.SigningMethodHS256, payload).SignedString(key)
+	return value, payload, err
 }
 
-// checks if the token is valid or not
-func (maker *JWTMaker) VerifyToken(token string) (*Payload, error) {
+func (maker *JWTMaker) verifyToken(
+	value string,
+	expectedType Type,
+	audience string,
+	key []byte,
+) (*Payload, error) {
 	payload := &Payload{}
-	keyFunc := func(token *jwt.Token) (interface{}, error) {
-		_, ok := token.Method.(*jwt.SigningMethodHMAC)
-		if !ok {
-			return nil, ErrInvalidToken
-		}
-
-		return []byte(maker.secretKey), nil
-	}
-
-	jwtToken, err := jwt.ParseWithClaims(token, payload, keyFunc)
+	parsed, err := jwt.ParseWithClaims(
+		value,
+		payload,
+		func(parsed *jwt.Token) (any, error) {
+			if parsed.Method != jwt.SigningMethodHS256 {
+				return nil, ErrInvalidToken
+			}
+			return key, nil
+		},
+		jwt.WithIssuer(tokenIssuer),
+		jwt.WithAudience(audience),
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+	)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrExpiredToken
 		}
 		return nil, ErrInvalidToken
 	}
-
-	if !jwtToken.Valid {
+	if !parsed.Valid ||
+		payload.ID == uuid.Nil ||
+		payload.RegisteredClaims.ID != payload.ID.String() ||
+		payload.SessionID == uuid.Nil ||
+		payload.Username == "" ||
+		payload.Subject != payload.Username ||
+		payload.TokenType != expectedType {
 		return nil, ErrInvalidToken
 	}
 

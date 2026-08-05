@@ -1,17 +1,16 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
+	db "github.com/faelic/monierave/db/sqlc"
+	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
-
-type renewAccessTokenRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
-}
 
 type renewAccessTokenResponse struct {
 	AccessToken          string    `json:"access_token"`
@@ -19,27 +18,28 @@ type renewAccessTokenResponse struct {
 }
 
 func (server *Server) renewAccessToken(ctx *gin.Context) {
-	var req renewAccessTokenRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+	if !server.originAllowed(ctx) {
+		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
 		return
 	}
 
-	refreshPayload, err := server.tokenMaker.VerifyToken(req.RefreshToken)
+	currentRefreshToken, err := server.refreshCookie(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidToken))
 		return
 	}
-
-	session, err := server.store.GetSession(
-		ctx,
-		pgtype.UUID{
-			Bytes: refreshPayload.ID,
-			Valid: true,
-		},
-	)
+	refreshPayload, err := server.tokenMaker.VerifyRefreshToken(currentRefreshToken)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		server.clearRefreshCookie(ctx)
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidToken))
+		return
+	}
+
+	sessionID := pgtype.UUID{Bytes: refreshPayload.SessionID, Valid: true}
+	session, err := server.store.GetSession(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			server.clearRefreshCookie(ctx)
 			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidSession))
 			return
 		}
@@ -47,36 +47,103 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 		return
 	}
 
-	if session.IsBlocked {
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrBlockedSession))
-		return
-	}
-
-	if session.Username != refreshPayload.Username {
+	remaining := time.Until(session.ExpiresAt.Time)
+	if session.RevokedAt.Valid || remaining <= 0 {
+		server.clearRefreshCookie(ctx)
 		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidSession))
 		return
 	}
 
-	if session.RefreshToken != req.RefreshToken {
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrSessionMismatch))
+	newRefreshToken, newRefreshPayload, err := server.tokenMaker.CreateRefreshToken(
+		refreshPayload.Username,
+		refreshPayload.SessionID,
+		remaining,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
-
-	if time.Now().After(session.ExpiresAt.Time) {
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrExpiredSession))
-		return
-	}
-
-	accessToken, accessPayload, err := server.tokenMaker.CreateToken(refreshPayload.Username, server.config.AccessTokenDuration)
+	accessToken, accessPayload, err := server.tokenMaker.CreateAccessToken(
+		refreshPayload.Username,
+		refreshPayload.SessionID,
+		server.config.AccessTokenDuration,
+	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
-	rsp := renewAccessTokenResponse{
-		AccessToken:          accessToken,
-		AccessTokenExpiresAt: accessPayload.ExpiresAt.Time,
+	_, err = server.store.RotateRefreshTokenTx(ctx, db.RotateRefreshTokenTxParams{
+		SessionID:          sessionID,
+		Username:           refreshPayload.Username,
+		PresentedTokenHash: token.Hash(currentRefreshToken),
+		PresentedRefreshID: pgtype.UUID{Bytes: refreshPayload.ID, Valid: true},
+		NewTokenHash:       token.Hash(newRefreshToken),
+		NewRefreshID:       pgtype.UUID{Bytes: newRefreshPayload.ID, Valid: true},
+	})
+	if err != nil {
+		server.clearRefreshCookie(ctx)
+		switch {
+		case errors.Is(err, db.ErrRefreshTokenReuse),
+			errors.Is(err, db.ErrSessionExpired),
+			errors.Is(err, db.ErrSessionRevoked),
+			errors.Is(err, db.ErrSessionMismatch),
+			errors.Is(err, pgx.ErrNoRows):
+			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidSession))
+		default:
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		}
+		return
 	}
 
-	ctx.JSON(http.StatusOK, rsp)
+	server.setRefreshCookie(ctx, newRefreshToken, newRefreshPayload.ExpiresAt.Time)
+	ctx.JSON(http.StatusOK, renewAccessTokenResponse{
+		AccessToken:          accessToken,
+		AccessTokenExpiresAt: accessPayload.ExpiresAt.Time,
+	})
+}
+
+func (server *Server) logoutCurrentSession(ctx *gin.Context) {
+	if !server.originAllowed(ctx) {
+		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
+		return
+	}
+	value, err := server.refreshCookie(ctx)
+	server.clearRefreshCookie(ctx)
+	if err != nil {
+		ctx.Status(http.StatusNoContent)
+		return
+	}
+
+	payload, err := server.tokenMaker.VerifyRefreshToken(value)
+	if err != nil {
+		ctx.Status(http.StatusNoContent)
+		return
+	}
+	err = server.store.RevokeSessionTx(
+		ctx,
+		pgtype.UUID{Bytes: payload.SessionID, Valid: true},
+		"user_logout",
+		"user",
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
+func (server *Server) logoutAllSessions(ctx *gin.Context) {
+	payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	if err := server.store.RevokeAllUserSessionsTx(
+		ctx,
+		payload.Username,
+		"user_logout_all",
+		"all_sessions_logged_out",
+	); err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+	server.clearRefreshCookie(ctx)
+	ctx.Status(http.StatusNoContent)
 }

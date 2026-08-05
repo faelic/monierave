@@ -49,7 +49,7 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 func (server *Server) setupRouter() {
 	router := gin.New()
 
-	router.Use(gin.Logger(), gin.Recovery())
+	router.Use(gin.Logger(), gin.Recovery(), server.corsMiddleware())
 	_ = router.SetTrustedProxies(nil)
 
 	router.GET("/", func(ctx *gin.Context) {
@@ -59,14 +59,18 @@ func (server *Server) setupRouter() {
 	router.POST("/users/login", server.loginUser)
 	router.GET("/users/verify-email", server.verifyUserEmail)
 	router.POST("/tokens/renew_access", server.renewAccessToken)
+	router.POST("/sessions/logout", server.logoutCurrentSession)
 	router.POST("/webhooks/resend", server.handleResendWebhook)
 
-	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker))
+	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker, server.store))
 	authRoutes.PATCH("/users/me", server.updateUser)
 	authRoutes.GET("/users/me/email-status", server.getUserEmailStatus)
 	authRoutes.POST("/users/me/resend-verification", server.resendUserEmailVerification)
+	authRoutes.POST("/sessions/logout-all", server.logoutAllSessions)
 
-	financialMiddleware := []gin.HandlerFunc{authMiddleware(server.tokenMaker)}
+	financialMiddleware := []gin.HandlerFunc{
+		authMiddleware(server.tokenMaker, server.store),
+	}
 	if server.config.EnforceEmailVerification {
 		financialMiddleware = append(
 			financialMiddleware,
