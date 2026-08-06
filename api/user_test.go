@@ -263,6 +263,15 @@ func TestLoginUserAPI(t *testing.T) {
 				store.EXPECT().
 					CreateSession(gomock.Any(), gomock.Any()).
 					Times(0)
+
+				store.EXPECT().
+					RecordLoginFailure(gomock.Any(), db.LoginFailureAuditParams{
+						Username:  user.Username,
+						ClientIP:  "127.0.0.1",
+						UserAgent: "api-test",
+						Reason:    "unknown_user",
+					}).
+					Return(nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder, tokenMaker stringVerifier) {
 				require.Equal(t, http.StatusUnauthorized, recorder.Code)
@@ -283,6 +292,15 @@ func TestLoginUserAPI(t *testing.T) {
 				store.EXPECT().
 					CreateSession(gomock.Any(), gomock.Any()).
 					Times(0)
+
+				store.EXPECT().
+					RecordLoginFailure(gomock.Any(), db.LoginFailureAuditParams{
+						Username:  user.Username,
+						ClientIP:  "127.0.0.1",
+						UserAgent: "api-test",
+						Reason:    "invalid_password",
+					}).
+					Return(nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder, tokenMaker stringVerifier) {
 				require.Equal(t, http.StatusUnauthorized, recorder.Code)

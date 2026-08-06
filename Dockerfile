@@ -26,7 +26,7 @@ WORKDIR /app
 ENV GIN_MODE=release
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --system monierave && \
     useradd --system --gid monierave --home-dir /app --no-create-home monierave

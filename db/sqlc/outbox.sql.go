@@ -35,7 +35,7 @@ SET
   publish_attempts = publish_attempts + 1
 FROM candidates
 WHERE event.id = candidates.id
-RETURNING event.id, event.email_job_id, event.event_type, event.payload, event.status, event.publish_attempts, event.available_at, event.claimed_by, event.claimed_until, event.last_error, event.created_at, event.published_at
+RETURNING event.id, event.email_job_id, event.event_type, event.payload, event.status, event.publish_attempts, event.available_at, event.claimed_by, event.claimed_until, event.last_error, event.created_at, event.published_at, event.correlation_id, event.entity_type, event.entity_id
 `
 
 type ClaimOutboxEventsParams struct {
@@ -66,6 +66,9 @@ func (q *Queries) ClaimOutboxEvents(ctx context.Context, arg ClaimOutboxEventsPa
 			&i.LastError,
 			&i.CreatedAt,
 			&i.PublishedAt,
+			&i.CorrelationID,
+			&i.EntityType,
+			&i.EntityID,
 		); err != nil {
 			return nil, err
 		}
@@ -82,18 +85,24 @@ INSERT INTO outbox_events (
   id,
   email_job_id,
   event_type,
-  payload
+  payload,
+  correlation_id,
+  entity_type,
+  entity_id
 ) VALUES (
-  $1, $2, $3, $4
+  $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at
+RETURNING id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at, correlation_id, entity_type, entity_id
 `
 
 type CreateOutboxEventParams struct {
-	ID         pgtype.UUID `json:"id"`
-	EmailJobID pgtype.UUID `json:"email_job_id"`
-	EventType  string      `json:"event_type"`
-	Payload    []byte      `json:"payload"`
+	ID            pgtype.UUID `json:"id"`
+	EmailJobID    pgtype.UUID `json:"email_job_id"`
+	EventType     string      `json:"event_type"`
+	Payload       []byte      `json:"payload"`
+	CorrelationID pgtype.UUID `json:"correlation_id"`
+	EntityType    string      `json:"entity_type"`
+	EntityID      pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) CreateOutboxEvent(ctx context.Context, arg CreateOutboxEventParams) (OutboxEvent, error) {
@@ -102,6 +111,9 @@ func (q *Queries) CreateOutboxEvent(ctx context.Context, arg CreateOutboxEventPa
 		arg.EmailJobID,
 		arg.EventType,
 		arg.Payload,
+		arg.CorrelationID,
+		arg.EntityType,
+		arg.EntityID,
 	)
 	var i OutboxEvent
 	err := row.Scan(
@@ -117,6 +129,9 @@ func (q *Queries) CreateOutboxEvent(ctx context.Context, arg CreateOutboxEventPa
 		&i.LastError,
 		&i.CreatedAt,
 		&i.PublishedAt,
+		&i.CorrelationID,
+		&i.EntityType,
+		&i.EntityID,
 	)
 	return i, err
 }
@@ -136,7 +151,7 @@ func (q *Queries) DeleteExpiredPublishedOutboxEvents(ctx context.Context, publis
 }
 
 const getOutboxEvent = `-- name: GetOutboxEvent :one
-SELECT id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at FROM outbox_events
+SELECT id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at, correlation_id, entity_type, entity_id FROM outbox_events
 WHERE id = $1
 LIMIT 1
 `
@@ -157,8 +172,88 @@ func (q *Queries) GetOutboxEvent(ctx context.Context, id pgtype.UUID) (OutboxEve
 		&i.LastError,
 		&i.CreatedAt,
 		&i.PublishedAt,
+		&i.CorrelationID,
+		&i.EntityType,
+		&i.EntityID,
 	)
 	return i, err
+}
+
+const getOutboxEventByEmailJobID = `-- name: GetOutboxEventByEmailJobID :one
+SELECT id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at, correlation_id, entity_type, entity_id FROM outbox_events
+WHERE email_job_id = $1
+LIMIT 1
+`
+
+func (q *Queries) GetOutboxEventByEmailJobID(ctx context.Context, emailJobID pgtype.UUID) (OutboxEvent, error) {
+	row := q.db.QueryRow(ctx, getOutboxEventByEmailJobID, emailJobID)
+	var i OutboxEvent
+	err := row.Scan(
+		&i.ID,
+		&i.EmailJobID,
+		&i.EventType,
+		&i.Payload,
+		&i.Status,
+		&i.PublishAttempts,
+		&i.AvailableAt,
+		&i.ClaimedBy,
+		&i.ClaimedUntil,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.PublishedAt,
+		&i.CorrelationID,
+		&i.EntityType,
+		&i.EntityID,
+	)
+	return i, err
+}
+
+const listOutboxEventsByEntity = `-- name: ListOutboxEventsByEntity :many
+SELECT id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at, correlation_id, entity_type, entity_id FROM outbox_events
+WHERE entity_type = $1
+  AND entity_id = $2
+ORDER BY created_at, id
+`
+
+type ListOutboxEventsByEntityParams struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) ListOutboxEventsByEntity(ctx context.Context, arg ListOutboxEventsByEntityParams) ([]OutboxEvent, error) {
+	rows, err := q.db.Query(ctx, listOutboxEventsByEntity, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OutboxEvent{}
+	for rows.Next() {
+		var i OutboxEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.EmailJobID,
+			&i.EventType,
+			&i.Payload,
+			&i.Status,
+			&i.PublishAttempts,
+			&i.AvailableAt,
+			&i.ClaimedBy,
+			&i.ClaimedUntil,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.PublishedAt,
+			&i.CorrelationID,
+			&i.EntityType,
+			&i.EntityID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markOutboxEventPublished = `-- name: MarkOutboxEventPublished :one
@@ -170,7 +265,7 @@ SET
   claimed_until = NULL,
   last_error = NULL
 WHERE id = $1
-RETURNING id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at
+RETURNING id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at, correlation_id, entity_type, entity_id
 `
 
 func (q *Queries) MarkOutboxEventPublished(ctx context.Context, id pgtype.UUID) (OutboxEvent, error) {
@@ -189,6 +284,9 @@ func (q *Queries) MarkOutboxEventPublished(ctx context.Context, id pgtype.UUID) 
 		&i.LastError,
 		&i.CreatedAt,
 		&i.PublishedAt,
+		&i.CorrelationID,
+		&i.EntityType,
+		&i.EntityID,
 	)
 	return i, err
 }
@@ -202,7 +300,7 @@ SET
   claimed_until = NULL,
   last_error = $3
 WHERE id = $1
-RETURNING id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at
+RETURNING id, email_job_id, event_type, payload, status, publish_attempts, available_at, claimed_by, claimed_until, last_error, created_at, published_at, correlation_id, entity_type, entity_id
 `
 
 type ReleaseOutboxEventParams struct {
@@ -227,6 +325,9 @@ func (q *Queries) ReleaseOutboxEvent(ctx context.Context, arg ReleaseOutboxEvent
 		&i.LastError,
 		&i.CreatedAt,
 		&i.PublishedAt,
+		&i.CorrelationID,
+		&i.EntityType,
+		&i.EntityID,
 	)
 	return i, err
 }

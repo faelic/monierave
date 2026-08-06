@@ -78,6 +78,7 @@ func TestRotateRefreshTokenTxDetectsReuseAndRevokesSession(t *testing.T) {
 	)
 	require.NoError(t, err)
 	requireAuditEvent(t, logs, "session_created")
+	requireAuditEvent(t, logs, "login_succeeded")
 	requireAuditEvent(t, logs, "refresh_token_rotated")
 	requireAuditEvent(t, logs, "refresh_token_reuse_detected")
 }

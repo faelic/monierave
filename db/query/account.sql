@@ -39,7 +39,7 @@ ORDER BY created_at, id
 LIMIT $2
 OFFSET $3;
 
--- name: AddAccountBalance :one
+-- name: AddAccountBalanceInternal :one
 UPDATE accounts
 SET
   balance = balance + sqlc.arg(amount),

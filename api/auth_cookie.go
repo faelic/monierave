@@ -82,13 +82,20 @@ func (server *Server) corsMiddleware() gin.HandlerFunc {
 			if !server.originAllowed(ctx) {
 				ctx.AbortWithStatusJSON(
 					http.StatusForbidden,
-					errorResponse(ErrForbidden),
+					errorResponse(ctx, ErrForbidden),
 				)
 				return
 			}
 			ctx.Header("Access-Control-Allow-Origin", origin)
 			ctx.Header("Access-Control-Allow-Credentials", "true")
-			ctx.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			ctx.Header(
+				"Access-Control-Allow-Headers",
+				"Authorization, Content-Type, Idempotency-Key",
+			)
+			ctx.Header(
+				"Access-Control-Expose-Headers",
+				"Idempotency-Replayed, X-Request-ID, X-Correlation-ID",
+			)
 			ctx.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 			ctx.Header("Vary", "Origin")
 		}

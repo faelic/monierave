@@ -39,21 +39,77 @@ CREATE TABLE "accounts" (
   CHECK ((status = 'closed' AND closed_at IS NOT NULL AND balance = 0) OR (status <> 'closed' AND closed_at IS NULL))
 );
 
-CREATE TABLE "entries" (
+CREATE TABLE "ledger_accounts" (
   "id" bigserial PRIMARY KEY,
-  "account_id" bigint NOT NULL,
-  "amount" bigint NOT NULL,
-  "created_at" timestamptz NOT NULL DEFAULT (now())
+  "public_id" uuid UNIQUE NOT NULL DEFAULT (gen_random_uuid()),
+  "customer_account_id" bigint UNIQUE,
+  "code" varchar UNIQUE,
+  "kind" varchar NOT NULL,
+  "currency" varchar NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  CHECK (kind IN ('customer', 'settlement')),
+  CHECK ((kind = 'customer' AND customer_account_id IS NOT NULL AND code IS NULL) OR (kind = 'settlement' AND customer_account_id IS NULL AND code IS NOT NULL))
 );
 
-CREATE TABLE "transfers" (
+CREATE TABLE "banking_transactions" (
+  "id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
+  "reference" varchar UNIQUE NOT NULL,
+  "transaction_type" varchar NOT NULL,
+  "status" varchar NOT NULL DEFAULT 'pending',
+  "currency" varchar NOT NULL,
+  "amount" bigint NOT NULL,
+  "narration" varchar NOT NULL DEFAULT '',
+  "initiated_by" varchar NOT NULL,
+  "reversal_of" uuid UNIQUE,
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  "posted_at" timestamptz,
+  "failed_at" timestamptz,
+  "reversed_at" timestamptz,
+  CHECK (transaction_type IN ('deposit', 'withdrawal', 'internal_transfer', 'reversal')),
+  CHECK (status IN ('pending', 'posted', 'failed', 'reversed')),
+  CHECK (amount > 0),
+  CHECK ((transaction_type = 'reversal' AND reversal_of IS NOT NULL AND reversal_of <> id) OR (transaction_type <> 'reversal' AND reversal_of IS NULL)),
+  CHECK ((status = 'pending' AND posted_at IS NULL AND failed_at IS NULL AND reversed_at IS NULL) OR (status = 'posted' AND posted_at IS NOT NULL AND failed_at IS NULL AND reversed_at IS NULL) OR (status = 'failed' AND posted_at IS NULL AND failed_at IS NOT NULL AND reversed_at IS NULL) OR (status = 'reversed' AND posted_at IS NOT NULL AND failed_at IS NULL AND reversed_at IS NOT NULL))
+);
+
+CREATE TABLE "ledger_postings" (
   "id" bigserial PRIMARY KEY,
-  "from_account_id" bigint NOT NULL,
-  "to_account_id" bigint NOT NULL,
+  "transaction_id" uuid NOT NULL,
+  "ledger_account_id" bigint NOT NULL,
   "amount" bigint NOT NULL,
   "created_at" timestamptz NOT NULL DEFAULT (now()),
-  CHECK (amount > 0),
-  CHECK (from_account_id <> to_account_id)
+  UNIQUE ("transaction_id", "ledger_account_id"),
+  CHECK (amount <> 0)
+);
+
+CREATE TABLE "idempotency_keys" (
+  "id" bigserial PRIMARY KEY,
+  "username" varchar NOT NULL,
+  "operation" varchar NOT NULL,
+  "idempotency_key" varchar NOT NULL,
+  "request_hash" bytea NOT NULL,
+  "transaction_id" uuid,
+  "response_status" smallint,
+  "result_snapshot" jsonb,
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  "expires_at" timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
+  UNIQUE ("username", "operation", "idempotency_key"),
+  CHECK (operation IN ('internal_transfer')),
+  CHECK (length(idempotency_key) BETWEEN 1 AND 128),
+  CHECK (octet_length(request_hash) = 32),
+  CHECK ((transaction_id IS NULL AND response_status IS NULL AND result_snapshot IS NULL) OR (transaction_id IS NOT NULL AND response_status IS NOT NULL AND result_snapshot IS NOT NULL)),
+  CHECK (expires_at > created_at)
+);
+
+CREATE TABLE "beneficiaries" (
+  "id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
+  "owner" varchar NOT NULL,
+  "destination_account_id" bigint NOT NULL,
+  "nickname" varchar NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  "updated_at" timestamptz NOT NULL DEFAULT (now()),
+  UNIQUE ("owner", "destination_account_id"),
+  CHECK (length(nickname) BETWEEN 1 AND 50 AND nickname = btrim(nickname))
 );
 
 CREATE TABLE "sessions" (
@@ -108,6 +164,9 @@ CREATE TABLE "outbox_events" (
   "email_job_id" uuid UNIQUE NOT NULL,
   "event_type" varchar NOT NULL,
   "payload" jsonb NOT NULL,
+  "correlation_id" uuid NOT NULL,
+  "entity_type" varchar NOT NULL,
+  "entity_id" uuid NOT NULL,
   "status" varchar NOT NULL DEFAULT 'pending',
   "publish_attempts" integer NOT NULL DEFAULT 0,
   "available_at" timestamptz NOT NULL DEFAULT (now()),
@@ -152,13 +211,19 @@ CREATE UNIQUE INDEX "accounts_owner_currency_key" ON "accounts" ("owner", "curre
 
 CREATE INDEX "accounts_owner_status_idx" ON "accounts" ("owner", "status", "created_at", "id");
 
-CREATE INDEX "entries_account_id_idx" ON "entries" ("account_id");
+CREATE INDEX "ledger_accounts_kind_currency_idx" ON "ledger_accounts" ("kind", "currency", "id");
 
-CREATE INDEX "transfers_from_account_id_idx" ON "transfers" ("from_account_id");
+CREATE INDEX "banking_transactions_created_at_idx" ON "banking_transactions" ("created_at" DESC, "id");
 
-CREATE INDEX "transfers_to_account_id_idx" ON "transfers" ("to_account_id");
+CREATE INDEX "banking_transactions_type_status_idx" ON "banking_transactions" ("transaction_type", "status", "created_at" DESC);
 
-CREATE INDEX "transfers_from_to_account_id_idx" ON "transfers" ("from_account_id", "to_account_id");
+CREATE INDEX "ledger_postings_account_created_idx" ON "ledger_postings" ("ledger_account_id", "created_at", "id");
+
+CREATE INDEX "ledger_postings_account_transaction_idx" ON "ledger_postings" ("ledger_account_id", "transaction_id");
+
+CREATE INDEX "idempotency_keys_expires_at_idx" ON "idempotency_keys" ("expires_at");
+
+CREATE INDEX "beneficiaries_owner_created_idx" ON "beneficiaries" ("owner", "created_at" DESC, "id" DESC);
 
 CREATE INDEX "sessions_username_idx" ON "sessions" ("username");
 
@@ -179,6 +244,12 @@ WHERE "provider_message_id" IS NOT NULL;
 
 CREATE INDEX "outbox_events_claimable_idx" ON "outbox_events" ("available_at", "created_at")
 WHERE "status" IN ('pending', 'publishing');
+
+CREATE INDEX "outbox_events_correlation_idx" ON "outbox_events" ("correlation_id", "created_at", "id");
+
+CREATE INDEX "outbox_events_entity_idx" ON "outbox_events" ("entity_type", "entity_id", "created_at", "id");
+
+CREATE INDEX "outbox_events_type_created_idx" ON "outbox_events" ("event_type", "created_at", "id");
 
 CREATE INDEX "audit_logs_entity_idx" ON "audit_logs" ("entity_type", "entity_id", "created_at", "id");
 
@@ -204,7 +275,19 @@ COMMENT ON COLUMN "users"."account_status" IS 'Pending accounts may only manage 
 
 COMMENT ON COLUMN "users"."registration_expires_at" IS 'Unverified registrations expire after 24 hours.';
 
-COMMENT ON COLUMN "entries"."amount" IS 'Can be negative or positive';
+COMMENT ON TABLE "ledger_accounts" IS 'Customer and system accounts used by the double-entry ledger.';
+
+COMMENT ON TABLE "banking_transactions" IS 'Business-level financial events whose details are immutable after creation.';
+
+COMMENT ON TABLE "ledger_postings" IS 'Append-only signed movements. Every posted transaction must sum to zero.';
+
+COMMENT ON TABLE "idempotency_keys" IS 'Short-lived deduplication records for safely retrying money-moving requests.';
+
+COMMENT ON COLUMN "idempotency_keys"."request_hash" IS 'SHA-256 hash of the normalized request payload.';
+
+COMMENT ON COLUMN "idempotency_keys"."result_snapshot" IS 'Original committed domain result returned for identical retries.';
+
+COMMENT ON TABLE "beneficiaries" IS 'User-owned saved transfer destinations. Account bigint IDs remain internal.';
 
 COMMENT ON TABLE "email_jobs" IS 'Durable email work items. Dead-letter jobs remain here with status dead_letter and may be replayed using parent_job_id.';
 
@@ -220,11 +303,21 @@ COMMENT ON TABLE "email_delivery_events" IS 'Idempotent append-only record of ve
 
 ALTER TABLE "accounts" ADD FOREIGN KEY ("owner") REFERENCES "users" ("username") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "entries" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "ledger_accounts" ADD FOREIGN KEY ("customer_account_id") REFERENCES "accounts" ("id");
 
-ALTER TABLE "transfers" ADD FOREIGN KEY ("from_account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "banking_transactions" ADD FOREIGN KEY ("reversal_of") REFERENCES "banking_transactions" ("id");
 
-ALTER TABLE "transfers" ADD FOREIGN KEY ("to_account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "ledger_postings" ADD FOREIGN KEY ("transaction_id") REFERENCES "banking_transactions" ("id");
+
+ALTER TABLE "ledger_postings" ADD FOREIGN KEY ("ledger_account_id") REFERENCES "ledger_accounts" ("id");
+
+ALTER TABLE "idempotency_keys" ADD FOREIGN KEY ("username") REFERENCES "users" ("username");
+
+ALTER TABLE "idempotency_keys" ADD FOREIGN KEY ("transaction_id") REFERENCES "banking_transactions" ("id");
+
+ALTER TABLE "beneficiaries" ADD FOREIGN KEY ("owner") REFERENCES "users" ("username");
+
+ALTER TABLE "beneficiaries" ADD FOREIGN KEY ("destination_account_id") REFERENCES "accounts" ("id");
 
 ALTER TABLE "sessions" ADD FOREIGN KEY ("username") REFERENCES "users" ("username") DEFERRABLE INITIALLY IMMEDIATE;
 

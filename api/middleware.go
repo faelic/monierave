@@ -24,27 +24,27 @@ func authMiddleware(tokenMaker token.Maker, store db.Store) gin.HandlerFunc {
 		authorizationHeader := ctx.GetHeader(authorizationHeaderKey)
 
 		if len(authorizationHeader) == 0 {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ctx, ErrUnauthorized))
 			return
 		}
 
 		fields := strings.Fields(authorizationHeader)
 
 		if len(fields) != 2 {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ctx, ErrUnauthorized))
 			return
 		}
 		authorizationType := strings.ToLower(fields[0])
 
 		if authorizationType != authorizationTypeBearer {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ctx, ErrUnauthorized))
 			return
 		}
 
 		accessToken := fields[1]
 		payload, err := tokenMaker.VerifyAccessToken(accessToken)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ctx, ErrUnauthorized))
 			return
 		}
 
@@ -59,13 +59,13 @@ func authMiddleware(tokenMaker token.Maker, store db.Store) gin.HandlerFunc {
 				errors.Is(err, db.ErrSessionMismatch) {
 				ctx.AbortWithStatusJSON(
 					http.StatusUnauthorized,
-					errorResponse(ErrUnauthorized),
+					errorResponse(ctx, ErrUnauthorized),
 				)
 				return
 			}
 			ctx.AbortWithStatusJSON(
 				http.StatusInternalServerError,
-				errorResponse(ErrInternalServer),
+				errorResponse(ctx, ErrInternalServer),
 			)
 			return
 		}
@@ -93,10 +93,10 @@ func verifiedAccountMiddleware(store db.Store) gin.HandlerFunc {
 		user, err := store.GetUser(ctx, payload.Username)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
+				ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ctx, ErrUnauthorized))
 				return
 			}
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 			return
 		}
 
@@ -114,7 +114,7 @@ func verifiedAccountMiddleware(store db.Store) gin.HandlerFunc {
 			if disableErr != nil && !errors.Is(disableErr, pgx.ErrNoRows) {
 				ctx.AbortWithStatusJSON(
 					http.StatusInternalServerError,
-					errorResponse(ErrInternalServer),
+					errorResponse(ctx, ErrInternalServer),
 				)
 				return
 			}
@@ -125,7 +125,10 @@ func verifiedAccountMiddleware(store db.Store) gin.HandlerFunc {
 			message = ErrRegistrationExpired
 		}
 		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"code":                stableErrorCode(message),
+			"message":             message.Error(),
 			"error":               message.Error(),
+			"request_id":          requestID(ctx),
 			"account_status":      user.AccountStatus,
 			"allowed_features":    unverifiedAllowedFeatures,
 			"restricted_features": unverifiedRestrictedFeatures,

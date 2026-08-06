@@ -67,6 +67,14 @@ type Account struct {
 	ClosedAt  pgtype.Timestamptz `json:"closed_at"`
 }
 
+type AccountOpeningTransaction struct {
+	AccountID     int64       `json:"account_id"`
+	TransactionID pgtype.UUID `json:"transaction_id"`
+	Balance       int64       `json:"balance"`
+	Currency      string      `json:"currency"`
+	Owner         string      `json:"owner"`
+}
+
 // Append-only audit history. Intentionally has no foreign keys so records survive entity retention cleanup.
 type AuditLog struct {
 	ID            int64              `json:"id"`
@@ -80,6 +88,33 @@ type AuditLog struct {
 	Message       pgtype.Text        `json:"message"`
 	Metadata      []byte             `json:"metadata"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+// Business-level financial events whose details are immutable after creation.
+type BankingTransaction struct {
+	ID              pgtype.UUID        `json:"id"`
+	Reference       string             `json:"reference"`
+	TransactionType string             `json:"transaction_type"`
+	Status          string             `json:"status"`
+	Currency        string             `json:"currency"`
+	Amount          int64              `json:"amount"`
+	Narration       string             `json:"narration"`
+	InitiatedBy     string             `json:"initiated_by"`
+	ReversalOf      pgtype.UUID        `json:"reversal_of"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	PostedAt        pgtype.Timestamptz `json:"posted_at"`
+	FailedAt        pgtype.Timestamptz `json:"failed_at"`
+	ReversedAt      pgtype.Timestamptz `json:"reversed_at"`
+}
+
+// User-owned saved transfer destinations. Account bigint IDs remain internal.
+type Beneficiary struct {
+	ID                   pgtype.UUID        `json:"id"`
+	Owner                string             `json:"owner"`
+	DestinationAccountID int64              `json:"destination_account_id"`
+	Nickname             string             `json:"nickname"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Idempotent append-only record of verified email provider webhook events.
@@ -124,15 +159,44 @@ type EmailJob struct {
 	BounceMessage   pgtype.Text        `json:"bounce_message"`
 }
 
-type Entry struct {
-	ID        int64 `json:"id"`
-	AccountID int64 `json:"account_id"`
-	// can be negative or positive
-	Amount    int64              `json:"amount"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+// Short-lived deduplication records for safely retrying money-moving requests.
+type IdempotencyKey struct {
+	ID             int64  `json:"id"`
+	Username       string `json:"username"`
+	Operation      string `json:"operation"`
+	IdempotencyKey string `json:"idempotency_key"`
+	// SHA-256 hash of the normalized request payload; prevents reuse with different instructions.
+	RequestHash    []byte      `json:"request_hash"`
+	TransactionID  pgtype.UUID `json:"transaction_id"`
+	ResponseStatus pgtype.Int2 `json:"response_status"`
+	// Original committed domain result returned for identical retries.
+	ResultSnapshot []byte             `json:"result_snapshot"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+}
+
+// Customer and system accounts used by the double-entry ledger.
+type LedgerAccount struct {
+	ID                int64              `json:"id"`
+	PublicID          pgtype.UUID        `json:"public_id"`
+	CustomerAccountID pgtype.Int8        `json:"customer_account_id"`
+	Code              pgtype.Text        `json:"code"`
+	Kind              string             `json:"kind"`
+	Currency          string             `json:"currency"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+// Append-only signed movements. Every posted transaction must sum to zero.
+type LedgerPosting struct {
+	ID              int64              `json:"id"`
+	TransactionID   pgtype.UUID        `json:"transaction_id"`
+	LedgerAccountID int64              `json:"ledger_account_id"`
+	Amount          int64              `json:"amount"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type OutboxEvent struct {
+	// Unique domain-event identifier and Asynq publication source.
 	ID              pgtype.UUID        `json:"id"`
 	EmailJobID      pgtype.UUID        `json:"email_job_id"`
 	EventType       string             `json:"event_type"`
@@ -145,6 +209,12 @@ type OutboxEvent struct {
 	LastError       pgtype.Text        `json:"last_error"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	// Connects the originating request, financial audit, notification event, and delivery logs.
+	CorrelationID pgtype.UUID `json:"correlation_id"`
+	// Type of aggregate that emitted the event, such as account or banking_transaction.
+	EntityType string `json:"entity_type"`
+	// Public UUID of the aggregate that emitted the event.
+	EntityID pgtype.UUID `json:"entity_id"`
 }
 
 type Session struct {
@@ -161,15 +231,6 @@ type Session struct {
 	// Non-null means every access and refresh token bound to this session is revoked.
 	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
 	RevokedReason pgtype.Text        `json:"revoked_reason"`
-}
-
-type Transfer struct {
-	ID            int64 `json:"id"`
-	FromAccountID int64 `json:"from_account_id"`
-	ToAccountID   int64 `json:"to_account_id"`
-	// must be positive
-	Amount    int64              `json:"amount"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {

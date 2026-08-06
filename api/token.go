@@ -19,19 +19,19 @@ type renewAccessTokenResponse struct {
 
 func (server *Server) renewAccessToken(ctx *gin.Context) {
 	if !server.originAllowed(ctx) {
-		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
+		ctx.JSON(http.StatusForbidden, errorResponse(ctx, ErrForbidden))
 		return
 	}
 
 	currentRefreshToken, err := server.refreshCookie(ctx)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidToken))
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidToken))
 		return
 	}
 	refreshPayload, err := server.tokenMaker.VerifyRefreshToken(currentRefreshToken)
 	if err != nil {
 		server.clearRefreshCookie(ctx)
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidToken))
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidToken))
 		return
 	}
 
@@ -40,17 +40,17 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			server.clearRefreshCookie(ctx)
-			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidSession))
+			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidSession))
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
 	remaining := time.Until(session.ExpiresAt.Time)
 	if session.RevokedAt.Valid || remaining <= 0 {
 		server.clearRefreshCookie(ctx)
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidSession))
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidSession))
 		return
 	}
 
@@ -60,7 +60,7 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 		remaining,
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	accessToken, accessPayload, err := server.tokenMaker.CreateAccessToken(
@@ -69,7 +69,7 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 		server.config.AccessTokenDuration,
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -89,9 +89,9 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 			errors.Is(err, db.ErrSessionRevoked),
 			errors.Is(err, db.ErrSessionMismatch),
 			errors.Is(err, pgx.ErrNoRows):
-			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidSession))
+			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidSession))
 		default:
-			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		}
 		return
 	}
@@ -105,7 +105,7 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 
 func (server *Server) logoutCurrentSession(ctx *gin.Context) {
 	if !server.originAllowed(ctx) {
-		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
+		ctx.JSON(http.StatusForbidden, errorResponse(ctx, ErrForbidden))
 		return
 	}
 	value, err := server.refreshCookie(ctx)
@@ -127,7 +127,7 @@ func (server *Server) logoutCurrentSession(ctx *gin.Context) {
 		"user",
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	ctx.Status(http.StatusNoContent)
@@ -141,7 +141,7 @@ func (server *Server) logoutAllSessions(ctx *gin.Context) {
 		"user_logout_all",
 		"all_sessions_logged_out",
 	); err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	server.clearRefreshCookie(ctx)

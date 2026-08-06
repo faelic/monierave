@@ -36,6 +36,7 @@ type Config struct {
 	PublicAPIURL              string        `mapstructure:"PUBLIC_API_URL"`
 	EmailVerificationDuration time.Duration `mapstructure:"EMAIL_VERIFICATION_DURATION"`
 	EnforceEmailVerification  bool          `mapstructure:"ENFORCE_EMAIL_VERIFICATION"`
+	LogLevel                  string        `mapstructure:"LOG_LEVEL"`
 }
 
 func LoadConfig(path string) (config Config, err error) {
@@ -65,6 +66,7 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("PUBLIC_API_URL")
 	_ = viper.BindEnv("EMAIL_VERIFICATION_DURATION")
 	_ = viper.BindEnv("ENFORCE_EMAIL_VERIFICATION")
+	_ = viper.BindEnv("LOG_LEVEL")
 
 	viper.SetDefault("MAILER_PROVIDER", "log")
 	viper.SetDefault("REFRESH_COOKIE_NAME", "monierave_refresh")
@@ -77,6 +79,7 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetDefault("PUBLIC_API_URL", "http://localhost:8080")
 	viper.SetDefault("EMAIL_VERIFICATION_DURATION", 24*time.Hour)
 	viper.SetDefault("ENFORCE_EMAIL_VERIFICATION", true)
+	viper.SetDefault("LOG_LEVEL", "info")
 
 	err = viper.ReadInConfig()
 	if err != nil {
@@ -100,6 +103,9 @@ func ValidateAPIConfig(config Config) error {
 	}
 	if config.ServerAddress == "" {
 		return fmt.Errorf("SERVER_ADDRESS is required")
+	}
+	if config.RedisAddress == "" {
+		return fmt.Errorf("REDIS_ADDRESS is required")
 	}
 	if config.SecretKey == "" {
 		return fmt.Errorf("SECRET_KEY is required")

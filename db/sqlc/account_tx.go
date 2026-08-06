@@ -29,6 +29,46 @@ type CloseAccountTxParams struct {
 	Username string
 }
 
+// CreateAccountTx creates the customer-facing account and its corresponding
+// ledger account as one atomic unit.
+func (store *SQLStore) CreateAccountTx(
+	ctx context.Context,
+	arg CreateAccountParams,
+) (Account, error) {
+	var account Account
+
+	err := store.execTx(ctx, func(q *Queries) error {
+		var err error
+		account, err = q.CreateAccount(ctx, arg)
+		if err != nil {
+			return err
+		}
+		_, err = q.CreateCustomerLedgerAccount(ctx, CreateCustomerLedgerAccountParams{
+			CustomerAccountID: pgtype.Int8{Int64: account.ID, Valid: true},
+			Currency:          account.Currency,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = createFinancialAudit(ctx, q, financialAuditParams{
+			EntityType:    "account",
+			EntityID:      account.PublicID,
+			CorrelationID: account.PublicID,
+			EventType:     "account_created",
+			Actor:         account.Owner,
+			ToState:       account.Status,
+			Metadata: map[string]any{
+				"currency": account.Currency,
+			},
+		})
+		return err
+	})
+	if err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
 // CloseAccountTx serializes closure with transfers and enforces lifecycle rules
 // while the account row is locked.
 func (store *SQLStore) CloseAccountTx(
@@ -56,6 +96,30 @@ func (store *SQLStore) CloseAccountTx(
 		}
 
 		closed, err = q.CloseAccount(ctx, account.ID)
+		if err != nil {
+			return err
+		}
+		_, err = createFinancialAudit(ctx, q, financialAuditParams{
+			EntityType:    "account",
+			EntityID:      closed.PublicID,
+			CorrelationID: closed.PublicID,
+			EventType:     "account_closed",
+			Actor:         arg.Username,
+			FromState:     account.Status,
+			ToState:       closed.Status,
+		})
+		if err != nil {
+			return err
+		}
+		_, _, err = createFinancialNotification(ctx, q, financialNotificationParams{
+			Username:      closed.Owner,
+			EventType:     DomainEventAccountClosed,
+			EntityType:    "account",
+			EntityID:      closed.PublicID,
+			CorrelationID: closed.PublicID,
+			OccurredAt:    closed.UpdatedAt.Time,
+			AccountStatus: closed.Status,
+		})
 		return err
 	})
 	if err != nil {

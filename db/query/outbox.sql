@@ -3,9 +3,12 @@ INSERT INTO outbox_events (
   id,
   email_job_id,
   event_type,
-  payload
+  payload,
+  correlation_id,
+  entity_type,
+  entity_id
 ) VALUES (
-  $1, $2, $3, $4
+  $1, $2, $3, $4, $5, $6, $7
 )
 RETURNING *;
 
@@ -13,6 +16,17 @@ RETURNING *;
 SELECT * FROM outbox_events
 WHERE id = $1
 LIMIT 1;
+
+-- name: GetOutboxEventByEmailJobID :one
+SELECT * FROM outbox_events
+WHERE email_job_id = $1
+LIMIT 1;
+
+-- name: ListOutboxEventsByEntity :many
+SELECT * FROM outbox_events
+WHERE entity_type = $1
+  AND entity_id = $2
+ORDER BY created_at, id;
 
 -- name: ClaimOutboxEvents :many
 WITH candidates AS (

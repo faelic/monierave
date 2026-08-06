@@ -78,6 +78,7 @@ func TestValidateWorkerConfig(t *testing.T) {
 func TestValidateAPIConfigDoesNotRequireWebhookSecret(t *testing.T) {
 	err := ValidateAPIConfig(Config{
 		DBSource:              "postgresql://localhost/database",
+		RedisAddress:          "localhost:6379",
 		ServerAddress:         "0.0.0.0:8080",
 		SecretKey:             "12345678901234567890123456789012",
 		AccessTokenDuration:   time.Minute,

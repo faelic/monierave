@@ -14,7 +14,7 @@ import (
 func createTransferTestAccount(t *testing.T) Account {
 	user := createRandomUser(t)
 
-	account, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
+	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
 		Owner:    user.Username,
 		Currency: "USD",
 	})
@@ -381,6 +381,7 @@ func TestReplayEmailJobTxCreatesLinkedJob(t *testing.T) {
 	require.NoError(t, err)
 	requireAuditEvent(t, originalAuditLogs, "email_dead_lettered")
 	requireAuditEvent(t, originalAuditLogs, "email_job_replayed")
+	requireAuditEvent(t, originalAuditLogs, "outbox_event_created")
 
 	replayAuditLogs, err := testQueries.ListAuditLogsByJob(
 		context.Background(),
@@ -388,7 +389,6 @@ func TestReplayEmailJobTxCreatesLinkedJob(t *testing.T) {
 	)
 	require.NoError(t, err)
 	requireAuditEvent(t, replayAuditLogs, "email_job_replay_created")
-	requireAuditEvent(t, replayAuditLogs, "outbox_event_created")
 	requireAuditEvent(t, replayAuditLogs, "email_job_replayed")
 }
 
@@ -513,40 +513,24 @@ func TestTransferTx(t *testing.T) {
 		result := <-results
 		require.NotEmpty(t, result)
 
-		transfer := result.Transfer
-		require.NotEmpty(t, transfer)
-		require.Equal(t, account1.ID, transfer.FromAccountID)
-		require.Equal(t, account2.ID, transfer.ToAccountID)
-		require.Equal(t, amount, transfer.Amount)
-		require.NotZero(t, transfer.ID)
-		require.NotZero(t, transfer.CreatedAt)
+		transaction := result.Transaction
+		require.Equal(t, BankingTransactionTypeInternalTransfer, transaction.TransactionType)
+		require.Equal(t, BankingTransactionStatusPosted, transaction.Status)
+		require.Equal(t, amount, transaction.Amount)
+		require.True(t, transaction.ID.Valid)
+		require.NotEmpty(t, transaction.Reference)
+		require.True(t, transaction.PostedAt.Valid)
 
-		createdTransfer, err := testQueries.GetTransfer(context.Background(), transfer.ID)
+		stored, err := testQueries.GetBankingTransaction(context.Background(), transaction.ID)
 		require.NoError(t, err)
-		require.Equal(t, transfer.ID, createdTransfer.ID)
+		require.Equal(t, transaction.ID, stored.ID)
 
-		//check entry
-		fromEntry := result.FromEntry
-		require.NotEmpty(t, fromEntry)
-		require.Equal(t, account1.ID, fromEntry.AccountID)
-		require.Equal(t, -amount, fromEntry.Amount)
-		require.NotZero(t, fromEntry.ID)
-		require.NotZero(t, fromEntry.CreatedAt)
-
-		createdFromEntry, err := testQueries.GetEntry(context.Background(), fromEntry.ID)
+		require.Len(t, result.Postings, 2)
+		require.Equal(t, -amount, result.Postings[0].Amount)
+		require.Equal(t, amount, result.Postings[1].Amount)
+		total, err := testQueries.GetLedgerPostingTotal(context.Background(), transaction.ID)
 		require.NoError(t, err)
-		require.Equal(t, fromEntry.ID, createdFromEntry.ID)
-
-		toEntry := result.ToEntry
-		require.NotEmpty(t, toEntry)
-		require.Equal(t, account2.ID, toEntry.AccountID)
-		require.Equal(t, amount, toEntry.Amount)
-		require.NotZero(t, toEntry.ID)
-		require.NotZero(t, toEntry.CreatedAt)
-
-		createdToEntry, err := testQueries.GetEntry(context.Background(), toEntry.ID)
-		require.NoError(t, err)
-		require.Equal(t, toEntry.ID, createdToEntry.ID)
+		require.Zero(t, total)
 
 		// check accounts
 		fromAccount := result.FromAccount
@@ -654,9 +638,8 @@ func TestTransferTxInsufficientBalance(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrInsufficientBalance)
-	require.Empty(t, result.Transfer)
-	require.Empty(t, result.FromEntry)
-	require.Empty(t, result.ToEntry)
+	require.Empty(t, result.Transaction)
+	require.Empty(t, result.Postings)
 
 	updatedAccount1, getErr := testQueries.GetAccount(context.Background(), account1.ID)
 	require.NoError(t, getErr)
@@ -720,7 +703,8 @@ func TestTransferTxAccountLifecycle(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, int64(10), result.Transfer.Amount)
+			require.Equal(t, int64(10), result.Transaction.Amount)
+			require.Len(t, result.Postings, 2)
 		})
 	}
 }
@@ -728,8 +712,10 @@ func TestTransferTxAccountLifecycle(t *testing.T) {
 func setTransferTestAccountStatus(t *testing.T, account Account, status string) Account {
 	t.Helper()
 	if status == FinancialAccountStatusClosed {
-		_, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
-			ID: account.ID, Amount: -account.Balance,
+		_, err := testStore.WithdrawTx(context.Background(), WithdrawTxParams{
+			AccountPublicID: account.PublicID,
+			Amount:          account.Balance,
+			Narration:       "Prepare account closure in test",
 		})
 		require.NoError(t, err)
 		closed, err := testStore.CloseAccountTx(context.Background(), CloseAccountTxParams{
@@ -749,7 +735,11 @@ func setTransferTestAccountStatus(t *testing.T, account Account, status string) 
 
 func TestCloseAccountTxSerializesWithIncomingTransfer(t *testing.T) {
 	fromAccount := createTransferTestAccount(t)
-	toAccount := createTransferTestAccount(t)
+	toUser := createRandomUser(t)
+	toAccount, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
+		Owner: toUser.Username, Currency: fromAccount.Currency,
+	})
+	require.NoError(t, err)
 
 	start := make(chan struct{})
 	transferResult := make(chan error, 1)

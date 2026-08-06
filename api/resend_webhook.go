@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -38,9 +39,14 @@ type resendBounceData struct {
 
 func (server *Server) handleResendWebhook(ctx *gin.Context) {
 	if server.config.ResendWebhookSecret == "" {
-		ctx.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "webhook is not configured",
-		})
+		ctx.JSON(
+			http.StatusServiceUnavailable,
+			codedErrorResponse(
+				ctx,
+				"webhook_not_configured",
+				errors.New("webhook is not configured"),
+			),
+		)
 		return
 	}
 
@@ -50,7 +56,9 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 		maxWebhookBodySize,
 	))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		ctx.JSON(http.StatusBadRequest, codedErrorResponse(
+			ctx, "invalid_request_body", errors.New("invalid request body"),
+		))
 		return
 	}
 
@@ -65,13 +73,17 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 		WebhookSecret: server.config.ResendWebhookSecret,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+		ctx.JSON(http.StatusUnauthorized, codedErrorResponse(
+			ctx, "invalid_signature", errors.New("invalid signature"),
+		))
 		return
 	}
 
 	var event resendWebhookEvent
 	if err := json.Unmarshal(body, &event); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook event"})
+		ctx.JSON(http.StatusBadRequest, codedErrorResponse(
+			ctx, "invalid_webhook_event", errors.New("invalid webhook event"),
+		))
 		return
 	}
 
@@ -84,13 +96,21 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 		return
 	}
 	if event.Data.EmailID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "email webhook is missing email_id"})
+		ctx.JSON(http.StatusBadRequest, codedErrorResponse(
+			ctx,
+			"missing_email_id",
+			errors.New("email webhook is missing email_id"),
+		))
 		return
 	}
 
 	occurredAt, err := time.Parse(time.RFC3339Nano, event.CreatedAt)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "email webhook has invalid created_at"})
+		ctx.JSON(http.StatusBadRequest, codedErrorResponse(
+			ctx,
+			"invalid_webhook_timestamp",
+			errors.New("email webhook has invalid created_at"),
+		))
 		return
 	}
 
@@ -116,7 +136,11 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 			Str("event_type", event.Type).
 			Str("provider_message_id", event.Data.EmailID).
 			Msg("failed to persist Resend webhook")
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process webhook"})
+		ctx.JSON(http.StatusInternalServerError, codedErrorResponse(
+			ctx,
+			"webhook_processing_failed",
+			errors.New("failed to process webhook"),
+		))
 		return
 	}
 

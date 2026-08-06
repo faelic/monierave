@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const addAccountBalance = `-- name: AddAccountBalance :one
+const addAccountBalanceInternal = `-- name: AddAccountBalanceInternal :one
 UPDATE accounts
 SET
   balance = balance + $1,
@@ -21,13 +21,13 @@ WHERE id = $2
 RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
 `
 
-type AddAccountBalanceParams struct {
+type AddAccountBalanceInternalParams struct {
 	Amount int64 `json:"amount"`
 	ID     int64 `json:"id"`
 }
 
-func (q *Queries) AddAccountBalance(ctx context.Context, arg AddAccountBalanceParams) (Account, error) {
-	row := q.db.QueryRow(ctx, addAccountBalance, arg.Amount, arg.ID)
+func (q *Queries) AddAccountBalanceInternal(ctx context.Context, arg AddAccountBalanceInternalParams) (Account, error) {
+	row := q.db.QueryRow(ctx, addAccountBalanceInternal, arg.Amount, arg.ID)
 	var i Account
 	err := row.Scan(
 		&i.ID,

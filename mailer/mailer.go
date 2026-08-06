@@ -13,8 +13,19 @@ type VerificationEmail struct {
 	Payload   json.RawMessage
 }
 
+type FinancialNotificationEmail struct {
+	JobID     string
+	Username  string
+	Recipient string
+	Payload   json.RawMessage
+}
+
 type Mailer interface {
 	SendVerificationEmail(ctx context.Context, message VerificationEmail) (string, error)
+	SendFinancialNotification(
+		ctx context.Context,
+		message FinancialNotificationEmail,
+	) (string, error)
 }
 
 type PermanentError struct {
