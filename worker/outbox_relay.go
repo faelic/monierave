@@ -119,24 +119,35 @@ func (relay *OutboxRelay) publishBatch(ctx context.Context) error {
 }
 
 func (relay *OutboxRelay) publishEvent(ctx context.Context, event db.OutboxEvent) error {
-	var payload PayloadSendVerifyEmail
+	var payload PayloadSendEmail
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return relay.release(ctx, event, fmt.Errorf("decode outbox payload: %w", err))
 	}
+	if payload.EventID == "" {
+		payload.EventID = uuid.UUID(event.ID.Bytes).String()
+	}
+	if payload.CorrelationID == "" {
+		payload.CorrelationID = uuid.UUID(event.CorrelationID.Bytes).String()
+	}
+	payload.EventType = event.EventType
 
 	job, err := relay.store.GetEmailJob(ctx, event.EmailJobID)
 	if err != nil {
 		return relay.release(ctx, event, fmt.Errorf("load email job: %w", err))
 	}
 
+	queue := QueueDefault
+	if job.JobType == db.EmailJobTypeVerifyEmail {
+		queue = QueueCritical
+	}
 	options := []asynq.Option{
 		asynq.TaskID(payload.JobID),
-		asynq.Queue(QueueCritical),
+		asynq.Queue(queue),
 		asynq.MaxRetry(int(job.MaxAttempts - 1)),
 		asynq.Timeout(relay.config.TaskTimeout),
 		asynq.Retention(relay.config.TaskRetention),
 	}
-	err = relay.distributor.DistributeTaskSendVerifyEmail(ctx, &payload, options...)
+	err = relay.distributor.DistributeTaskSendEmail(ctx, &payload, options...)
 	if err != nil && !errors.Is(err, asynq.ErrTaskIDConflict) {
 		return relay.release(ctx, event, err)
 	}
@@ -154,6 +165,9 @@ func (relay *OutboxRelay) publishEvent(ctx context.Context, event db.OutboxEvent
 
 	log.Info().
 		Str("job_id", payload.JobID).
+		Str("event_id", payload.EventID).
+		Str("correlation_id", payload.CorrelationID).
+		Str("event_type", payload.EventType).
 		Str("outbox_event_id", uuid.UUID(event.ID.Bytes).String()).
 		Int32("publish_attempt", event.PublishAttempts).
 		Msg("outbox event published")
@@ -199,13 +213,16 @@ func (relay *OutboxRelay) cleanup(ctx context.Context) {
 		pgtype.Timestamptz{Time: now.Add(-relay.config.EmailRetention), Valid: true},
 	)
 	usersDisabled, usersErr := relay.store.DisableExpiredPendingUsers(ctx)
+	idempotencyDeleted, idempotencyErr := relay.store.DeleteExpiredIdempotencyKeys(ctx)
 
 	log.Info().
 		Err(outboxErr).
 		Err(jobsErr).
 		Err(usersErr).
+		Err(idempotencyErr).
 		Int64("outbox_events_deleted", outboxDeleted).
 		Int64("email_jobs_deleted", jobsDeleted).
+		Int64("idempotency_keys_deleted", idempotencyDeleted).
 		Int64("pending_registrations_disabled", usersDisabled).
 		Msg("outbox retention cleanup completed")
 }

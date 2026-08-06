@@ -17,13 +17,13 @@ import (
 type stubDistributor struct {
 	err     error
 	calls   int
-	payload *PayloadSendVerifyEmail
+	payload *PayloadSendEmail
 	options []asynq.Option
 }
 
-func (d *stubDistributor) DistributeTaskSendVerifyEmail(
+func (d *stubDistributor) DistributeTaskSendEmail(
 	_ context.Context,
-	payload *PayloadSendVerifyEmail,
+	payload *PayloadSendEmail,
 	options ...asynq.Option,
 ) error {
 	d.calls++
@@ -46,6 +46,9 @@ func newOutboxEvent(t *testing.T) db.OutboxEvent {
 		EmailJobID:      pgUUID(jobID),
 		EventType:       db.OutboxEventTypeEmailReady,
 		Payload:         payload,
+		CorrelationID:   pgUUID(uuid.New()),
+		EntityType:      "email_job",
+		EntityID:        pgUUID(jobID),
 		Status:          "publishing",
 		PublishAttempts: 1,
 	}
@@ -72,6 +75,13 @@ func TestOutboxRelayPublishEvent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, distributor.calls)
 	require.Equal(t, uuid.UUID(event.EmailJobID.Bytes).String(), distributor.payload.JobID)
+	require.Equal(t, uuid.UUID(event.ID.Bytes).String(), distributor.payload.EventID)
+	require.Equal(
+		t,
+		uuid.UUID(event.CorrelationID.Bytes).String(),
+		distributor.payload.CorrelationID,
+	)
+	require.Equal(t, event.EventType, distributor.payload.EventType)
 	require.NotEmpty(t, distributor.options)
 }
 
@@ -118,4 +128,25 @@ func TestOutboxRelayReleasesEventWhenRedisFails(t *testing.T) {
 
 	err := relay.publishEvent(context.Background(), event)
 	require.ErrorIs(t, err, redisErr)
+}
+
+func TestOutboxRelayCleanupIncludesExpiredIdempotencyKeys(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	relay := NewOutboxRelay(store, &stubDistributor{}, RelayConfig{})
+
+	store.EXPECT().
+		DeleteExpiredPublishedOutboxEvents(gomock.Any(), gomock.Any()).
+		Return(int64(2), nil)
+	store.EXPECT().
+		DeleteExpiredSentEmailJobs(gomock.Any(), gomock.Any()).
+		Return(int64(3), nil)
+	store.EXPECT().
+		DisableExpiredPendingUsers(gomock.Any()).
+		Return(int64(1), nil)
+	store.EXPECT().
+		DeleteExpiredIdempotencyKeys(gomock.Any()).
+		Return(int64(4), nil)
+
+	relay.cleanup(context.Background())
 }

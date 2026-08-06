@@ -1,0 +1,2 @@
+ALTER TABLE banking_transactions
+DROP CONSTRAINT IF EXISTS banking_transactions_reversal_shape_check;

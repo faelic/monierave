@@ -81,7 +81,14 @@ func (server *Server) setupRouter() {
 	financialRoutes.POST("/accounts", server.createAccount)
 	financialRoutes.GET("/accounts/:public_id", server.getAccount)
 	financialRoutes.GET("/accounts", server.listAccount)
+	financialRoutes.GET("/accounts/:public_id/transactions", server.listAccountTransactions)
+	financialRoutes.GET("/accounts/:public_id/statement", server.getAccountStatement)
 	financialRoutes.POST("/accounts/:public_id/close", server.closeAccount)
+	financialRoutes.POST("/beneficiaries", server.createBeneficiary)
+	financialRoutes.GET("/beneficiaries", server.listBeneficiaries)
+	financialRoutes.PATCH("/beneficiaries/:id", server.updateBeneficiary)
+	financialRoutes.DELETE("/beneficiaries/:id", server.deleteBeneficiary)
+	financialRoutes.GET("/transactions/:reference", server.getTransaction)
 	financialRoutes.POST("/transfers", server.createTransfer)
 
 	server.router = router
@@ -98,4 +105,12 @@ func (server *Server) Handler() http.Handler {
 
 func errorResponse(err error) gin.H {
 	return gin.H{"error": err.Error()}
+}
+
+func codedErrorResponse(code string, err error) gin.H {
+	return gin.H{
+		"code":    code,
+		"message": err.Error(),
+		"error":   err.Error(),
+	}
 }

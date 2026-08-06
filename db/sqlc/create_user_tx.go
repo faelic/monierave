@@ -63,7 +63,9 @@ type emailJobPayload struct {
 }
 
 type outboxEmailPayload struct {
-	JobID string `json:"job_id"`
+	JobID         string `json:"job_id"`
+	EventID       string `json:"event_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 func newPGUUID() pgtype.UUID {
@@ -129,10 +131,13 @@ func createVerificationEmailJob(
 	}
 
 	event, err := q.CreateOutboxEvent(ctx, CreateOutboxEventParams{
-		ID:         newPGUUID(),
-		EmailJobID: jobID,
-		EventType:  OutboxEventTypeEmailReady,
-		Payload:    eventPayload,
+		ID:            newPGUUID(),
+		EmailJobID:    jobID,
+		EventType:     OutboxEventTypeEmailReady,
+		Payload:       eventPayload,
+		CorrelationID: jobID,
+		EntityType:    "email_job",
+		EntityID:      jobID,
 	})
 	return job, event, err
 }
@@ -156,6 +161,10 @@ func (store *SQLStore) ReplayEmailJobTx(
 		if original.Status != EmailJobStatusDeadLetter {
 			return ErrEmailJobNotDeadLetter
 		}
+		originalEvent, err := q.GetOutboxEventByEmailJobID(ctx, original.ID)
+		if err != nil {
+			return err
+		}
 
 		newJobID := newPGUUID()
 		result.EmailJob, err = q.CreateEmailJob(ctx, CreateEmailJobParams{
@@ -177,10 +186,13 @@ func (store *SQLStore) ReplayEmailJobTx(
 		}
 
 		result.OutboxEvent, err = q.CreateOutboxEvent(ctx, CreateOutboxEventParams{
-			ID:         newPGUUID(),
-			EmailJobID: newJobID,
-			EventType:  OutboxEventTypeEmailReady,
-			Payload:    eventPayload,
+			ID:            newPGUUID(),
+			EmailJobID:    newJobID,
+			EventType:     originalEvent.EventType,
+			Payload:       eventPayload,
+			CorrelationID: originalEvent.CorrelationID,
+			EntityType:    originalEvent.EntityType,
+			EntityID:      originalEvent.EntityID,
 		})
 		if err != nil {
 			return err

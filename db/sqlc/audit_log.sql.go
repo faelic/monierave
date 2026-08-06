@@ -69,6 +69,107 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 	return i, err
 }
 
+const listAccountFinancialAuditLogs = `-- name: ListAccountFinancialAuditLogs :many
+SELECT DISTINCT audit.id, audit.entity_type, audit.entity_id, audit.correlation_id, audit.event_type, audit.actor, audit.from_state, audit.to_state, audit.message, audit.metadata, audit.created_at
+FROM audit_logs AS audit
+LEFT JOIN ledger_postings AS posting
+  ON audit.entity_type = 'banking_transaction'
+ AND posting.transaction_id = audit.entity_id
+LEFT JOIN ledger_accounts AS ledger
+  ON ledger.id = posting.ledger_account_id
+LEFT JOIN accounts AS account
+  ON account.id = ledger.customer_account_id
+  WHERE (
+    audit.entity_type = 'account'
+    AND audit.entity_id = $1
+  )
+  OR account.public_id = $1
+  OR (
+    audit.entity_type = 'transfer_attempt'
+    AND (
+      audit.metadata->>'from_account_id' = $1::text
+      OR audit.metadata->>'to_account_id' = $1::text
+    )
+  )
+ORDER BY audit.created_at, audit.id
+`
+
+func (q *Queries) ListAccountFinancialAuditLogs(ctx context.Context, accountPublicID pgtype.UUID) ([]AuditLog, error) {
+	rows, err := q.db.Query(ctx, listAccountFinancialAuditLogs, accountPublicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.CorrelationID,
+			&i.EventType,
+			&i.Actor,
+			&i.FromState,
+			&i.ToState,
+			&i.Message,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditLogsByEntity = `-- name: ListAuditLogsByEntity :many
+SELECT id, entity_type, entity_id, correlation_id, event_type, actor, from_state, to_state, message, metadata, created_at FROM audit_logs
+WHERE entity_type = $1
+  AND entity_id = $2
+ORDER BY created_at, id
+`
+
+type ListAuditLogsByEntityParams struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsByEntityParams) ([]AuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLogsByEntity, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.CorrelationID,
+			&i.EventType,
+			&i.Actor,
+			&i.FromState,
+			&i.ToState,
+			&i.Message,
+			&i.Metadata,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAuditLogsByJob = `-- name: ListAuditLogsByJob :many
 SELECT id, entity_type, entity_id, correlation_id, event_type, actor, from_state, to_state, message, metadata, created_at FROM audit_logs
 WHERE entity_id = $1

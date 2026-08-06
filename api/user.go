@@ -124,6 +124,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 	user, err := server.store.GetUser(ctx, normalizedUsername)
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			server.recordLoginFailure(ctx, normalizedUsername, "unknown_user")
 			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidCredentials))
 			return
 		}
@@ -132,6 +133,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 	}
 
 	if err := util.CheckPassword(req.Password, user.HashedPassword); err != nil {
+		server.recordLoginFailure(ctx, normalizedUsername, "invalid_password")
 		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidCredentials))
 		return
 	}
@@ -190,6 +192,21 @@ func (server *Server) loginUser(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, rsp)
+}
+
+func (server *Server) recordLoginFailure(
+	ctx *gin.Context,
+	username string,
+	reason string,
+) {
+	if err := server.store.RecordLoginFailure(ctx, db.LoginFailureAuditParams{
+		Username:  username,
+		ClientIP:  ctx.ClientIP(),
+		UserAgent: ctx.Request.UserAgent(),
+		Reason:    reason,
+	}); err != nil {
+		log.Printf("failed to record login failure audit: %v", err)
+	}
 }
 
 type updateUserRequest struct {

@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS ledger_postings_account_transaction_idx;

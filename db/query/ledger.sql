@@ -54,6 +54,21 @@ SELECT * FROM banking_transactions
 WHERE reference = $1
 LIMIT 1;
 
+-- name: GetBankingTransactionForUpdate :one
+SELECT * FROM banking_transactions
+WHERE id = $1
+LIMIT 1
+FOR UPDATE;
+
+-- name: MarkBankingTransactionReversed :one
+UPDATE banking_transactions
+SET
+  status = 'reversed',
+  reversed_at = now()
+WHERE id = $1
+  AND status = 'posted'
+RETURNING *;
+
 -- name: CreateLedgerPosting :one
 INSERT INTO ledger_postings (
   transaction_id,
@@ -69,6 +84,34 @@ SELECT * FROM ledger_postings
 WHERE transaction_id = $1
 ORDER BY id;
 
+-- name: ListFinancialAuditPostings :many
+SELECT
+  posting.amount,
+  ledger.kind,
+  ledger.code,
+  ledger.currency,
+  account.public_id AS account_public_id,
+  posting.created_at
+FROM ledger_postings AS posting
+JOIN ledger_accounts AS ledger
+  ON ledger.id = posting.ledger_account_id
+LEFT JOIN accounts AS account
+  ON account.id = ledger.customer_account_id
+WHERE posting.transaction_id = $1
+ORDER BY posting.id;
+
+-- name: ListReversalSourcePostings :many
+SELECT
+  posting.ledger_account_id,
+  posting.amount,
+  ledger.kind,
+  ledger.customer_account_id
+FROM ledger_postings AS posting
+JOIN ledger_accounts AS ledger
+  ON ledger.id = posting.ledger_account_id
+WHERE posting.transaction_id = $1
+ORDER BY posting.id;
+
 -- name: GetLedgerPostingTotal :one
 SELECT coalesce(sum(amount), 0)::bigint
 FROM ledger_postings
@@ -78,3 +121,17 @@ WHERE transaction_id = $1;
 SELECT coalesce(sum(amount), 0)::bigint
 FROM ledger_postings
 WHERE ledger_account_id = $1;
+
+-- name: GetDailyOutgoingTransferTotal :one
+SELECT coalesce(sum(transaction.amount), 0)::bigint
+FROM ledger_postings AS posting
+JOIN banking_transactions AS transaction
+  ON transaction.id = posting.transaction_id
+WHERE posting.ledger_account_id = $1
+  AND posting.amount < 0
+  AND transaction.transaction_type = 'internal_transfer'
+  AND transaction.status IN ('posted', 'reversed')
+  AND transaction.created_at >= date_trunc(
+    'day',
+    now() AT TIME ZONE 'UTC'
+  ) AT TIME ZONE 'UTC';

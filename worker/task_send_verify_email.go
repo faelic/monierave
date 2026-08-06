@@ -17,15 +17,23 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const TaskSendVerifyEmail = "task:send_verify_email"
+const (
+	TaskSendEmail       = "task:send_email"
+	TaskSendVerifyEmail = "task:send_verify_email"
+)
 
-type PayloadSendVerifyEmail struct {
-	JobID string `json:"job_id"`
+type PayloadSendEmail struct {
+	JobID         string `json:"job_id"`
+	EventID       string `json:"event_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	EventType     string `json:"event_type,omitempty"`
 }
 
-func (distributor *RedisTaskDistributor) DistributeTaskSendVerifyEmail(
+type PayloadSendVerifyEmail = PayloadSendEmail
+
+func (distributor *RedisTaskDistributor) DistributeTaskSendEmail(
 	ctx context.Context,
-	payload *PayloadSendVerifyEmail,
+	payload *PayloadSendEmail,
 	opts ...asynq.Option,
 ) error {
 	// serialize payload
@@ -45,8 +53,19 @@ func (distributor *RedisTaskDistributor) DistributeTaskSendVerifyEmail(
 	return nil
 }
 
-func (processor *RedisTaskProcessor) ProcessTaskSendVerifyEmail(ctx context.Context, task *asynq.Task) error {
-	var payload PayloadSendVerifyEmail
+func (distributor *RedisTaskDistributor) DistributeTaskSendVerifyEmail(
+	ctx context.Context,
+	payload *PayloadSendVerifyEmail,
+	opts ...asynq.Option,
+) error {
+	return distributor.DistributeTaskSendEmail(ctx, payload, opts...)
+}
+
+func (processor *RedisTaskProcessor) ProcessTaskSendEmail(
+	ctx context.Context,
+	task *asynq.Task,
+) error {
+	var payload PayloadSendEmail
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return fmt.Errorf("failed to unmarshal payload: %w", asynq.SkipRetry)
 	}
@@ -77,17 +96,7 @@ func (processor *RedisTaskProcessor) ProcessTaskSendVerifyEmail(ctx context.Cont
 		return fmt.Errorf("start email job attempt: %w", err)
 	}
 
-	emailPayload, err := processor.verificationEmailPayload(job, payload.JobID)
-	if err != nil {
-		return fmt.Errorf("create verification email link: %v: %w", err, asynq.SkipRetry)
-	}
-
-	providerMessageID, sendErr := processor.mailer.SendVerificationEmail(ctx, mailer.VerificationEmail{
-		JobID:     payload.JobID,
-		Username:  job.Username,
-		Recipient: job.Recipient,
-		Payload:   emailPayload,
-	})
+	providerMessageID, sendErr := processor.sendEmailJob(ctx, job, payload.JobID)
 	if sendErr != nil {
 		if mailer.IsPermanent(sendErr) || job.AttemptCount >= job.MaxAttempts {
 			if _, err := processor.store.MarkEmailJobDeadLetter(ctx, db.MarkEmailJobDeadLetterParams{
@@ -122,11 +131,60 @@ func (processor *RedisTaskProcessor) ProcessTaskSendVerifyEmail(ctx context.Cont
 	log.Info().
 		Str("type", task.Type()).
 		Str("job_id", payload.JobID).
+		Str("event_id", payload.EventID).
+		Str("correlation_id", payload.CorrelationID).
+		Str("event_type", payload.EventType).
 		Str("email", job.Recipient).
 		Str("provider_message_id", providerMessageID).
 		Int32("attempt", job.AttemptCount).
-		Msg("verification email accepted by provider")
+		Str("job_type", job.JobType).
+		Msg("email accepted by provider")
 	return nil
+}
+
+func (processor *RedisTaskProcessor) ProcessTaskSendVerifyEmail(
+	ctx context.Context,
+	task *asynq.Task,
+) error {
+	return processor.ProcessTaskSendEmail(ctx, task)
+}
+
+func (processor *RedisTaskProcessor) sendEmailJob(
+	ctx context.Context,
+	job db.EmailJob,
+	jobID string,
+) (string, error) {
+	switch job.JobType {
+	case "", db.EmailJobTypeVerifyEmail:
+		emailPayload, err := processor.verificationEmailPayload(job, jobID)
+		if err != nil {
+			return "", mailer.NewPermanentError(fmt.Errorf(
+				"create verification email link: %w",
+				err,
+			))
+		}
+		return processor.mailer.SendVerificationEmail(ctx, mailer.VerificationEmail{
+			JobID:     jobID,
+			Username:  job.Username,
+			Recipient: job.Recipient,
+			Payload:   emailPayload,
+		})
+	case db.EmailJobTypeFinancialNotification:
+		return processor.mailer.SendFinancialNotification(
+			ctx,
+			mailer.FinancialNotificationEmail{
+				JobID:     jobID,
+				Username:  job.Username,
+				Recipient: job.Recipient,
+				Payload:   job.Payload,
+			},
+		)
+	default:
+		return "", mailer.NewPermanentError(fmt.Errorf(
+			"unsupported email job type %q",
+			job.JobType,
+		))
+	}
 }
 
 func (processor *RedisTaskProcessor) verificationEmailPayload(

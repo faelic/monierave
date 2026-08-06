@@ -88,7 +88,11 @@ func (server *Server) corsMiddleware() gin.HandlerFunc {
 			}
 			ctx.Header("Access-Control-Allow-Origin", origin)
 			ctx.Header("Access-Control-Allow-Credentials", "true")
-			ctx.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			ctx.Header(
+				"Access-Control-Allow-Headers",
+				"Authorization, Content-Type, Idempotency-Key",
+			)
+			ctx.Header("Access-Control-Expose-Headers", "Idempotency-Replayed")
 			ctx.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 			ctx.Header("Vary", "Origin")
 		}

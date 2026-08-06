@@ -24,6 +24,16 @@ type stubMailer struct {
 	err       error
 	calls     int
 	message   mailer.VerificationEmail
+	financial mailer.FinancialNotificationEmail
+}
+
+func (m *stubMailer) SendFinancialNotification(
+	_ context.Context,
+	message mailer.FinancialNotificationEmail,
+) (string, error) {
+	m.calls++
+	m.financial = message
+	return m.messageID, m.err
 }
 
 func (m *stubMailer) SendVerificationEmail(
@@ -40,6 +50,13 @@ func newEmailTask(t *testing.T, id uuid.UUID) *asynq.Task {
 	payload, err := json.Marshal(PayloadSendVerifyEmail{JobID: id.String()})
 	require.NoError(t, err)
 	return asynq.NewTask(TaskSendVerifyEmail, payload)
+}
+
+func newGenericEmailTask(t *testing.T, id uuid.UUID) *asynq.Task {
+	t.Helper()
+	payload, err := json.Marshal(PayloadSendEmail{JobID: id.String()})
+	require.NoError(t, err)
+	return asynq.NewTask(TaskSendEmail, payload)
 }
 
 func pgUUID(id uuid.UUID) pgtype.UUID {
@@ -81,6 +98,94 @@ func TestProcessTaskSendVerifyEmailSuccess(t *testing.T) {
 	require.Equal(t, 1, emailMailer.calls)
 	require.Equal(t, id.String(), emailMailer.message.JobID)
 	require.Equal(t, job.Recipient, emailMailer.message.Recipient)
+}
+
+func TestProcessTaskSendFinancialNotificationSuccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	emailMailer := &stubMailer{messageID: "financial-provider-123"}
+	processor := &RedisTaskProcessor{store: store, mailer: emailMailer}
+
+	id := uuid.New()
+	job := db.EmailJob{
+		ID:          pgUUID(id),
+		JobType:     db.EmailJobTypeFinancialNotification,
+		Username:    "favour",
+		Recipient:   "favour@example.com",
+		Payload:     []byte(`{"event_type":"transaction.posted","reference":"TXN-123"}`),
+		Status:      db.EmailJobStatusQueued,
+		MaxAttempts: 10,
+	}
+	started := job
+	started.Status = db.EmailJobStatusProcessing
+	started.AttemptCount = 1
+
+	store.EXPECT().GetEmailJob(gomock.Any(), pgUUID(id)).Return(job, nil)
+	store.EXPECT().StartEmailJobAttempt(gomock.Any(), pgUUID(id)).Return(started, nil)
+	store.EXPECT().
+		MarkEmailJobSent(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			arg db.MarkEmailJobSentParams,
+		) (db.EmailJob, error) {
+			require.Equal(t, "financial-provider-123", arg.ProviderMessageID.String)
+			return started, nil
+		})
+
+	err := processor.ProcessTaskSendEmail(
+		context.Background(),
+		newGenericEmailTask(t, id),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, emailMailer.calls)
+	require.Equal(t, id.String(), emailMailer.financial.JobID)
+	require.Equal(t, job.Payload, []byte(emailMailer.financial.Payload))
+	require.Empty(t, emailMailer.message.JobID)
+}
+
+func TestProcessTaskSendFinancialNotificationPermanentFailureGoesToDLQ(
+	t *testing.T,
+) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	sendErr := mailer.NewPermanentError(errors.New("invalid financial payload"))
+	emailMailer := &stubMailer{err: sendErr}
+	processor := &RedisTaskProcessor{store: store, mailer: emailMailer}
+
+	id := uuid.New()
+	job := db.EmailJob{
+		ID:          pgUUID(id),
+		JobType:     db.EmailJobTypeFinancialNotification,
+		Username:    "favour",
+		Recipient:   "favour@example.com",
+		Payload:     []byte(`{"event_type":"unsupported"}`),
+		Status:      db.EmailJobStatusQueued,
+		MaxAttempts: 10,
+	}
+	started := job
+	started.Status = db.EmailJobStatusProcessing
+	started.AttemptCount = 1
+
+	store.EXPECT().GetEmailJob(gomock.Any(), pgUUID(id)).Return(job, nil)
+	store.EXPECT().StartEmailJobAttempt(gomock.Any(), pgUUID(id)).Return(started, nil)
+	store.EXPECT().
+		MarkEmailJobDeadLetter(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			arg db.MarkEmailJobDeadLetterParams,
+		) (db.EmailJob, error) {
+			require.Equal(t, pgUUID(id), arg.ID)
+			require.Contains(t, arg.LastError.String, "invalid financial payload")
+			return started, nil
+		})
+
+	err := processor.ProcessTaskSendEmail(
+		context.Background(),
+		newGenericEmailTask(t, id),
+	)
+	require.Error(t, err)
+	require.ErrorIs(t, err, asynq.SkipRetry)
+	require.Equal(t, 1, emailMailer.calls)
 }
 
 func TestProcessTaskSendVerifyEmailAddsSignedVerificationURL(t *testing.T) {

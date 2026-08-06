@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/resend/resend-go/v3"
 	"github.com/stretchr/testify/require"
@@ -86,6 +87,64 @@ func TestResendMailerIncludesVerificationURL(t *testing.T) {
 		"https://example.com/verify?token=secret&source=email",
 	)
 	require.Contains(t, sender.params.Text, "copy and paste")
+}
+
+func TestResendMailerSendsIdempotentFinancialNotification(t *testing.T) {
+	sender := &stubResendSender{
+		response: &resend.SendEmailResponse{Id: "financial-message-id"},
+	}
+	emailMailer := &ResendMailer{sender: sender, from: "no-reply@example.com"}
+	jobID := "b54658bc-8e05-48d8-8737-d1c009f91028"
+
+	messageID, err := emailMailer.SendFinancialNotification(
+		context.Background(),
+		FinancialNotificationEmail{
+			JobID:     jobID,
+			Username:  "<Favour>",
+			Recipient: "favour@example.com",
+			Payload: jsonPayload(t, financialPayload{
+				EventType:  "transaction.posted",
+				Reference:  "TXN-SAFE-REFERENCE",
+				Amount:     5_000,
+				Currency:   "USD",
+				Direction:  "outgoing",
+				OccurredAt: time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC),
+			}),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "financial-message-id", messageID)
+	require.Equal(t, "financial-notification/"+jobID, sender.options.IdempotencyKey)
+	require.Contains(t, sender.params.Subject, "Transaction posted")
+	require.Contains(t, sender.params.Html, "TXN-SAFE-REFERENCE")
+	require.Contains(t, sender.params.Html, "5000 USD")
+	require.Contains(t, sender.params.Html, "outgoing")
+	require.Contains(t, sender.params.Html, "&lt;Favour&gt;")
+	require.NotContains(t, sender.params.Html, "password")
+	require.NotContains(t, sender.params.Html, "token")
+	require.Equal(t, "transaction_posted", sender.params.Tags[0].Value)
+	require.Equal(t, jobID, sender.params.Tags[1].Value)
+}
+
+func TestResendMailerRejectsUnsupportedFinancialEvent(t *testing.T) {
+	sender := &stubResendSender{}
+	emailMailer := &ResendMailer{sender: sender, from: "no-reply@example.com"}
+	_, err := emailMailer.SendFinancialNotification(
+		context.Background(),
+		FinancialNotificationEmail{
+			JobID:     "job-id",
+			Username:  "Favour",
+			Recipient: "favour@example.com",
+			Payload: jsonPayload(t, financialPayload{
+				EventType:  "user.password_changed",
+				OccurredAt: time.Now(),
+			}),
+		},
+	)
+	require.Error(t, err)
+	require.True(t, IsPermanent(err))
+	require.Zero(t, sender.calls)
 }
 
 func TestResendMailerReturnsRetryableProviderError(t *testing.T) {

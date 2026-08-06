@@ -22,6 +22,7 @@ const (
 type TaskProcessor interface {
 	Run() error
 	Shutdown()
+	ProcessTaskSendEmail(ctx context.Context, task *asynq.Task) error
 	ProcessTaskSendVerifyEmail(ctx context.Context, task *asynq.Task) error
 }
 
@@ -80,6 +81,7 @@ func (processor *RedisTaskProcessor) Run() error {
 	mux := asynq.NewServeMux()
 
 	// mux maps task type to their corresponding handler
+	mux.HandleFunc(TaskSendEmail, processor.ProcessTaskSendEmail)
 	mux.HandleFunc(TaskSendVerifyEmail, processor.ProcessTaskSendVerifyEmail)
 	return processor.server.Run(mux)
 }
@@ -125,7 +127,7 @@ func (processor *RedisTaskProcessor) handleError(
 		return
 	}
 
-	var payload PayloadSendVerifyEmail
+	var payload PayloadSendEmail
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		log.Error().Err(err).Msg("failed to read exhausted email task payload")
 		return
@@ -152,6 +154,9 @@ func (processor *RedisTaskProcessor) handleError(
 	log.Error().
 		Err(taskErr).
 		Str("job_id", payload.JobID).
+		Str("event_id", payload.EventID).
+		Str("correlation_id", payload.CorrelationID).
+		Str("event_type", payload.EventType).
 		Int("attempt", retried+1).
 		Msg("email job exhausted retries and was dead-lettered")
 }

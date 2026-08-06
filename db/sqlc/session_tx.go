@@ -38,7 +38,7 @@ func (store *SQLStore) CreateSessionTx(
 		if err != nil {
 			return err
 		}
-		return createSessionAudit(
+		if err := createSessionAudit(
 			ctx,
 			q,
 			result,
@@ -46,7 +46,22 @@ func (store *SQLStore) CreateSessionTx(
 			"user",
 			"",
 			"active",
-		)
+		); err != nil {
+			return err
+		}
+		_, err = createFinancialAudit(ctx, q, financialAuditParams{
+			EntityType:    "session",
+			EntityID:      result.ID,
+			CorrelationID: result.ID,
+			EventType:     "login_succeeded",
+			Actor:         result.Username,
+			ToState:       "authenticated",
+			Metadata: map[string]any{
+				"client_ip":  result.ClientIp,
+				"user_agent": result.UserAgent,
+			},
+		})
+		return err
 	})
 	return result, err
 }

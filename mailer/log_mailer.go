@@ -27,3 +27,16 @@ func (m *LogMailer) SendVerificationEmail(
 		Msg("development mailer accepted verification email")
 	return providerMessageID, nil
 }
+
+func (m *LogMailer) SendFinancialNotification(
+	_ context.Context,
+	message FinancialNotificationEmail,
+) (string, error) {
+	providerMessageID := fmt.Sprintf("log-%s", message.JobID)
+	log.Info().
+		Str("job_id", message.JobID).
+		Str("recipient", message.Recipient).
+		Str("provider_message_id", providerMessageID).
+		Msg("development mailer accepted financial notification")
+	return providerMessageID, nil
+}

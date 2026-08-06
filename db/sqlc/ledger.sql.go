@@ -183,6 +183,34 @@ func (q *Queries) GetBankingTransactionByReference(ctx context.Context, referenc
 	return i, err
 }
 
+const getBankingTransactionForUpdate = `-- name: GetBankingTransactionForUpdate :one
+SELECT id, reference, transaction_type, status, currency, amount, narration, initiated_by, reversal_of, created_at, posted_at, failed_at, reversed_at FROM banking_transactions
+WHERE id = $1
+LIMIT 1
+FOR UPDATE
+`
+
+func (q *Queries) GetBankingTransactionForUpdate(ctx context.Context, id pgtype.UUID) (BankingTransaction, error) {
+	row := q.db.QueryRow(ctx, getBankingTransactionForUpdate, id)
+	var i BankingTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.Reference,
+		&i.TransactionType,
+		&i.Status,
+		&i.Currency,
+		&i.Amount,
+		&i.Narration,
+		&i.InitiatedBy,
+		&i.ReversalOf,
+		&i.CreatedAt,
+		&i.PostedAt,
+		&i.FailedAt,
+		&i.ReversedAt,
+	)
+	return i, err
+}
+
 const getCustomerLedgerAccount = `-- name: GetCustomerLedgerAccount :one
 SELECT id, public_id, customer_account_id, code, kind, currency, created_at FROM ledger_accounts
 WHERE customer_account_id = $1
@@ -203,6 +231,28 @@ func (q *Queries) GetCustomerLedgerAccount(ctx context.Context, customerAccountI
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getDailyOutgoingTransferTotal = `-- name: GetDailyOutgoingTransferTotal :one
+SELECT coalesce(sum(transaction.amount), 0)::bigint
+FROM ledger_postings AS posting
+JOIN banking_transactions AS transaction
+  ON transaction.id = posting.transaction_id
+WHERE posting.ledger_account_id = $1
+  AND posting.amount < 0
+  AND transaction.transaction_type = 'internal_transfer'
+  AND transaction.status IN ('posted', 'reversed')
+  AND transaction.created_at >= date_trunc(
+    'day',
+    now() AT TIME ZONE 'UTC'
+  ) AT TIME ZONE 'UTC'
+`
+
+func (q *Queries) GetDailyOutgoingTransferTotal(ctx context.Context, ledgerAccountID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, getDailyOutgoingTransferTotal, ledgerAccountID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const getLedgerAccountBalance = `-- name: GetLedgerAccountBalance :one
@@ -253,6 +303,59 @@ func (q *Queries) GetSettlementLedgerAccount(ctx context.Context, currency pgtyp
 	return i, err
 }
 
+const listFinancialAuditPostings = `-- name: ListFinancialAuditPostings :many
+SELECT
+  posting.amount,
+  ledger.kind,
+  ledger.code,
+  ledger.currency,
+  account.public_id AS account_public_id,
+  posting.created_at
+FROM ledger_postings AS posting
+JOIN ledger_accounts AS ledger
+  ON ledger.id = posting.ledger_account_id
+LEFT JOIN accounts AS account
+  ON account.id = ledger.customer_account_id
+WHERE posting.transaction_id = $1
+ORDER BY posting.id
+`
+
+type ListFinancialAuditPostingsRow struct {
+	Amount          int64              `json:"amount"`
+	Kind            string             `json:"kind"`
+	Code            pgtype.Text        `json:"code"`
+	Currency        string             `json:"currency"`
+	AccountPublicID pgtype.UUID        `json:"account_public_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListFinancialAuditPostings(ctx context.Context, transactionID pgtype.UUID) ([]ListFinancialAuditPostingsRow, error) {
+	rows, err := q.db.Query(ctx, listFinancialAuditPostings, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFinancialAuditPostingsRow{}
+	for rows.Next() {
+		var i ListFinancialAuditPostingsRow
+		if err := rows.Scan(
+			&i.Amount,
+			&i.Kind,
+			&i.Code,
+			&i.Currency,
+			&i.AccountPublicID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLedgerPostingsByTransaction = `-- name: ListLedgerPostingsByTransaction :many
 SELECT id, transaction_id, ledger_account_id, amount, created_at FROM ledger_postings
 WHERE transaction_id = $1
@@ -285,6 +388,51 @@ func (q *Queries) ListLedgerPostingsByTransaction(ctx context.Context, transacti
 	return items, nil
 }
 
+const listReversalSourcePostings = `-- name: ListReversalSourcePostings :many
+SELECT
+  posting.ledger_account_id,
+  posting.amount,
+  ledger.kind,
+  ledger.customer_account_id
+FROM ledger_postings AS posting
+JOIN ledger_accounts AS ledger
+  ON ledger.id = posting.ledger_account_id
+WHERE posting.transaction_id = $1
+ORDER BY posting.id
+`
+
+type ListReversalSourcePostingsRow struct {
+	LedgerAccountID   int64       `json:"ledger_account_id"`
+	Amount            int64       `json:"amount"`
+	Kind              string      `json:"kind"`
+	CustomerAccountID pgtype.Int8 `json:"customer_account_id"`
+}
+
+func (q *Queries) ListReversalSourcePostings(ctx context.Context, transactionID pgtype.UUID) ([]ListReversalSourcePostingsRow, error) {
+	rows, err := q.db.Query(ctx, listReversalSourcePostings, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReversalSourcePostingsRow{}
+	for rows.Next() {
+		var i ListReversalSourcePostingsRow
+		if err := rows.Scan(
+			&i.LedgerAccountID,
+			&i.Amount,
+			&i.Kind,
+			&i.CustomerAccountID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markBankingTransactionPosted = `-- name: MarkBankingTransactionPosted :one
 UPDATE banking_transactions
 SET
@@ -297,6 +445,37 @@ RETURNING id, reference, transaction_type, status, currency, amount, narration, 
 
 func (q *Queries) MarkBankingTransactionPosted(ctx context.Context, id pgtype.UUID) (BankingTransaction, error) {
 	row := q.db.QueryRow(ctx, markBankingTransactionPosted, id)
+	var i BankingTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.Reference,
+		&i.TransactionType,
+		&i.Status,
+		&i.Currency,
+		&i.Amount,
+		&i.Narration,
+		&i.InitiatedBy,
+		&i.ReversalOf,
+		&i.CreatedAt,
+		&i.PostedAt,
+		&i.FailedAt,
+		&i.ReversedAt,
+	)
+	return i, err
+}
+
+const markBankingTransactionReversed = `-- name: MarkBankingTransactionReversed :one
+UPDATE banking_transactions
+SET
+  status = 'reversed',
+  reversed_at = now()
+WHERE id = $1
+  AND status = 'posted'
+RETURNING id, reference, transaction_type, status, currency, amount, narration, initiated_by, reversal_of, created_at, posted_at, failed_at, reversed_at
+`
+
+func (q *Queries) MarkBankingTransactionReversed(ctx context.Context, id pgtype.UUID) (BankingTransaction, error) {
+	row := q.db.QueryRow(ctx, markBankingTransactionReversed, id)
 	var i BankingTransaction
 	err := row.Scan(
 		&i.ID,

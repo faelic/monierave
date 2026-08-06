@@ -14,14 +14,20 @@ type Store interface {
 	CreateAccountTx(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateUserTx(ctx context.Context, arg CreateUserParams) (CreateUserTxResult, error)
 	CloseAccountTx(ctx context.Context, arg CloseAccountTxParams) (Account, error)
+	CreateBeneficiaryTx(ctx context.Context, arg CreateBeneficiaryTxParams) (CreateBeneficiaryTxResult, error)
 	CreateSessionTx(ctx context.Context, arg CreateSessionParams) (Session, error)
 	DepositTx(ctx context.Context, arg DepositTxParams) (MoneyMovementTxResult, error)
+	IdempotentTransferTx(ctx context.Context, arg IdempotentTransferTxParams) (TransferTxResult, error)
 	ProcessEmailDeliveryEventTx(ctx context.Context, arg ProcessEmailDeliveryEventParams) (ProcessEmailDeliveryEventResult, error)
+	Reconcile(ctx context.Context, arg ReconciliationParams) (ReconciliationReport, error)
+	RecordLoginFailure(ctx context.Context, arg LoginFailureAuditParams) error
 	RequestEmailVerificationTx(ctx context.Context, username string) (RequestEmailVerificationTxResult, error)
 	ReplayEmailJobTx(ctx context.Context, jobID pgtype.UUID) (ReplayEmailJobTxResult, error)
+	ReverseTransactionTx(ctx context.Context, arg ReverseTransactionTxParams) (ReverseTransactionTxResult, error)
 	RevokeAllUserSessionsTx(ctx context.Context, username, reason, eventType string) error
 	RevokeSessionTx(ctx context.Context, id pgtype.UUID, reason, actor string) error
 	RotateRefreshTokenTx(ctx context.Context, arg RotateRefreshTokenTxParams) (Session, error)
+	SetAccountStatusTx(ctx context.Context, arg AccountStatusTxParams) (AccountStatusTxResult, error)
 	TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
 	UpdateUserTx(ctx context.Context, arg UpdateUserTxParams) (UpdateUserTxResult, error)
 	ValidateSession(ctx context.Context, id pgtype.UUID, username string) error
