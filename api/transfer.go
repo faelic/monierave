@@ -13,7 +13,6 @@ import (
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -71,35 +70,35 @@ type transferResponse struct {
 func (server *Server) createTransfer(ctx *gin.Context) {
 	idempotencyKey := ctx.GetHeader(idempotencyKeyHeader)
 	if idempotencyKey == "" {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrIdempotencyKeyRequired))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrIdempotencyKeyRequired))
 		return
 	}
 	if !idempotencyKeyPattern.MatchString(idempotencyKey) {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidIdempotencyKey))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidIdempotencyKey))
 		return
 	}
 
 	var req transferRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return
 	}
 
 	fromPublicID, err := parsePublicID(req.FromAccountID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidAccountID))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidAccountID))
 		return
 	}
 	toPublicID, err := parsePublicID(req.ToAccountID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidAccountID))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidAccountID))
 		return
 	}
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 	requestHash, err := hashTransferRequest(req, fromPublicID, toPublicID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrTransferFailed))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrTransferFailed))
 		return
 	}
 	result, err := server.store.IdempotentTransferTx(ctx, db.IdempotentTransferTxParams{
@@ -111,7 +110,7 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 			Username:            authPayload.Username,
 			Narration:           strings.TrimSpace(req.Narration),
 			CorrelationID: pgtype.UUID{
-				Bytes: uuid.New(), Valid: true,
+				Bytes: correlationID(ctx), Valid: true,
 			},
 		},
 		IdempotencyKey: idempotencyKey,
@@ -121,59 +120,59 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 	case errors.Is(err, db.ErrIdempotencyConflict):
 		ctx.JSON(
 			http.StatusConflict,
-			codedErrorResponse("idempotency_conflict", ErrIdempotencyConflict),
+			codedErrorResponse(ctx, "idempotency_conflict", ErrIdempotencyConflict),
 		)
 		return
 	case errors.Is(err, db.ErrAccountNotFound), errors.Is(err, db.ErrAccountNotOwned):
 		ctx.JSON(
 			http.StatusNotFound,
-			codedErrorResponse("account_not_found", ErrAccountNotFound),
+			codedErrorResponse(ctx, "account_not_found", ErrAccountNotFound),
 		)
 		return
 	case errors.Is(err, db.ErrInsufficientBalance):
 		ctx.JSON(
 			http.StatusBadRequest,
-			codedErrorResponse("insufficient_funds", ErrInsufficientBalance),
+			codedErrorResponse(ctx, "insufficient_funds", ErrInsufficientBalance),
 		)
 		return
 	case errors.Is(err, db.ErrCurrencyMismatch):
 		ctx.JSON(
 			http.StatusBadRequest,
-			codedErrorResponse("currency_mismatch", ErrCurrencyMismatch),
+			codedErrorResponse(ctx, "currency_mismatch", ErrCurrencyMismatch),
 		)
 		return
 	case errors.Is(err, db.ErrSameAccount):
 		ctx.JSON(
 			http.StatusBadRequest,
-			codedErrorResponse("same_account", ErrSameAccount),
+			codedErrorResponse(ctx, "same_account", ErrSameAccount),
 		)
 		return
 	case errors.Is(err, db.ErrAccountFrozen):
 		ctx.JSON(
 			http.StatusConflict,
-			codedErrorResponse("account_frozen", ErrAccountFrozen),
+			codedErrorResponse(ctx, "account_frozen", ErrAccountFrozen),
 		)
 		return
 	case errors.Is(err, db.ErrAccountClosed):
 		ctx.JSON(
 			http.StatusConflict,
-			codedErrorResponse("account_closed", ErrAccountClosed),
+			codedErrorResponse(ctx, "account_closed", ErrAccountClosed),
 		)
 		return
 	case errors.Is(err, db.ErrPerTransferLimitExceeded):
 		ctx.JSON(
 			http.StatusConflict,
-			codedErrorResponse("per_transfer_limit_exceeded", ErrPerTransferLimitExceeded),
+			codedErrorResponse(ctx, "per_transfer_limit_exceeded", ErrPerTransferLimitExceeded),
 		)
 		return
 	case errors.Is(err, db.ErrDailyTransferLimitExceeded):
 		ctx.JSON(
 			http.StatusConflict,
-			codedErrorResponse("daily_transfer_limit_exceeded", ErrDailyTransferLimitExceeded),
+			codedErrorResponse(ctx, "daily_transfer_limit_exceeded", ErrDailyTransferLimitExceeded),
 		)
 		return
 	case err != nil:
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrTransferFailed))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrTransferFailed))
 		return
 	}
 

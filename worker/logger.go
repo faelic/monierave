@@ -63,7 +63,7 @@ func (logger *RedisLogger) Printf(_ context.Context, format string, args ...inte
 	logger.logger.Warn().Msg(message)
 }
 
-func configureRedisLogging() {
+func ConfigureRedisLogging() {
 	configureRedisLogger.Do(func() {
 		redis.SetLogger(newRedisLogger())
 	})

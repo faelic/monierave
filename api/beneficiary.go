@@ -41,7 +41,7 @@ type listBeneficiaryRequest struct {
 func (server *Server) createBeneficiary(ctx *gin.Context) {
 	var req createBeneficiaryRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return
 	}
 	nickname, ok := normalizedBeneficiaryNickname(ctx, req.Nickname)
@@ -50,7 +50,7 @@ func (server *Server) createBeneficiary(ctx *gin.Context) {
 	}
 	destinationPublicID, err := parsePublicID(req.DestinationAccountID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidAccountID))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidAccountID))
 		return
 	}
 
@@ -65,22 +65,22 @@ func (server *Server) createBeneficiary(ctx *gin.Context) {
 	)
 	switch {
 	case errors.Is(err, db.ErrAccountNotFound):
-		ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrAccountNotFound))
 		return
 	case errors.Is(err, db.ErrAccountClosed):
 		ctx.JSON(
 			http.StatusConflict,
-			codedErrorResponse("account_closed", ErrAccountClosed),
+			codedErrorResponse(ctx, "account_closed", ErrAccountClosed),
 		)
 		return
 	case errors.Is(err, db.ErrBeneficiaryAlreadyExists):
 		ctx.JSON(
 			http.StatusConflict,
-			codedErrorResponse("beneficiary_already_exists", ErrBeneficiaryAlreadyExists),
+			codedErrorResponse(ctx, "beneficiary_already_exists", ErrBeneficiaryAlreadyExists),
 		)
 		return
 	case err != nil:
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -98,7 +98,7 @@ func (server *Server) createBeneficiary(ctx *gin.Context) {
 func (server *Server) listBeneficiaries(ctx *gin.Context) {
 	var req listBeneficiaryRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return
 	}
 	if req.PageID == 0 {
@@ -118,7 +118,7 @@ func (server *Server) listBeneficiaries(ctx *gin.Context) {
 		},
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -136,7 +136,7 @@ func (server *Server) updateBeneficiary(ctx *gin.Context) {
 	}
 	var req updateBeneficiaryRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return
 	}
 	nickname, ok := normalizedBeneficiaryNickname(ctx, req.Nickname)
@@ -154,11 +154,11 @@ func (server *Server) updateBeneficiary(ctx *gin.Context) {
 		},
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		ctx.JSON(http.StatusNotFound, errorResponse(ErrBeneficiaryNotFound))
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrBeneficiaryNotFound))
 		return
 	}
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -179,11 +179,11 @@ func (server *Server) deleteBeneficiary(ctx *gin.Context) {
 		},
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	if deleted == 0 {
-		ctx.JSON(http.StatusNotFound, errorResponse(ErrBeneficiaryNotFound))
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrBeneficiaryNotFound))
 		return
 	}
 	ctx.Status(http.StatusNoContent)
@@ -240,7 +240,7 @@ func newBeneficiaryResponse(
 func bindBeneficiaryID(ctx *gin.Context) (pgtype.UUID, bool) {
 	id, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidBeneficiaryID))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidBeneficiaryID))
 		return pgtype.UUID{}, false
 	}
 	return pgtype.UUID{Bytes: id, Valid: true}, true
@@ -252,7 +252,7 @@ func normalizedBeneficiaryNickname(
 ) (string, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" || len([]rune(value)) > 50 {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidBeneficiaryNickname))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidBeneficiaryNickname))
 		return "", false
 	}
 	return value, true

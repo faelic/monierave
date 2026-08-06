@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/faelic/monierave/observability"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -134,6 +135,7 @@ func (store *SQLStore) Reconcile(
 	}
 
 	report.Consistent = len(report.Issues) == 0
+	observability.Default.SetReconciliationDrift(int64(len(report.Issues)))
 	metadata, err := json.Marshal(map[string]any{
 		"account_public_id": uuidStringOrEmpty(arg.AccountPublicID),
 		"consistent":        report.Consistent,

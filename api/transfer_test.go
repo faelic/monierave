@@ -26,6 +26,7 @@ func TestCreateTransferAPI(t *testing.T) {
 	toAccount.Currency = fromAccount.Currency
 	amount := int64(100)
 	transactionID := uuid.New()
+	correlationID := uuid.New()
 	result := db.TransferTxResult{
 		Transaction: db.BankingTransaction{
 			ID:              pgtype.UUID{Bytes: transactionID, Valid: true},
@@ -144,6 +145,7 @@ func TestCreateTransferAPI(t *testing.T) {
 						require.Equal(t, fromAccount.Owner, arg.Username)
 						require.Equal(t, "Lunch repayment", arg.Narration)
 						require.True(t, arg.CorrelationID.Valid)
+						require.Equal(t, correlationID, uuid.UUID(arg.CorrelationID.Bytes))
 						require.Equal(t, key, arg.IdempotencyKey)
 						require.Equal(t, requestHash, arg.RequestHash)
 						return storeResult, tc.storeError
@@ -157,6 +159,7 @@ func TestCreateTransferAPI(t *testing.T) {
 			if !tc.omitKey {
 				request.Header.Set(idempotencyKeyHeader, key)
 			}
+			request.Header.Set(correlationIDHeader, correlationID.String())
 			addAuthorization(t, request, server.tokenMaker, authorizationTypeBearer, fromAccount.Owner, time.Minute)
 			recorder := httptest.NewRecorder()
 			server.router.ServeHTTP(recorder, request)

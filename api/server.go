@@ -3,9 +3,11 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
+	"github.com/faelic/monierave/observability"
 	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -18,9 +20,17 @@ type Server struct {
 	tokenMaker             token.Maker
 	emailVerificationMaker token.EmailVerificationMaker
 	router                 *gin.Engine
+	databaseReady          ReadinessCheck
+	redisReady             ReadinessCheck
+	rateLimiter            RateLimiter
+	metrics                *observability.Registry
 }
 
-func NewServer(config util.Config, store db.Store) (*Server, error) {
+func NewServer(
+	config util.Config,
+	store db.Store,
+	options ...ServerOption,
+) (*Server, error) {
 	tokenMaker, err := token.NewJWTMaker(config.SecretKey)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate token maker: %w", err)
@@ -35,6 +45,10 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 		store:                  store,
 		tokenMaker:             tokenMaker,
 		emailVerificationMaker: emailVerificationMaker,
+		metrics:                observability.Default,
+	}
+	for _, option := range options {
+		option(server)
 	}
 
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
@@ -49,23 +63,48 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 func (server *Server) setupRouter() {
 	router := gin.New()
 
-	router.Use(gin.Logger(), gin.Recovery(), server.corsMiddleware())
+	router.Use(
+		server.requestContextMiddleware(),
+		server.requestLoggerMiddleware(),
+		server.recoveryMiddleware(),
+		server.corsMiddleware(),
+	)
 	_ = router.SetTrustedProxies(nil)
 
 	router.GET("/", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{"message": "Monierave API is running"})
 	})
+	router.GET("/livez", server.live)
+	router.GET("/readyz", server.ready)
+	router.GET("/metrics", gin.WrapH(server.metricsHandler()))
 	router.POST("/users", server.CreateUser)
-	router.POST("/users/login", server.loginUser)
+	router.POST(
+		"/users/login",
+		server.rateLimitMiddleware("login", 5, time.Minute, clientIPRateLimitKey),
+		server.loginUser,
+	)
 	router.GET("/users/verify-email", server.verifyUserEmail)
-	router.POST("/tokens/renew_access", server.renewAccessToken)
+	router.POST(
+		"/tokens/renew_access",
+		server.rateLimitMiddleware("refresh", 10, time.Minute, clientIPRateLimitKey),
+		server.renewAccessToken,
+	)
 	router.POST("/sessions/logout", server.logoutCurrentSession)
 	router.POST("/webhooks/resend", server.handleResendWebhook)
 
 	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker, server.store))
 	authRoutes.PATCH("/users/me", server.updateUser)
 	authRoutes.GET("/users/me/email-status", server.getUserEmailStatus)
-	authRoutes.POST("/users/me/resend-verification", server.resendUserEmailVerification)
+	authRoutes.POST(
+		"/users/me/resend-verification",
+		server.rateLimitMiddleware(
+			"resend_verification",
+			3,
+			time.Hour,
+			authenticatedRateLimitKey,
+		),
+		server.resendUserEmailVerification,
+	)
 	authRoutes.POST("/sessions/logout-all", server.logoutAllSessions)
 
 	financialMiddleware := []gin.HandlerFunc{
@@ -89,7 +128,16 @@ func (server *Server) setupRouter() {
 	financialRoutes.PATCH("/beneficiaries/:id", server.updateBeneficiary)
 	financialRoutes.DELETE("/beneficiaries/:id", server.deleteBeneficiary)
 	financialRoutes.GET("/transactions/:reference", server.getTransaction)
-	financialRoutes.POST("/transfers", server.createTransfer)
+	financialRoutes.POST(
+		"/transfers",
+		server.rateLimitMiddleware(
+			"transfer",
+			30,
+			time.Minute,
+			authenticatedRateLimitKey,
+		),
+		server.createTransfer,
+	)
 
 	server.router = router
 }
@@ -103,14 +151,15 @@ func (server *Server) Handler() http.Handler {
 	return server.router
 }
 
-func errorResponse(err error) gin.H {
-	return gin.H{"error": err.Error()}
+func errorResponse(ctx *gin.Context, err error) gin.H {
+	return codedErrorResponse(ctx, stableErrorCode(err), err)
 }
 
-func codedErrorResponse(code string, err error) gin.H {
+func codedErrorResponse(ctx *gin.Context, code string, err error) gin.H {
 	return gin.H{
-		"code":    code,
-		"message": err.Error(),
-		"error":   err.Error(),
+		"code":       code,
+		"message":    err.Error(),
+		"error":      err.Error(),
+		"request_id": requestID(ctx),
 	}
 }

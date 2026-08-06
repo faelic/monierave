@@ -48,7 +48,7 @@ func NewRedisTaskProcessor(
 		concurrency = 10
 	}
 
-	configureRedisLogging()
+	ConfigureRedisLogging()
 
 	processor := &RedisTaskProcessor{
 		store:                     store,

@@ -45,6 +45,8 @@ type resendTemplateData struct {
 }
 
 type financialPayload struct {
+	EventID       string    `json:"event_id"`
+	CorrelationID string    `json:"correlation_id"`
 	EventType     string    `json:"event_type"`
 	Reference     string    `json:"reference"`
 	Amount        int64     `json:"amount"`
@@ -290,6 +292,8 @@ func (mailer *ResendMailer) SendFinancialNotification(
 					Value: strings.ReplaceAll(payload.EventType, ".", "_"),
 				},
 				{Name: "job_id", Value: message.JobID},
+				{Name: "event_id", Value: payload.EventID},
+				{Name: "correlation_id", Value: payload.CorrelationID},
 			},
 		},
 		&resend.SendEmailOptions{

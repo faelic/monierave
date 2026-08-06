@@ -20,7 +20,7 @@ type RedisTaskDistributor struct {
 }
 
 func NewRedisTaskDistributor(redisOpt asynq.RedisClientOpt) TaskDistributor {
-	configureRedisLogging()
+	ConfigureRedisLogging()
 
 	client := asynq.NewClient(redisOpt)
 	return &RedisTaskDistributor{

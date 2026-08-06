@@ -2,6 +2,7 @@ package mailer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
@@ -33,8 +34,17 @@ func (m *LogMailer) SendFinancialNotification(
 	message FinancialNotificationEmail,
 ) (string, error) {
 	providerMessageID := fmt.Sprintf("log-%s", message.JobID)
+	var payload struct {
+		EventID       string `json:"event_id"`
+		CorrelationID string `json:"correlation_id"`
+		EventType     string `json:"event_type"`
+	}
+	_ = json.Unmarshal(message.Payload, &payload)
 	log.Info().
 		Str("job_id", message.JobID).
+		Str("event_id", payload.EventID).
+		Str("correlation_id", payload.CorrelationID).
+		Str("event_type", payload.EventType).
 		Str("recipient", message.Recipient).
 		Str("provider_message_id", providerMessageID).
 		Msg("development mailer accepted financial notification")

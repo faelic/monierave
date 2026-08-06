@@ -685,6 +685,21 @@ func (mr *MockStoreMockRecorder) GetEmailJobByProviderMessageID(ctx, providerMes
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEmailJobByProviderMessageID", reflect.TypeOf((*MockStore)(nil).GetEmailJobByProviderMessageID), ctx, providerMessageID)
 }
 
+// GetFinancialOperationalMetrics mocks base method.
+func (m *MockStore) GetFinancialOperationalMetrics(ctx context.Context) (db.GetFinancialOperationalMetricsRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFinancialOperationalMetrics", ctx)
+	ret0, _ := ret[0].(db.GetFinancialOperationalMetricsRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFinancialOperationalMetrics indicates an expected call of GetFinancialOperationalMetrics.
+func (mr *MockStoreMockRecorder) GetFinancialOperationalMetrics(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFinancialOperationalMetrics", reflect.TypeOf((*MockStore)(nil).GetFinancialOperationalMetrics), ctx)
+}
+
 // GetIdempotencyKeyForUpdate mocks base method.
 func (m *MockStore) GetIdempotencyKeyForUpdate(ctx context.Context, arg db.GetIdempotencyKeyForUpdateParams) (db.IdempotencyKey, error) {
 	m.ctrl.T.Helper()

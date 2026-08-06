@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rs/zerolog/log"
 )
 
 type createUserRequest struct {
@@ -57,7 +57,7 @@ func (server *Server) CreateUser(ctx *gin.Context) {
 	var pgErr *pgconn.PgError
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(friendlyValidationError(err)))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, friendlyValidationError(err)))
 		return
 	}
 
@@ -69,8 +69,11 @@ func (server *Server) CreateUser(ctx *gin.Context) {
 
 	hashedPassword, err := util.HashPassword(req.Password)
 	if err != nil {
-		log.Printf("failed to hash password for user %q: %v", arg.Username, err)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		log.Ctx(ctx.Request.Context()).Error().
+			Err(err).
+			Str("username", arg.Username).
+			Msg("failed to hash user password")
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -82,16 +85,19 @@ func (server *Server) CreateUser(ctx *gin.Context) {
 			if pgErr.Code == "23505" {
 				switch pgErr.ConstraintName {
 				case "users_pkey":
-					ctx.JSON(http.StatusForbidden, errorResponse(ErrUsernameAlreadyExists))
+					ctx.JSON(http.StatusForbidden, errorResponse(ctx, ErrUsernameAlreadyExists))
 					return
 				case "users_email_lower_idx", "users_email_key":
-					ctx.JSON(http.StatusForbidden, errorResponse(ErrEmailAlreadyExists))
+					ctx.JSON(http.StatusForbidden, errorResponse(ctx, ErrEmailAlreadyExists))
 					return
 				}
 			}
 		}
-		log.Printf("failed to create user %q: %v", arg.Username, err)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		log.Ctx(ctx.Request.Context()).Error().
+			Err(err).
+			Str("username", arg.Username).
+			Msg("failed to create user")
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -115,7 +121,7 @@ type loginUserResponse struct {
 func (server *Server) loginUser(ctx *gin.Context) {
 	var req loginUserRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(friendlyValidationError(err)))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, friendlyValidationError(err)))
 		return
 	}
 
@@ -125,16 +131,16 @@ func (server *Server) loginUser(ctx *gin.Context) {
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			server.recordLoginFailure(ctx, normalizedUsername, "unknown_user")
-			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidCredentials))
+			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
 	if err := util.CheckPassword(req.Password, user.HashedPassword); err != nil {
 		server.recordLoginFailure(ctx, normalizedUsername, "invalid_password")
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidCredentials))
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
 		return
 	}
 
@@ -145,7 +151,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		server.config.RefreshTokenDuration,
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -155,7 +161,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		server.config.AccessTokenDuration,
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -178,8 +184,11 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		},
 	})
 	if err != nil {
-		log.Printf("failed to create session with this error %v:", err)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		log.Ctx(ctx.Request.Context()).Error().
+			Err(err).
+			Str("username", normalizedUsername).
+			Msg("failed to create session")
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -205,7 +214,9 @@ func (server *Server) recordLoginFailure(
 		UserAgent: ctx.Request.UserAgent(),
 		Reason:    reason,
 	}); err != nil {
-		log.Printf("failed to record login failure audit: %v", err)
+		log.Ctx(ctx.Request.Context()).Error().
+			Err(err).
+			Msg("failed to record login failure audit")
 	}
 }
 
@@ -220,7 +231,7 @@ func (server *Server) updateUser(ctx *gin.Context) {
 	var req updateUserRequest
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(friendlyValidationError(err)))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, friendlyValidationError(err)))
 		return
 	}
 
@@ -234,25 +245,25 @@ func (server *Server) updateUser(ctx *gin.Context) {
 
 	if req.Password != nil {
 		if req.CurrentPassword == nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(ErrCurrentPasswordRequired))
+			ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrCurrentPasswordRequired))
 			return
 		}
 		currentUser, err := server.store.GetUser(ctx, authPayLoad.Username)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				ctx.JSON(http.StatusNotFound, errorResponse(ErrUserNotFound))
+				ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrUserNotFound))
 				return
 			}
-			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 			return
 		}
 		if err := util.CheckPassword(*req.CurrentPassword, currentUser.HashedPassword); err != nil {
-			ctx.JSON(http.StatusUnauthorized, errorResponse(ErrInvalidCredentials))
+			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
 			return
 		}
 		hashedpassword, err := util.HashPassword(*req.Password)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 			return
 		}
 
@@ -285,18 +296,18 @@ func (server *Server) updateUser(ctx *gin.Context) {
 			if pgErr.Code == "23505" {
 				switch pgErr.ConstraintName {
 				case "users_email_lower_idx", "users_email_key":
-					ctx.JSON(http.StatusForbidden, errorResponse(ErrEmailAlreadyExists))
+					ctx.JSON(http.StatusForbidden, errorResponse(ctx, ErrEmailAlreadyExists))
 					return
 				}
 			}
 		}
 
 		if err == pgx.ErrNoRows {
-			ctx.JSON(http.StatusNotFound, errorResponse(ErrUserNotFound))
+			ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrUserNotFound))
 			return
 		}
 
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -338,10 +349,10 @@ func (server *Server) getUserEmailStatus(ctx *gin.Context) {
 	user, err := server.store.GetUser(ctx, authPayload.Username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			ctx.JSON(http.StatusNotFound, errorResponse(ErrUserNotFound))
+			ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrUserNotFound))
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -360,7 +371,7 @@ func (server *Server) getUserEmailStatus(ctx *gin.Context) {
 
 	job, err := server.store.GetLatestEmailJobForCurrentAddress(ctx, authPayload.Username)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	if err == nil {
@@ -388,23 +399,23 @@ type verifyEmailRequest struct {
 func (server *Server) verifyUserEmail(ctx *gin.Context) {
 	var req verifyEmailRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidToken))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidToken))
 		return
 	}
 
 	payload, err := server.emailVerificationMaker.Verify(req.Token)
 	if err != nil {
 		if errors.Is(err, token.ErrExpiredToken) {
-			ctx.JSON(http.StatusGone, errorResponse(ErrExpiredToken))
+			ctx.JSON(http.StatusGone, errorResponse(ctx, ErrExpiredToken))
 			return
 		}
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidToken))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidToken))
 		return
 	}
 
 	jobID, err := uuid.Parse(payload.JobID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidToken))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidToken))
 		return
 	}
 	user, err := server.store.VerifyUserEmailTx(ctx, db.VerifyUserEmailTxParams{
@@ -416,11 +427,11 @@ func (server *Server) verifyUserEmail(ctx *gin.Context) {
 		switch {
 		case errors.Is(err, db.ErrEmailVerificationAddressStale),
 			errors.Is(err, db.ErrEmailVerificationJobMismatch):
-			ctx.JSON(http.StatusConflict, errorResponse(ErrInvalidToken))
+			ctx.JSON(http.StatusConflict, errorResponse(ctx, ErrInvalidToken))
 		case errors.Is(err, db.ErrRegistrationDisabled):
-			ctx.JSON(http.StatusGone, errorResponse(ErrRegistrationExpired))
+			ctx.JSON(http.StatusGone, errorResponse(ctx, ErrRegistrationExpired))
 		default:
-			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		}
 		return
 	}
@@ -437,13 +448,13 @@ func (server *Server) resendUserEmailVerification(ctx *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrEmailAlreadyVerified):
-			ctx.JSON(http.StatusConflict, errorResponse(ErrEmailAlreadyVerified))
+			ctx.JSON(http.StatusConflict, errorResponse(ctx, ErrEmailAlreadyVerified))
 		case errors.Is(err, db.ErrEmailVerificationCooldown):
-			ctx.JSON(http.StatusTooManyRequests, errorResponse(ErrVerificationCooldown))
+			ctx.JSON(http.StatusTooManyRequests, errorResponse(ctx, ErrVerificationCooldown))
 		case errors.Is(err, pgx.ErrNoRows):
-			ctx.JSON(http.StatusNotFound, errorResponse(ErrUserNotFound))
+			ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrUserNotFound))
 		default:
-			ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+			ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		}
 		return
 	}

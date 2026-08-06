@@ -69,7 +69,7 @@ type createAccountRequest struct {
 func (server *Server) createAccount(ctx *gin.Context) {
 	var req createAccountRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return
 	}
 
@@ -81,10 +81,10 @@ func (server *Server) createAccount(ctx *gin.Context) {
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23505") {
-			ctx.JSON(http.StatusConflict, errorResponse(ErrAccountAlreadyExists))
+			ctx.JSON(http.StatusConflict, errorResponse(ctx, ErrAccountAlreadyExists))
 			return
 		}
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -107,11 +107,11 @@ func (server *Server) getAccount(ctx *gin.Context) {
 		Owner:    authPayload.Username,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrAccountNotFound))
 		return
 	}
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -126,7 +126,7 @@ type listAccountRequest struct {
 func (server *Server) listAccount(ctx *gin.Context) {
 	var req listAccountRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return
 	}
 
@@ -137,7 +137,7 @@ func (server *Server) listAccount(ctx *gin.Context) {
 		Offset: (req.PageID - 1) * req.PageSize,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -157,16 +157,16 @@ func (server *Server) closeAccount(ctx *gin.Context) {
 	})
 	switch {
 	case errors.Is(err, db.ErrAccountNotFound), errors.Is(err, db.ErrAccountNotOwned):
-		ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrAccountNotFound))
 		return
 	case errors.Is(err, db.ErrAccountBalanceNotZero):
-		ctx.JSON(http.StatusConflict, errorResponse(ErrAccountBalanceNotZero))
+		ctx.JSON(http.StatusConflict, errorResponse(ctx, ErrAccountBalanceNotZero))
 		return
 	case errors.Is(err, db.ErrAccountClosed):
-		ctx.JSON(http.StatusConflict, errorResponse(ErrAccountAlreadyClosed))
+		ctx.JSON(http.StatusConflict, errorResponse(ctx, ErrAccountAlreadyClosed))
 		return
 	case err != nil:
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -176,13 +176,13 @@ func (server *Server) closeAccount(ctx *gin.Context) {
 func bindAccountPublicID(ctx *gin.Context) (pgtype.UUID, bool) {
 	var req accountURIRequest
 	if err := ctx.ShouldBindUri(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return pgtype.UUID{}, false
 	}
 
 	publicID, err := parsePublicID(req.PublicID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidAccountID))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidAccountID))
 		return pgtype.UUID{}, false
 	}
 	return publicID, true

@@ -10,6 +10,7 @@ import (
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/mailer"
+	"github.com/faelic/monierave/observability"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
@@ -118,6 +119,7 @@ func (processor *RedisTaskProcessor) ProcessTaskSendEmail(
 		}); err != nil {
 			return fmt.Errorf("persist retrying state after send failure: %w", err)
 		}
+		observability.Default.RecordWorkerRetry()
 		return fmt.Errorf("send verification email: %w", sendErr)
 	}
 

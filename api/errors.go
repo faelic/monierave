@@ -8,6 +8,8 @@ var (
 	ErrUnauthorized            = errors.New("unauthorized")
 	ErrForbidden               = errors.New("forbidden")
 	ErrInternalServer          = errors.New("internal server error")
+	ErrServiceUnavailable      = errors.New("service dependency unavailable")
+	ErrRateLimited             = errors.New("too many requests")
 	ErrInvalidToken            = errors.New("invalid token")
 	ErrExpiredToken            = errors.New("expired token")
 	ErrBlockedSession          = errors.New("blocked session")

@@ -95,6 +95,8 @@ func TestResendMailerSendsIdempotentFinancialNotification(t *testing.T) {
 	}
 	emailMailer := &ResendMailer{sender: sender, from: "no-reply@example.com"}
 	jobID := "b54658bc-8e05-48d8-8737-d1c009f91028"
+	eventID := "b40a19aa-d9c0-49d6-9464-2559da3fe24f"
+	correlationID := "dc76309c-df4f-4769-bb1c-4933d4c86b60"
 
 	messageID, err := emailMailer.SendFinancialNotification(
 		context.Background(),
@@ -103,12 +105,14 @@ func TestResendMailerSendsIdempotentFinancialNotification(t *testing.T) {
 			Username:  "<Favour>",
 			Recipient: "favour@example.com",
 			Payload: jsonPayload(t, financialPayload{
-				EventType:  "transaction.posted",
-				Reference:  "TXN-SAFE-REFERENCE",
-				Amount:     5_000,
-				Currency:   "USD",
-				Direction:  "outgoing",
-				OccurredAt: time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC),
+				EventID:       eventID,
+				CorrelationID: correlationID,
+				EventType:     "transaction.posted",
+				Reference:     "TXN-SAFE-REFERENCE",
+				Amount:        5_000,
+				Currency:      "USD",
+				Direction:     "outgoing",
+				OccurredAt:    time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC),
 			}),
 		},
 	)
@@ -125,6 +129,8 @@ func TestResendMailerSendsIdempotentFinancialNotification(t *testing.T) {
 	require.NotContains(t, sender.params.Html, "token")
 	require.Equal(t, "transaction_posted", sender.params.Tags[0].Value)
 	require.Equal(t, jobID, sender.params.Tags[1].Value)
+	require.Equal(t, eventID, sender.params.Tags[2].Value)
+	require.Equal(t, correlationID, sender.params.Tags[3].Value)
 }
 
 func TestResendMailerRejectsUnsupportedFinancialEvent(t *testing.T) {

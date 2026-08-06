@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +19,7 @@ import (
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
 	"github.com/faelic/monierave/mailer"
+	"github.com/faelic/monierave/observability"
 	"github.com/faelic/monierave/token"
 	"github.com/faelic/monierave/worker"
 	"github.com/gin-gonic/gin"
@@ -28,18 +28,21 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 )
 
 func main() {
-	config, err := util.LoadConfig(".")
-	if err != nil {
-		log.Fatal("could not load config: ", err)
-	}
-
 	role := "api"
 	if len(os.Args) > 1 {
 		role = os.Args[1]
 	}
+	config, err := util.LoadConfig(".")
+	if err != nil {
+		zlog.Fatal().Err(err).Msg("could not load config")
+	}
+	configureLogging(config.LogLevel, role)
 
 	switch role {
 	case "api":
@@ -59,8 +62,23 @@ func main() {
 		)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatal(err)
+		zlog.Fatal().Err(err).Msg("process stopped")
 	}
+}
+
+func configureLogging(level string, role string) {
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	parsed, err := zerolog.ParseLevel(strings.ToLower(strings.TrimSpace(level)))
+	if err != nil {
+		parsed = zerolog.InfoLevel
+	}
+	zerolog.SetGlobalLevel(parsed)
+	zlog.Logger = zerolog.New(os.Stdout).
+		With().
+		Timestamp().
+		Str("service", "monierave").
+		Str("role", role).
+		Logger()
 }
 
 func openStore(ctx context.Context, dbSource string) (*pgxpool.Pool, db.Store, error) {
@@ -97,8 +115,22 @@ func runAPI(config util.Config) error {
 		return err
 	}
 	defer pool.Close()
+	worker.ConfigureRedisLogging()
+	redisClient := redis.NewClient(&redis.Options{Addr: config.RedisAddress})
+	defer redisClient.Close()
 
-	server, err := api.NewServer(config, store)
+	server, err := api.NewServer(
+		config,
+		store,
+		api.WithOperationalDependencies(
+			pool.Ping,
+			func(ctx context.Context) error {
+				return redisClient.Ping(ctx).Err()
+			},
+			api.NewRedisRateLimiter(redisClient),
+			observability.Default,
+		),
+	)
 	if err != nil {
 		return fmt.Errorf("create API server: %w", err)
 	}
@@ -107,6 +139,9 @@ func runAPI(config util.Config) error {
 		Addr:              config.ServerAddress,
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	serverErr := make(chan error, 1)
 	go func() {
@@ -157,7 +192,14 @@ func runWorker(config util.Config) error {
 		return fmt.Errorf("invalid worker config: %w", err)
 	}
 
-	pool, store, err := openStore(context.Background(), config.DBSource)
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	pool, store, err := openStore(ctx, config.DBSource)
 	if err != nil {
 		return err
 	}
@@ -181,7 +223,21 @@ func runWorker(config util.Config) error {
 		config.PublicAPIURL,
 		config.EmailVerificationDuration,
 	)
-	return processor.Run()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- processor.Run()
+	}()
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		processor.Shutdown()
+		err := <-errCh
+		if err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+		return ctx.Err()
+	}
 }
 
 func buildMailer(config util.Config) (mailer.Mailer, error) {

@@ -381,6 +381,7 @@ func TestReplayEmailJobTxCreatesLinkedJob(t *testing.T) {
 	require.NoError(t, err)
 	requireAuditEvent(t, originalAuditLogs, "email_dead_lettered")
 	requireAuditEvent(t, originalAuditLogs, "email_job_replayed")
+	requireAuditEvent(t, originalAuditLogs, "outbox_event_created")
 
 	replayAuditLogs, err := testQueries.ListAuditLogsByJob(
 		context.Background(),
@@ -388,7 +389,6 @@ func TestReplayEmailJobTxCreatesLinkedJob(t *testing.T) {
 	)
 	require.NoError(t, err)
 	requireAuditEvent(t, replayAuditLogs, "email_job_replay_created")
-	requireAuditEvent(t, replayAuditLogs, "outbox_event_created")
 	requireAuditEvent(t, replayAuditLogs, "email_job_replayed")
 }
 

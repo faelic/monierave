@@ -72,7 +72,7 @@ type transactionResponse struct {
 func (server *Server) getTransaction(ctx *gin.Context) {
 	reference := strings.TrimSpace(ctx.Param("reference"))
 	if reference == "" {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrTransactionNotFound))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrTransactionNotFound))
 		return
 	}
 
@@ -85,11 +85,11 @@ func (server *Server) getTransaction(ctx *gin.Context) {
 		},
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		ctx.JSON(http.StatusNotFound, errorResponse(ErrTransactionNotFound))
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrTransactionNotFound))
 		return
 	}
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -104,12 +104,12 @@ func (server *Server) listAccountTransactions(ctx *gin.Context) {
 
 	rows, err := server.store.ListOwnedAccountTransactions(ctx, params)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	transactions, nextCursor, err := transactionPage(rows, query.PageSize, account.PublicID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -127,7 +127,7 @@ func (server *Server) getAccountStatement(ctx *gin.Context) {
 
 	rows, err := server.store.ListOwnedAccountTransactions(ctx, params)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	balances, err := server.store.GetOwnedAccountStatementBalances(
@@ -140,12 +140,12 @@ func (server *Server) getAccountStatement(ctx *gin.Context) {
 		},
 	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 	transactions, nextCursor, err := transactionPage(rows, query.PageSize, account.PublicID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
 
@@ -166,7 +166,7 @@ func (server *Server) bindTransactionHistoryRequest(
 ) (db.Account, transactionHistoryQuery, db.ListOwnedAccountTransactionsParams, bool) {
 	var query transactionHistoryQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return db.Account{}, query, db.ListOwnedAccountTransactionsParams{}, false
 	}
 	if query.PageSize == 0 {
@@ -179,12 +179,12 @@ func (server *Server) bindTransactionHistoryRequest(
 	}
 	fromTime, toTime, err := parseTransactionDateRange(query.From, query.To)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidDateRange))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidDateRange))
 		return db.Account{}, query, db.ListOwnedAccountTransactionsParams{}, false
 	}
 	cursorTime, cursorID, err := decodeTransactionCursor(query.Cursor)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidCursor))
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidCursor))
 		return db.Account{}, query, db.ListOwnedAccountTransactionsParams{}, false
 	}
 
@@ -197,11 +197,11 @@ func (server *Server) bindTransactionHistoryRequest(
 		},
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrAccountNotFound))
 		return db.Account{}, query, db.ListOwnedAccountTransactionsParams{}, false
 	}
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return db.Account{}, query, db.ListOwnedAccountTransactionsParams{}, false
 	}
 

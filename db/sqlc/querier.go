@@ -48,6 +48,7 @@ type Querier interface {
 	GetEmailDeliveryEvent(ctx context.Context, webhookID string) (EmailDeliveryEvent, error)
 	GetEmailJob(ctx context.Context, id pgtype.UUID) (EmailJob, error)
 	GetEmailJobByProviderMessageID(ctx context.Context, providerMessageID pgtype.Text) (EmailJob, error)
+	GetFinancialOperationalMetrics(ctx context.Context) (GetFinancialOperationalMetricsRow, error)
 	GetIdempotencyKeyForUpdate(ctx context.Context, arg GetIdempotencyKeyForUpdateParams) (IdempotencyKey, error)
 	GetLatestEmailJobForCurrentAddress(ctx context.Context, username string) (EmailJob, error)
 	GetLedgerAccountBalance(ctx context.Context, ledgerAccountID int64) (int64, error)
