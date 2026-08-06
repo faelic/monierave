@@ -39,21 +39,46 @@ CREATE TABLE "accounts" (
   CHECK ((status = 'closed' AND closed_at IS NOT NULL AND balance = 0) OR (status <> 'closed' AND closed_at IS NULL))
 );
 
-CREATE TABLE "entries" (
+CREATE TABLE "ledger_accounts" (
   "id" bigserial PRIMARY KEY,
-  "account_id" bigint NOT NULL,
-  "amount" bigint NOT NULL,
-  "created_at" timestamptz NOT NULL DEFAULT (now())
+  "public_id" uuid UNIQUE NOT NULL DEFAULT (gen_random_uuid()),
+  "customer_account_id" bigint UNIQUE,
+  "code" varchar UNIQUE,
+  "kind" varchar NOT NULL,
+  "currency" varchar NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  CHECK (kind IN ('customer', 'settlement')),
+  CHECK ((kind = 'customer' AND customer_account_id IS NOT NULL AND code IS NULL) OR (kind = 'settlement' AND customer_account_id IS NULL AND code IS NOT NULL))
 );
 
-CREATE TABLE "transfers" (
+CREATE TABLE "banking_transactions" (
+  "id" uuid PRIMARY KEY DEFAULT (gen_random_uuid()),
+  "reference" varchar UNIQUE NOT NULL,
+  "transaction_type" varchar NOT NULL,
+  "status" varchar NOT NULL DEFAULT 'pending',
+  "currency" varchar NOT NULL,
+  "amount" bigint NOT NULL,
+  "narration" varchar NOT NULL DEFAULT '',
+  "initiated_by" varchar NOT NULL,
+  "reversal_of" uuid UNIQUE,
+  "created_at" timestamptz NOT NULL DEFAULT (now()),
+  "posted_at" timestamptz,
+  "failed_at" timestamptz,
+  "reversed_at" timestamptz,
+  CHECK (transaction_type IN ('deposit', 'withdrawal', 'internal_transfer', 'reversal')),
+  CHECK (status IN ('pending', 'posted', 'failed', 'reversed')),
+  CHECK (amount > 0),
+  CHECK ((status = 'pending' AND posted_at IS NULL AND failed_at IS NULL AND reversed_at IS NULL) OR (status = 'posted' AND posted_at IS NOT NULL AND failed_at IS NULL AND reversed_at IS NULL) OR (status = 'failed' AND posted_at IS NULL AND failed_at IS NOT NULL AND reversed_at IS NULL) OR (status = 'reversed' AND posted_at IS NOT NULL AND failed_at IS NULL AND reversed_at IS NOT NULL))
+);
+
+CREATE TABLE "ledger_postings" (
   "id" bigserial PRIMARY KEY,
-  "from_account_id" bigint NOT NULL,
-  "to_account_id" bigint NOT NULL,
+  "transaction_id" uuid NOT NULL,
+  "ledger_account_id" bigint NOT NULL,
   "amount" bigint NOT NULL,
   "created_at" timestamptz NOT NULL DEFAULT (now()),
-  CHECK (amount > 0),
-  CHECK (from_account_id <> to_account_id)
+  UNIQUE ("transaction_id", "ledger_account_id"),
+  CHECK (amount <> 0)
 );
 
 CREATE TABLE "sessions" (
@@ -152,13 +177,13 @@ CREATE UNIQUE INDEX "accounts_owner_currency_key" ON "accounts" ("owner", "curre
 
 CREATE INDEX "accounts_owner_status_idx" ON "accounts" ("owner", "status", "created_at", "id");
 
-CREATE INDEX "entries_account_id_idx" ON "entries" ("account_id");
+CREATE INDEX "ledger_accounts_kind_currency_idx" ON "ledger_accounts" ("kind", "currency", "id");
 
-CREATE INDEX "transfers_from_account_id_idx" ON "transfers" ("from_account_id");
+CREATE INDEX "banking_transactions_created_at_idx" ON "banking_transactions" ("created_at" DESC, "id");
 
-CREATE INDEX "transfers_to_account_id_idx" ON "transfers" ("to_account_id");
+CREATE INDEX "banking_transactions_type_status_idx" ON "banking_transactions" ("transaction_type", "status", "created_at" DESC);
 
-CREATE INDEX "transfers_from_to_account_id_idx" ON "transfers" ("from_account_id", "to_account_id");
+CREATE INDEX "ledger_postings_account_created_idx" ON "ledger_postings" ("ledger_account_id", "created_at", "id");
 
 CREATE INDEX "sessions_username_idx" ON "sessions" ("username");
 
@@ -204,7 +229,11 @@ COMMENT ON COLUMN "users"."account_status" IS 'Pending accounts may only manage 
 
 COMMENT ON COLUMN "users"."registration_expires_at" IS 'Unverified registrations expire after 24 hours.';
 
-COMMENT ON COLUMN "entries"."amount" IS 'Can be negative or positive';
+COMMENT ON TABLE "ledger_accounts" IS 'Customer and system accounts used by the double-entry ledger.';
+
+COMMENT ON TABLE "banking_transactions" IS 'Business-level financial events whose details are immutable after creation.';
+
+COMMENT ON TABLE "ledger_postings" IS 'Append-only signed movements. Every posted transaction must sum to zero.';
 
 COMMENT ON TABLE "email_jobs" IS 'Durable email work items. Dead-letter jobs remain here with status dead_letter and may be replayed using parent_job_id.';
 
@@ -220,11 +249,13 @@ COMMENT ON TABLE "email_delivery_events" IS 'Idempotent append-only record of ve
 
 ALTER TABLE "accounts" ADD FOREIGN KEY ("owner") REFERENCES "users" ("username") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "entries" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "ledger_accounts" ADD FOREIGN KEY ("customer_account_id") REFERENCES "accounts" ("id");
 
-ALTER TABLE "transfers" ADD FOREIGN KEY ("from_account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "banking_transactions" ADD FOREIGN KEY ("reversal_of") REFERENCES "banking_transactions" ("id");
 
-ALTER TABLE "transfers" ADD FOREIGN KEY ("to_account_id") REFERENCES "accounts" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "ledger_postings" ADD FOREIGN KEY ("transaction_id") REFERENCES "banking_transactions" ("id");
+
+ALTER TABLE "ledger_postings" ADD FOREIGN KEY ("ledger_account_id") REFERENCES "ledger_accounts" ("id");
 
 ALTER TABLE "sessions" ADD FOREIGN KEY ("username") REFERENCES "users" ("username") DEFERRABLE INITIALLY IMMEDIATE;
 

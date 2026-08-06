@@ -11,9 +11,11 @@ import (
 
 type Store interface {
 	Querier
+	CreateAccountTx(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateUserTx(ctx context.Context, arg CreateUserParams) (CreateUserTxResult, error)
 	CloseAccountTx(ctx context.Context, arg CloseAccountTxParams) (Account, error)
 	CreateSessionTx(ctx context.Context, arg CreateSessionParams) (Session, error)
+	DepositTx(ctx context.Context, arg DepositTxParams) (MoneyMovementTxResult, error)
 	ProcessEmailDeliveryEventTx(ctx context.Context, arg ProcessEmailDeliveryEventParams) (ProcessEmailDeliveryEventResult, error)
 	RequestEmailVerificationTx(ctx context.Context, username string) (RequestEmailVerificationTxResult, error)
 	ReplayEmailJobTx(ctx context.Context, jobID pgtype.UUID) (ReplayEmailJobTxResult, error)
@@ -24,6 +26,7 @@ type Store interface {
 	UpdateUserTx(ctx context.Context, arg UpdateUserTxParams) (UpdateUserTxResult, error)
 	ValidateSession(ctx context.Context, id pgtype.UUID, username string) error
 	VerifyUserEmailTx(ctx context.Context, arg VerifyUserEmailTxParams) (User, error)
+	WithdrawTx(ctx context.Context, arg WithdrawTxParams) (MoneyMovementTxResult, error)
 }
 
 // store provides function to execute db queries and transactions

@@ -58,6 +58,10 @@ func parsePublicID(value string) (pgtype.UUID, error) {
 	return pgtype.UUID{Bytes: id, Valid: true}, nil
 }
 
+func publicUUIDString(value pgtype.UUID) string {
+	return uuid.UUID(value.Bytes).String()
+}
+
 type createAccountRequest struct {
 	Currency string `json:"currency" binding:"required,currency"`
 }
@@ -70,7 +74,7 @@ func (server *Server) createAccount(ctx *gin.Context) {
 	}
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-	account, err := server.store.CreateAccount(ctx, db.CreateAccountParams{
+	account, err := server.store.CreateAccountTx(ctx, db.CreateAccountParams{
 		Owner:    authPayload.Username,
 		Currency: req.Currency,
 	})

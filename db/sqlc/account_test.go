@@ -13,7 +13,7 @@ import (
 func createRandomAccount(t *testing.T) Account {
 	t.Helper()
 	user := createRandomUser(t)
-	account, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
+	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
 		Owner:    user.Username,
 		Currency: util.RandomCurrency(),
 	})
@@ -30,12 +30,13 @@ func createRandomAccount(t *testing.T) Account {
 
 func fundAccount(t *testing.T, account Account, amount int64) Account {
 	t.Helper()
-	funded, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
-		ID:     account.ID,
-		Amount: amount,
+	funded, err := testStore.DepositTx(context.Background(), DepositTxParams{
+		AccountPublicID: account.PublicID,
+		Amount:          amount,
+		Narration:       "Test funding",
 	})
 	require.NoError(t, err)
-	return funded
+	return funded.Account
 }
 
 func TestCreateAndGetAccountByPublicID(t *testing.T) {
@@ -70,11 +71,11 @@ func TestOwnedAccountLookupHidesForeignAccount(t *testing.T) {
 
 func TestListAccount(t *testing.T) {
 	user := createRandomUser(t)
-	account1, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
+	account1, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
 		Owner: user.Username, Currency: "USD",
 	})
 	require.NoError(t, err)
-	account2, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
+	account2, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
 		Owner: user.Username, Currency: "EUR",
 	})
 	require.NoError(t, err)
@@ -93,16 +94,20 @@ func TestAddAccountBalance(t *testing.T) {
 	require.True(t, updated.UpdatedAt.Time.After(account.UpdatedAt.Time) ||
 		updated.UpdatedAt.Time.Equal(account.UpdatedAt.Time))
 
-	updated, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
+	updated, err := testQueries.AddAccountBalanceInternal(context.Background(), AddAccountBalanceInternalParams{
 		ID: updated.ID, Amount: -20,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(30), updated.Balance)
+	_, err = testQueries.AddAccountBalanceInternal(context.Background(), AddAccountBalanceInternalParams{
+		ID: updated.ID, Amount: 20,
+	})
+	require.NoError(t, err)
 }
 
 func TestAddAccountBalanceRejectsOverdraft(t *testing.T) {
 	account := fundAccount(t, createRandomAccount(t), 25)
-	_, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
+	_, err := testQueries.AddAccountBalanceInternal(context.Background(), AddAccountBalanceInternalParams{
 		ID: account.ID, Amount: -26,
 	})
 	require.ErrorIs(t, err, pgx.ErrNoRows)

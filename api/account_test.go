@@ -29,7 +29,7 @@ func TestCreateAccountAPI(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := mockdb.NewMockStore(ctrl)
 	store.EXPECT().
-		CreateAccount(gomock.Any(), db.CreateAccountParams{
+		CreateAccountTx(gomock.Any(), db.CreateAccountParams{
 			Owner:    account.Owner,
 			Currency: account.Currency,
 		}).

@@ -29,6 +29,32 @@ type CloseAccountTxParams struct {
 	Username string
 }
 
+// CreateAccountTx creates the customer-facing account and its corresponding
+// ledger account as one atomic unit.
+func (store *SQLStore) CreateAccountTx(
+	ctx context.Context,
+	arg CreateAccountParams,
+) (Account, error) {
+	var account Account
+
+	err := store.execTx(ctx, func(q *Queries) error {
+		var err error
+		account, err = q.CreateAccount(ctx, arg)
+		if err != nil {
+			return err
+		}
+		_, err = q.CreateCustomerLedgerAccount(ctx, CreateCustomerLedgerAccountParams{
+			CustomerAccountID: pgtype.Int8{Int64: account.ID, Valid: true},
+			Currency:          account.Currency,
+		})
+		return err
+	})
+	if err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
 // CloseAccountTx serializes closure with transfers and enforces lifecycle rules
 // while the account row is locked.
 func (store *SQLStore) CloseAccountTx(

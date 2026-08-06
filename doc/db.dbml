@@ -58,34 +58,74 @@ Table accounts as A {
   }
 }
 
-Table entries {
+Table ledger_accounts as LA {
   id bigserial [pk]
-  account_id bigint [not null, ref: > A.id]
-  amount bigint [not null, note: 'Can be negative or positive']
+  public_id uuid [not null, unique, default: `gen_random_uuid()`]
+  customer_account_id bigint [unique, ref: - A.id]
+  code varchar [unique]
+  kind varchar [not null]
+  currency varchar [not null]
   created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    account_id [name: 'entries_account_id_idx']
+    (kind, currency, id) [name: 'ledger_accounts_kind_currency_idx']
   }
+
+  checks {
+    `kind IN ('customer', 'settlement')`
+    `(kind = 'customer' AND customer_account_id IS NOT NULL AND code IS NULL) OR (kind = 'settlement' AND customer_account_id IS NULL AND code IS NOT NULL)`
+  }
+
+  Note: 'Customer and system accounts used by the double-entry ledger.'
 }
 
-Table transfers {
+Table banking_transactions as BT {
+  id uuid [pk, default: `gen_random_uuid()`]
+  reference varchar [not null, unique]
+  transaction_type varchar [not null]
+  status varchar [not null, default: 'pending']
+  currency varchar [not null]
+  amount bigint [not null]
+  narration varchar [not null, default: '']
+  initiated_by varchar [not null]
+  reversal_of uuid [unique, ref: - BT.id]
+  created_at timestamptz [not null, default: `now()`]
+  posted_at timestamptz
+  failed_at timestamptz
+  reversed_at timestamptz
+
+  indexes {
+    (created_at, id) [name: 'banking_transactions_created_at_idx']
+    (transaction_type, status, created_at) [name: 'banking_transactions_type_status_idx']
+  }
+
+  checks {
+    `transaction_type IN ('deposit', 'withdrawal', 'internal_transfer', 'reversal')`
+    `status IN ('pending', 'posted', 'failed', 'reversed')`
+    `amount > 0`
+    `(status = 'pending' AND posted_at IS NULL AND failed_at IS NULL AND reversed_at IS NULL) OR (status = 'posted' AND posted_at IS NOT NULL AND failed_at IS NULL AND reversed_at IS NULL) OR (status = 'failed' AND posted_at IS NULL AND failed_at IS NOT NULL AND reversed_at IS NULL) OR (status = 'reversed' AND posted_at IS NOT NULL AND failed_at IS NULL AND reversed_at IS NOT NULL)`
+  }
+
+  Note: 'Business-level financial events whose details are immutable after creation.'
+}
+
+Table ledger_postings {
   id bigserial [pk]
-  from_account_id bigint [not null, ref: > A.id]
-  to_account_id bigint [not null, ref: > A.id]
+  transaction_id uuid [not null, ref: > BT.id]
+  ledger_account_id bigint [not null, ref: > LA.id]
   amount bigint [not null]
   created_at timestamptz [not null, default: `now()`]
 
   indexes {
-    from_account_id [name: 'transfers_from_account_id_idx']
-    to_account_id [name: 'transfers_to_account_id_idx']
-    (from_account_id, to_account_id) [name: 'transfers_from_to_account_id_idx']
+    (transaction_id, ledger_account_id) [unique, name: 'ledger_postings_transaction_account_key']
+    (ledger_account_id, created_at, id) [name: 'ledger_postings_account_created_idx']
   }
 
   checks {
-    `amount > 0`
-    `from_account_id <> to_account_id`
+    `amount <> 0`
   }
+
+  Note: 'Append-only signed movements. Every posted transaction must sum to zero.'
 }
 
 Table sessions {

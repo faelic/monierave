@@ -15,13 +15,46 @@ type transferRequest struct {
 	ToAccountID   string `json:"to_account_id" binding:"required"`
 	Amount        int64  `json:"amount" binding:"required,gt=0"`
 	Currency      string `json:"currency" binding:"required,currency"`
+	Narration     string `json:"narration" binding:"omitempty,max=255"`
+}
+
+type bankingTransactionResponse struct {
+	ID              string     `json:"id"`
+	Reference       string     `json:"reference"`
+	TransactionType string     `json:"type"`
+	Status          string     `json:"status"`
+	Currency        string     `json:"currency"`
+	Amount          int64      `json:"amount"`
+	Narration       string     `json:"narration"`
+	CreatedAt       time.Time  `json:"created_at"`
+	PostedAt        *time.Time `json:"posted_at"`
+}
+
+func newBankingTransactionResponse(
+	transaction db.BankingTransaction,
+) bankingTransactionResponse {
+	var postedAt *time.Time
+	if transaction.PostedAt.Valid {
+		value := transaction.PostedAt.Time
+		postedAt = &value
+	}
+	return bankingTransactionResponse{
+		ID:              publicUUIDString(transaction.ID),
+		Reference:       transaction.Reference,
+		TransactionType: transaction.TransactionType,
+		Status:          transaction.Status,
+		Currency:        transaction.Currency,
+		Amount:          transaction.Amount,
+		Narration:       transaction.Narration,
+		CreatedAt:       transaction.CreatedAt.Time,
+		PostedAt:        postedAt,
+	}
 }
 
 type transferResponse struct {
-	FromAccount accountResponse `json:"from_account"`
-	ToAccount   accountResponse `json:"to_account"`
-	Amount      int64           `json:"amount"`
-	CreatedAt   time.Time       `json:"created_at"`
+	Transaction bankingTransactionResponse `json:"transaction"`
+	FromAccount accountResponse            `json:"from_account"`
+	ToAccount   accountResponse            `json:"to_account"`
 }
 
 func (server *Server) createTransfer(ctx *gin.Context) {
@@ -49,6 +82,7 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 		Amount:              req.Amount,
 		Currency:            req.Currency,
 		Username:            authPayload.Username,
+		Narration:           req.Narration,
 	})
 	switch {
 	case errors.Is(err, db.ErrAccountNotFound), errors.Is(err, db.ErrAccountNotOwned):
@@ -75,9 +109,8 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, transferResponse{
+		Transaction: newBankingTransactionResponse(result.Transaction),
 		FromAccount: newAccountResponse(result.FromAccount),
 		ToAccount:   newAccountResponse(result.ToAccount),
-		Amount:      result.Transfer.Amount,
-		CreatedAt:   result.Transfer.CreatedAt.Time,
 	})
 }

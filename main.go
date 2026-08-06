@@ -47,8 +47,13 @@ func main() {
 		err = runWorker(config)
 	case "jobs":
 		err = runJobs(config, os.Args[2:])
+	case "banking":
+		err = runBanking(config, os.Args[2:])
 	default:
-		err = fmt.Errorf("unknown command %q; expected api, relay, worker, or jobs", role)
+		err = fmt.Errorf(
+			"unknown command %q; expected api, relay, worker, jobs, or banking",
+			role,
+		)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatal(err)
@@ -242,6 +247,82 @@ func runJobs(config util.Config, args []string) error {
 	default:
 		return fmt.Errorf("unknown jobs command %q", args[0])
 	}
+}
+
+type bankingCommandOutput struct {
+	TransactionID string `json:"transaction_id"`
+	Reference     string `json:"reference"`
+	Type          string `json:"type"`
+	Status        string `json:"status"`
+	AccountID     string `json:"account_id"`
+	Balance       int64  `json:"balance"`
+	Currency      string `json:"currency"`
+}
+
+func runBanking(config util.Config, args []string) error {
+	if config.DBSource == "" {
+		return errors.New("DB_SOURCE is required")
+	}
+	if len(args) == 0 {
+		return errors.New("banking command requires deposit or withdraw")
+	}
+
+	flags := flag.NewFlagSet("banking "+args[0], flag.ContinueOnError)
+	accountValue := flags.String("account", "", "public account UUID")
+	amount := flags.Int64("amount", 0, "positive amount in minor currency units")
+	narration := flags.String("narration", "", "operator transaction narration")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	accountID, err := uuid.Parse(*accountValue)
+	if err != nil {
+		return fmt.Errorf("invalid account ID: %w", err)
+	}
+	if *amount <= 0 {
+		return errors.New("amount must be greater than zero")
+	}
+
+	ctx := context.Background()
+	pool, store, err := openStore(ctx, config.DBSource)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	publicID := pgtype.UUID{Bytes: accountID, Valid: true}
+	var result db.MoneyMovementTxResult
+	switch args[0] {
+	case "deposit":
+		result, err = store.DepositTx(ctx, db.DepositTxParams{
+			AccountPublicID: publicID,
+			Amount:          *amount,
+			Narration:       *narration,
+		})
+	case "withdraw":
+		result, err = store.WithdrawTx(ctx, db.WithdrawTxParams{
+			AccountPublicID: publicID,
+			Amount:          *amount,
+			Narration:       *narration,
+		})
+	default:
+		return fmt.Errorf(
+			"unknown banking command %q; expected deposit or withdraw",
+			args[0],
+		)
+	}
+	if err != nil {
+		return err
+	}
+
+	return json.NewEncoder(os.Stdout).Encode(bankingCommandOutput{
+		TransactionID: uuid.UUID(result.Transaction.ID.Bytes).String(),
+		Reference:     result.Transaction.Reference,
+		Type:          result.Transaction.TransactionType,
+		Status:        result.Transaction.Status,
+		AccountID:     uuid.UUID(result.Account.PublicID.Bytes).String(),
+		Balance:       result.Account.Balance,
+		Currency:      result.Account.Currency,
+	})
 }
 
 type auditLogOutput struct {

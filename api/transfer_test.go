@@ -6,11 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	mockdb "github.com/faelic/monierave/db/mock"
 	db "github.com/faelic/monierave/db/sqlc"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -20,10 +23,17 @@ func TestCreateTransferAPI(t *testing.T) {
 	toAccount := randomAccount()
 	toAccount.Currency = fromAccount.Currency
 	amount := int64(100)
+	transactionID := uuid.New()
 	result := db.TransferTxResult{
-		Transfer: db.Transfer{
-			Amount:    amount,
-			CreatedAt: timestamp(time.Now()),
+		Transaction: db.BankingTransaction{
+			ID:              pgtype.UUID{Bytes: transactionID, Valid: true},
+			Reference:       "TXN-" + strings.ToUpper(strings.ReplaceAll(transactionID.String(), "-", "")),
+			TransactionType: db.BankingTransactionTypeInternalTransfer,
+			Status:          db.BankingTransactionStatusPosted,
+			Currency:        fromAccount.Currency,
+			Amount:          amount,
+			CreatedAt:       timestamp(time.Now()),
+			PostedAt:        timestamp(time.Now()),
 		},
 		FromAccount: fromAccount,
 		ToAccount:   toAccount,
@@ -67,6 +77,7 @@ func TestCreateTransferAPI(t *testing.T) {
 				"to_account_id":   publicUUID(toAccount.PublicID),
 				"amount":          amount,
 				"currency":        fromAccount.Currency,
+				"narration":       "Lunch repayment",
 			}
 			if tc.changeBody != nil {
 				tc.changeBody(body)
@@ -82,6 +93,7 @@ func TestCreateTransferAPI(t *testing.T) {
 						Amount:              amount,
 						Currency:            fromAccount.Currency,
 						Username:            fromAccount.Owner,
+						Narration:           "Lunch repayment",
 					}).
 					Return(result, tc.storeError)
 			}
@@ -100,7 +112,9 @@ func TestCreateTransferAPI(t *testing.T) {
 				require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
 				require.Equal(t, publicUUID(fromAccount.PublicID), response.FromAccount.ID)
 				require.Equal(t, publicUUID(toAccount.PublicID), response.ToAccount.ID)
-				require.Equal(t, amount, response.Amount)
+				require.Equal(t, amount, response.Transaction.Amount)
+				require.Equal(t, result.Transaction.Reference, response.Transaction.Reference)
+				require.Equal(t, db.BankingTransactionStatusPosted, response.Transaction.Status)
 				require.NotContains(t, recorder.Body.String(), `"owner"`)
 			}
 		})
