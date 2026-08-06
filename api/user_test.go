@@ -223,6 +223,7 @@ func TestLoginUserAPI(t *testing.T) {
 						require.Equal(t, user.Username, arg.Username)
 						require.Len(t, arg.RefreshTokenHash, 32)
 						require.True(t, arg.RefreshTokenID.Valid)
+						require.Len(t, arg.DeviceTokenHash, 32)
 						require.NotEmpty(t, arg.UserAgent)
 						require.NotEmpty(t, arg.ClientIp)
 						require.True(t, arg.ID.Valid)
@@ -233,6 +234,7 @@ func TestLoginUserAPI(t *testing.T) {
 							Username:         arg.Username,
 							RefreshTokenHash: arg.RefreshTokenHash,
 							RefreshTokenID:   arg.RefreshTokenID,
+							DeviceTokenHash:  arg.DeviceTokenHash,
 							UserAgent:        arg.UserAgent,
 							ClientIp:         arg.ClientIp,
 							ExpiresAt:        arg.ExpiresAt,
@@ -243,9 +245,12 @@ func TestLoginUserAPI(t *testing.T) {
 				require.Equal(t, http.StatusOK, recorder.Code)
 				requireBodyMatchLoginUser(t, recorder.Body, user, tokenMaker)
 				require.NotContains(t, recorder.Body.String(), "refresh_token")
+				require.NotContains(t, recorder.Body.String(), "device_token")
 				cookies := recorder.Result().Cookies()
-				require.Len(t, cookies, 1)
+				require.Len(t, cookies, 2)
 				require.True(t, cookies[0].HttpOnly)
+				require.True(t, cookies[1].HttpOnly)
+				require.NotEqual(t, cookies[0].Name, cookies[1].Name)
 			},
 		},
 		{

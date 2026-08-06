@@ -117,6 +117,7 @@ CREATE TABLE "sessions" (
   "username" varchar NOT NULL,
   "refresh_token_hash" bytea NOT NULL,
   "refresh_token_id" uuid NOT NULL,
+  "device_token_hash" bytea NOT NULL,
   "user_agent" varchar NOT NULL,
   "client_ip" varchar NOT NULL,
   "expires_at" timestamptz NOT NULL,
@@ -229,7 +230,9 @@ CREATE INDEX "sessions_username_idx" ON "sessions" ("username");
 
 CREATE UNIQUE INDEX "sessions_refresh_token_hash_idx" ON "sessions" ("refresh_token_hash");
 
-CREATE INDEX "sessions_active_username_idx" ON "sessions" ("username", "expires_at")
+CREATE UNIQUE INDEX "sessions_device_token_hash_idx" ON "sessions" ("device_token_hash");
+
+CREATE UNIQUE INDEX "sessions_one_active_per_user_idx" ON "sessions" ("username")
 WHERE "revoked_at" IS NULL;
 
 CREATE INDEX "email_jobs_status_created_at_idx" ON "email_jobs" ("status", "created_at");
@@ -268,6 +271,8 @@ COMMENT ON COLUMN "accounts"."public_id" IS 'Stable, non-sequential account iden
 COMMENT ON COLUMN "accounts"."status" IS 'Frozen accounts may receive funds but cannot send; closed accounts cannot transact.';
 
 COMMENT ON COLUMN "sessions"."refresh_token_hash" IS 'SHA-256 hash of the current refresh token; raw refresh tokens are never persisted.';
+
+COMMENT ON COLUMN "sessions"."device_token_hash" IS 'SHA-256 hash of the browser-bound device secret; raw device secrets are never persisted.';
 
 COMMENT ON COLUMN "sessions"."revoked_at" IS 'Non-null means every access and refresh token bound to this session is revoked.';
 

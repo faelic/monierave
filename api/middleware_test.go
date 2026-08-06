@@ -87,7 +87,11 @@ func TestAuthMiddleware(t *testing.T) {
 			server := newTestServer(t, nil)
 
 			authPath := "/auth"
-			server.router.GET(authPath, authMiddleware(server.tokenMaker, server.store), func(ctx *gin.Context) {
+			server.router.GET(authPath, authMiddleware(
+				server.tokenMaker,
+				server.store,
+				server.config.DeviceCookieName,
+			), func(ctx *gin.Context) {
 				payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 				ctx.String(http.StatusOK, payload.Username)
 			})
@@ -119,7 +123,11 @@ func TestVerifiedAccountMiddlewareDescribesRestrictedFeatures(t *testing.T) {
 
 	server.router.GET(
 		"/verified-test",
-		authMiddleware(server.tokenMaker, server.store),
+		authMiddleware(
+			server.tokenMaker,
+			server.store,
+			server.config.DeviceCookieName,
+		),
 		verifiedAccountMiddleware(store),
 		func(ctx *gin.Context) {
 			ctx.Status(http.StatusOK)

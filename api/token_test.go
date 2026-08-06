@@ -32,6 +32,7 @@ func TestRenewAccessTokenRotatesRefreshCookie(t *testing.T) {
 		time.Hour,
 	)
 	require.NoError(t, err)
+	deviceToken := "test-device-token"
 
 	store.EXPECT().
 		GetSession(gomock.Any(), pgtype.UUID{Bytes: sessionID, Valid: true}).
@@ -44,6 +45,7 @@ func TestRenewAccessTokenRotatesRefreshCookie(t *testing.T) {
 		RotateRefreshTokenTx(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, arg db.RotateRefreshTokenTxParams) (db.Session, error) {
 			require.Equal(t, token.Hash(current), arg.PresentedTokenHash)
+			require.Equal(t, token.Hash(deviceToken), arg.PresentedDeviceHash)
 			require.Equal(t, currentPayload.ID, uuid.UUID(arg.PresentedRefreshID.Bytes))
 			require.NotEqual(t, arg.PresentedRefreshID, arg.NewRefreshID)
 			return db.Session{}, nil
@@ -51,6 +53,7 @@ func TestRenewAccessTokenRotatesRefreshCookie(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/tokens/renew_access", nil)
 	request.AddCookie(&http.Cookie{Name: server.config.RefreshCookieName, Value: current})
+	request.AddCookie(&http.Cookie{Name: server.config.DeviceCookieName, Value: deviceToken})
 	recorder := httptest.NewRecorder()
 	server.router.ServeHTTP(recorder, request)
 
@@ -73,11 +76,13 @@ func TestLogoutCurrentSessionRevokesSessionAndClearsCookie(t *testing.T) {
 		time.Hour,
 	)
 	require.NoError(t, err)
+	deviceToken := "test-device-token"
 
 	store.EXPECT().
 		RevokeSessionTx(
 			gomock.Any(),
 			pgtype.UUID{Bytes: sessionID, Valid: true},
+			token.Hash(deviceToken),
 			"user_logout",
 			"user",
 		).
@@ -85,13 +90,16 @@ func TestLogoutCurrentSessionRevokesSessionAndClearsCookie(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/sessions/logout", nil)
 	request.AddCookie(&http.Cookie{Name: server.config.RefreshCookieName, Value: value})
+	request.AddCookie(&http.Cookie{Name: server.config.DeviceCookieName, Value: deviceToken})
 	recorder := httptest.NewRecorder()
 	server.router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusNoContent, recorder.Code)
 	cookies := recorder.Result().Cookies()
-	require.Len(t, cookies, 1)
-	require.Less(t, cookies[0].MaxAge, 0)
+	require.Len(t, cookies, 2)
+	for _, cookie := range cookies {
+		require.Less(t, cookie.MaxAge, 0)
+	}
 }
 
 func TestLogoutAllSessionsRevokesEveryUserSession(t *testing.T) {
@@ -122,8 +130,10 @@ func TestLogoutAllSessionsRevokesEveryUserSession(t *testing.T) {
 	server.router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusNoContent, recorder.Code)
-	require.Len(t, recorder.Result().Cookies(), 1)
-	require.Less(t, recorder.Result().Cookies()[0].MaxAge, 0)
+	require.Len(t, recorder.Result().Cookies(), 2)
+	for _, cookie := range recorder.Result().Cookies() {
+		require.Less(t, cookie.MaxAge, 0)
+	}
 }
 
 func TestRevokedSessionRejectsValidAccessToken(t *testing.T) {
@@ -141,11 +151,12 @@ func TestRevokedSessionRejectsValidAccessToken(t *testing.T) {
 			gomock.Any(),
 			pgtype.UUID{Bytes: sessionID, Valid: true},
 			username,
+			token.Hash(""),
 		).
 		Return(db.ErrSessionRevoked)
 
 	router := gin.New()
-	router.GET("/protected", authMiddleware(maker, store), func(ctx *gin.Context) {
+	router.GET("/protected", authMiddleware(maker, store, "monierave_device"), func(ctx *gin.Context) {
 		ctx.Status(http.StatusOK)
 	})
 	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -154,6 +165,103 @@ func TestRevokedSessionRejectsValidAccessToken(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+}
+
+func TestAccessTokenRequiresMatchingDeviceCookie(t *testing.T) {
+	tests := []struct {
+		name         string
+		deviceCookie string
+		storeError   error
+		statusCode   int
+	}{
+		{
+			name:         "matching device",
+			deviceCookie: "correct-device",
+			statusCode:   http.StatusOK,
+		},
+		{
+			name:       "missing device",
+			storeError: db.ErrDeviceMismatch,
+			statusCode: http.StatusUnauthorized,
+		},
+		{
+			name:         "wrong device",
+			deviceCookie: "wrong-device",
+			storeError:   db.ErrDeviceMismatch,
+			statusCode:   http.StatusUnauthorized,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			store := mockdb.NewMockStore(ctrl)
+			maker, err := token.NewJWTMaker(util.RandomString(32))
+			require.NoError(t, err)
+			username := util.RandomOwner()
+			sessionID := uuid.New()
+			value, _, err := maker.CreateAccessToken(username, sessionID, time.Minute)
+			require.NoError(t, err)
+
+			store.EXPECT().
+				ValidateSession(
+					gomock.Any(),
+					pgtype.UUID{Bytes: sessionID, Valid: true},
+					username,
+					token.Hash(test.deviceCookie),
+				).
+				Return(test.storeError)
+
+			router := gin.New()
+			router.GET(
+				"/protected",
+				authMiddleware(maker, store, "monierave_device"),
+				func(ctx *gin.Context) {
+					ctx.Status(http.StatusOK)
+				},
+			)
+			request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			request.Header.Set(authorizationHeaderKey, "Bearer "+value)
+			if test.deviceCookie != "" {
+				request.AddCookie(&http.Cookie{
+					Name:  "monierave_device",
+					Value: test.deviceCookie,
+				})
+			}
+			recorder := httptest.NewRecorder()
+
+			router.ServeHTTP(recorder, request)
+
+			require.Equal(t, test.statusCode, recorder.Code)
+		})
+	}
+}
+
+func TestRenewAccessTokenRejectsMissingDeviceCookie(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	refreshToken, _, err := server.tokenMaker.CreateRefreshToken(
+		util.RandomOwner(),
+		uuid.New(),
+		time.Hour,
+	)
+	require.NoError(t, err)
+
+	request := httptest.NewRequest(http.MethodPost, "/tokens/renew_access", nil)
+	request.AddCookie(&http.Cookie{
+		Name:  server.config.RefreshCookieName,
+		Value: refreshToken,
+	})
+	recorder := httptest.NewRecorder()
+
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+	require.Len(t, recorder.Result().Cookies(), 2)
+	for _, cookie := range recorder.Result().Cookies() {
+		require.Less(t, cookie.MaxAge, 0)
+	}
 }
 
 func TestPasswordChangeRequiresCurrentPasswordAndRevokesSessions(t *testing.T) {
@@ -198,8 +306,10 @@ func TestPasswordChangeRequiresCurrentPasswordAndRevokesSessions(t *testing.T) {
 	server.router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Len(t, recorder.Result().Cookies(), 1)
-	require.Less(t, recorder.Result().Cookies()[0].MaxAge, 0)
+	require.Len(t, recorder.Result().Cookies(), 2)
+	for _, cookie := range recorder.Result().Cookies() {
+		require.Less(t, cookie.MaxAge, 0)
+	}
 }
 
 func TestCredentialedCORSAllowsOnlyConfiguredOrigin(t *testing.T) {

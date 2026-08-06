@@ -17,13 +17,14 @@ INSERT INTO sessions (
   username,
   refresh_token_hash,
   refresh_token_id,
+  device_token_hash,
   user_agent,
   client_ip,
   expires_at
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7
+  $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason
+RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason, device_token_hash
 `
 
 type CreateSessionParams struct {
@@ -31,6 +32,7 @@ type CreateSessionParams struct {
 	Username         string             `json:"username"`
 	RefreshTokenHash []byte             `json:"refresh_token_hash"`
 	RefreshTokenID   pgtype.UUID        `json:"refresh_token_id"`
+	DeviceTokenHash  []byte             `json:"device_token_hash"`
 	UserAgent        string             `json:"user_agent"`
 	ClientIp         string             `json:"client_ip"`
 	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
@@ -42,6 +44,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.Username,
 		arg.RefreshTokenHash,
 		arg.RefreshTokenID,
+		arg.DeviceTokenHash,
 		arg.UserAgent,
 		arg.ClientIp,
 		arg.ExpiresAt,
@@ -59,6 +62,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.LastRefreshedAt,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.DeviceTokenHash,
 	)
 	return i, err
 }
@@ -74,7 +78,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason FROM sessions
+SELECT id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason, device_token_hash FROM sessions
 WHERE id = $1
 LIMIT 1
 `
@@ -94,12 +98,13 @@ func (q *Queries) GetSession(ctx context.Context, id pgtype.UUID) (Session, erro
 		&i.LastRefreshedAt,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.DeviceTokenHash,
 	)
 	return i, err
 }
 
 const getSessionForUpdate = `-- name: GetSessionForUpdate :one
-SELECT id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason FROM sessions
+SELECT id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason, device_token_hash FROM sessions
 WHERE id = $1
 LIMIT 1
 FOR UPDATE
@@ -120,12 +125,13 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id pgtype.UUID) (Sess
 		&i.LastRefreshedAt,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.DeviceTokenHash,
 	)
 	return i, err
 }
 
 const listSessions = `-- name: ListSessions :many
-SELECT id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason FROM sessions
+SELECT id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason, device_token_hash FROM sessions
 WHERE username = $1
 ORDER BY created_at DESC
 `
@@ -151,6 +157,7 @@ func (q *Queries) ListSessions(ctx context.Context, username string) ([]Session,
 			&i.LastRefreshedAt,
 			&i.RevokedAt,
 			&i.RevokedReason,
+			&i.DeviceTokenHash,
 		); err != nil {
 			return nil, err
 		}
@@ -169,7 +176,7 @@ SET
   revoked_reason = COALESCE(revoked_reason, $1)
 WHERE username = $2
   AND revoked_at IS NULL
-RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason
+RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason, device_token_hash
 `
 
 type RevokeAllUserSessionsParams struct {
@@ -198,6 +205,7 @@ func (q *Queries) RevokeAllUserSessions(ctx context.Context, arg RevokeAllUserSe
 			&i.LastRefreshedAt,
 			&i.RevokedAt,
 			&i.RevokedReason,
+			&i.DeviceTokenHash,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +224,7 @@ SET
   revoked_reason = COALESCE(revoked_reason, $1)
 WHERE id = $2
   AND revoked_at IS NULL
-RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason
+RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason, device_token_hash
 `
 
 type RevokeSessionParams struct {
@@ -239,6 +247,7 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (S
 		&i.LastRefreshedAt,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.DeviceTokenHash,
 	)
 	return i, err
 }
@@ -250,7 +259,7 @@ SET
   refresh_token_id = $3,
   last_refreshed_at = now()
 WHERE id = $1
-RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason
+RETURNING id, username, user_agent, client_ip, expires_at, created_at, refresh_token_hash, refresh_token_id, last_refreshed_at, revoked_at, revoked_reason, device_token_hash
 `
 
 type RotateSessionRefreshTokenParams struct {
@@ -274,6 +283,7 @@ func (q *Queries) RotateSessionRefreshToken(ctx context.Context, arg RotateSessi
 		&i.LastRefreshedAt,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.DeviceTokenHash,
 	)
 	return i, err
 }

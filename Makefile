@@ -1,64 +1,69 @@
-DB_URL=postgresql://favour:faelicdika@localhost:5432/simple_bank?sslmode=disable
-DB_TEST_URL=postgresql://favour:faelicdika@localhost:5432/monierave_test?sslmode=disable
-postgres:
-	docker run --name monierave-postgres --network bank-network -p 5432:5432 -e POSTGRES_USER=favour -e POSTGRES_PASSWORD=faelicdika -d postgres:18-bookworm
-createdb:
-	docker exec -it monierave-postgres createdb --username=favour --owner=favour simple_bank
+GO ?= go
 
-dropdb:
-	docker exec -it monierave-postgres dropdb --username=favour --if-exists simple_bank
+compose-up:
+	docker compose up --build
 
-createtestdb:
-	docker exec -it monierave-postgres createdb --username=favour --owner=favour monierave_test
+compose-down:
+	docker compose down
 
-droptestdb:
-	docker exec -it monierave-postgres dropdb --username=favour --if-exists monierave_test
-
-testmigrateup:
-	migrate -path db/migration -database "$(DB_TEST_URL)" -verbose up
+compose-logs:
+	docker compose logs --follow api relay worker
 
 migrateup:
-	migrate -path db/migration -database "$(DB_URL)" -verbose up
-
-migrateup1:
-	migrate -path db/migration -database "$(DB_URL)" -verbose up 1
-
-migratedown:
-	migrate -path db/migration -database "$(DB_URL)" -verbose down
+	@test -n "$(DB_SOURCE)" || (echo "DB_SOURCE is required" && exit 1)
+	migrate -path db/migration -database "$(DB_SOURCE)" -verbose up
 
 migratedown1:
-	migrate -path db/migration -database "$(DB_URL)" -verbose down 1
+	@test -n "$(DB_SOURCE)" || (echo "DB_SOURCE is required" && exit 1)
+	migrate -path db/migration -database "$(DB_SOURCE)" -verbose down 1
 
-migrateup2:
-	migrate -path db/migration -database "$(DB_URL)" -verbose up 2
-
-migratedown2:
-	migrate -path db/migration -database "$(DB_URL)" -verbose down 2
+migration-check:
+	./scripts/check-migrations.sh
 
 sqlc:
 	sqlc generate
 
-test:
-	DB_TEST_SOURCE="$(DB_TEST_URL)" MAILER_PROVIDER=log go test -v -cover ./...
-
-server:
-	go run main.go api
-
-relay:
-	go run main.go relay
-
-worker:
-	go run main.go worker
+generated-check:
+	./scripts/check-generated.sh
 
 mock:
 	mockgen -destination db/mock/store.go -package mockdb github.com/faelic/monierave/db/sqlc Store
 
-db_docs:
-	dbdocs build doc/db.dbml 
+format:
+	gofmt -w $$(git ls-files '*.go')
 
-db_schema:
+format-check:
+	test -z "$$(gofmt -l $$(git ls-files '*.go'))"
+
+vet:
+	$(GO) vet ./...
+
+test:
+	MAILER_PROVIDER=log $(GO) test -cover ./...
+
+test-race:
+	MAILER_PROVIDER=log $(GO) test -race -cover ./...
+
+test-invariants:
+	./scripts/test-financial-invariants.sh
+
+server:
+	$(GO) run main.go api
+
+relay:
+	$(GO) run main.go relay
+
+worker:
+	$(GO) run main.go worker
+
+db-docs:
+	dbdocs build doc/db.dbml
+
+db-schema:
 	dbml2sql --postgres -o doc/schema.sql doc/db.dbml
 
-redis:
-	docker run --name redis -p 6379:6379 -d redis:7.4-alpine
-.PHONY: postgres createdb dropdb createtestdb droptestdb testmigrateup migrateup migrateup1 migratedown migratedown1 db_schema db_docs sqlc server relay worker mock redis
+ci: format-check vet generated-check migration-check test-invariants test-race
+
+.PHONY: compose-up compose-down compose-logs migrateup migratedown1 \
+	migration-check sqlc generated-check mock format format-check vet test \
+	test-race test-invariants server relay worker db-docs db-schema ci

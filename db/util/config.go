@@ -20,6 +20,7 @@ type Config struct {
 	AccessTokenDuration       time.Duration `mapstructure:"ACCESS_TOKEN_DURATION"`
 	RefreshTokenDuration      time.Duration `mapstructure:"REFRESH_TOKEN_DURATION"`
 	RefreshCookieName         string        `mapstructure:"REFRESH_COOKIE_NAME"`
+	DeviceCookieName          string        `mapstructure:"DEVICE_COOKIE_NAME"`
 	RefreshCookieDomain       string        `mapstructure:"REFRESH_COOKIE_DOMAIN"`
 	RefreshCookieSecure       bool          `mapstructure:"REFRESH_COOKIE_SECURE"`
 	RefreshCookieSameSite     string        `mapstructure:"REFRESH_COOKIE_SAME_SITE"`
@@ -50,6 +51,7 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("ACCESS_TOKEN_DURATION")
 	_ = viper.BindEnv("REFRESH_TOKEN_DURATION")
 	_ = viper.BindEnv("REFRESH_COOKIE_NAME")
+	_ = viper.BindEnv("DEVICE_COOKIE_NAME")
 	_ = viper.BindEnv("REFRESH_COOKIE_DOMAIN")
 	_ = viper.BindEnv("REFRESH_COOKIE_SECURE")
 	_ = viper.BindEnv("REFRESH_COOKIE_SAME_SITE")
@@ -70,6 +72,7 @@ func LoadConfig(path string) (config Config, err error) {
 
 	viper.SetDefault("MAILER_PROVIDER", "log")
 	viper.SetDefault("REFRESH_COOKIE_NAME", "monierave_refresh")
+	viper.SetDefault("DEVICE_COOKIE_NAME", "monierave_device")
 	viper.SetDefault("REFRESH_COOKIE_SECURE", true)
 	viper.SetDefault("REFRESH_COOKIE_SAME_SITE", "lax")
 	viper.SetDefault("WORKER_CONCURRENCY", 10)
@@ -118,6 +121,12 @@ func ValidateAPIConfig(config Config) error {
 	}
 	if config.RefreshCookieName == "" {
 		return fmt.Errorf("REFRESH_COOKIE_NAME is required")
+	}
+	if config.DeviceCookieName == "" {
+		return fmt.Errorf("DEVICE_COOKIE_NAME is required")
+	}
+	if config.DeviceCookieName == config.RefreshCookieName {
+		return fmt.Errorf("DEVICE_COOKIE_NAME must differ from REFRESH_COOKIE_NAME")
 	}
 	switch config.RefreshCookieSameSite {
 	case "strict", "lax", "none":

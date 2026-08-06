@@ -19,7 +19,11 @@ const (
 	authorizationPayloadKey = "authorization_payload"
 )
 
-func authMiddleware(tokenMaker token.Maker, store db.Store) gin.HandlerFunc {
+func authMiddleware(
+	tokenMaker token.Maker,
+	store db.Store,
+	deviceCookieName string,
+) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		authorizationHeader := ctx.GetHeader(authorizationHeaderKey)
 
@@ -47,15 +51,20 @@ func authMiddleware(tokenMaker token.Maker, store db.Store) gin.HandlerFunc {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(ctx, ErrUnauthorized))
 			return
 		}
+		deviceToken := ""
+		if cookie, cookieErr := ctx.Request.Cookie(deviceCookieName); cookieErr == nil {
+			deviceToken = cookie.Value
+		}
 
 		err = store.ValidateSession(ctx, pgtype.UUID{
 			Bytes: payload.SessionID,
 			Valid: true,
-		}, payload.Username)
+		}, payload.Username, token.Hash(deviceToken))
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) ||
 				errors.Is(err, db.ErrSessionExpired) ||
 				errors.Is(err, db.ErrSessionRevoked) ||
+				errors.Is(err, db.ErrDeviceMismatch) ||
 				errors.Is(err, db.ErrSessionMismatch) {
 				ctx.AbortWithStatusJSON(
 					http.StatusUnauthorized,
