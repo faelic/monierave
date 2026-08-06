@@ -1,0 +1,8 @@
+.next/
+coverage/
+node_modules/
+playwright-report/
+pnpm-lock.yaml
+public/mockServiceWorker.js
+storybook-static/
+test-results/
