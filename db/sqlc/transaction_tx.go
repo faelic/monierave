@@ -5,12 +5,15 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type TransferTxParams struct {
-	FromAccountID int64 `json:"from_account_id"`
-	ToAccountID   int64 `json:"to_account_id"`
-	Amount        int64 `json:"amount"`
+	FromAccountPublicID pgtype.UUID `json:"from_account_id"`
+	ToAccountPublicID   pgtype.UUID `json:"to_account_id"`
+	Amount              int64       `json:"amount"`
+	Currency            string      `json:"currency"`
+	Username            string      `json:"username"`
 }
 
 type TransferTxResult struct {
@@ -23,26 +26,65 @@ type TransferTxResult struct {
 
 var ErrInsufficientBalance = errors.New("insufficient balance")
 
-// transferTx performs a money transfer from one account to another
-// it creates a transfer record, add account entries and updates account balance
+// TransferTx performs authorization, lifecycle validation, entries, and balance
+// changes while both account rows are locked in a consistent order.
 func (store *SQLStore) TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error) {
 	var result TransferTxResult
 
 	err := store.execTx(ctx, func(q *Queries) error {
-		var err error
+		fromAccount, err := q.GetAccountByPublicID(ctx, arg.FromAccountPublicID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAccountNotFound
+		}
+		if err != nil {
+			return err
+		}
+		toAccount, err := q.GetAccountByPublicID(ctx, arg.ToAccountPublicID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAccountNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if fromAccount.ID == toAccount.ID {
+			return ErrSameAccount
+		}
+
+		fromAccount, toAccount, err = lockTransferAccounts(
+			ctx,
+			q,
+			fromAccount.ID,
+			toAccount.ID,
+		)
+		if err != nil {
+			return err
+		}
+
+		if fromAccount.Owner != arg.Username {
+			return ErrAccountNotOwned
+		}
+		if fromAccount.Currency != arg.Currency || toAccount.Currency != arg.Currency {
+			return ErrCurrencyMismatch
+		}
+		if fromAccount.Status == FinancialAccountStatusFrozen {
+			return ErrAccountFrozen
+		}
+		if fromAccount.Status == FinancialAccountStatusClosed ||
+			toAccount.Status == FinancialAccountStatusClosed {
+			return ErrAccountClosed
+		}
 
 		result.Transfer, err = q.CreateTransfer(ctx, CreateTransferParams{
-			FromAccountID: arg.FromAccountID,
-			ToAccountID:   arg.ToAccountID,
+			FromAccountID: fromAccount.ID,
+			ToAccountID:   toAccount.ID,
 			Amount:        arg.Amount,
 		})
-
 		if err != nil {
 			return err
 		}
 
 		result.FromEntry, err = q.CreateEntry(ctx, CreateEntryParams{
-			AccountID: arg.FromAccountID,
+			AccountID: fromAccount.ID,
 			Amount:    -arg.Amount,
 		})
 		if err != nil {
@@ -50,66 +92,62 @@ func (store *SQLStore) TransferTx(ctx context.Context, arg TransferTxParams) (Tr
 		}
 
 		result.ToEntry, err = q.CreateEntry(ctx, CreateEntryParams{
-			AccountID: arg.ToAccountID,
+			AccountID: toAccount.ID,
 			Amount:    arg.Amount,
 		})
 		if err != nil {
 			return err
 		}
 
-		//TODO: Update account balance
-
-		if arg.FromAccountID < arg.ToAccountID {
-
-			result.FromAccount, result.ToAccount, err = addMoney(ctx, q, arg.FromAccountID, -arg.Amount, arg.ToAccountID, arg.Amount)
-
-		} else {
-			result.ToAccount, result.FromAccount, err = addMoney(ctx, q, arg.ToAccountID, arg.Amount, arg.FromAccountID, -arg.Amount)
+		result.FromAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+			ID:     fromAccount.ID,
+			Amount: -arg.Amount,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInsufficientBalance
 		}
 		if err != nil {
 			return err
 		}
+
+		result.ToAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+			ID:     toAccount.ID,
+			Amount: arg.Amount,
+		})
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
-
 	if err != nil {
 		return TransferTxResult{}, err
 	}
-	return result, err
+	return result, nil
 }
 
-func addMoney(
+func lockTransferAccounts(
 	ctx context.Context,
 	q *Queries,
-	accountID1 int64,
-	amount1 int64,
-	accountID2 int64,
-	amount2 int64,
-) (account1 Account, account2 Account, err error) {
-	account1, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
-		ID:     accountID1,
-		Amount: amount1,
-	})
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) && amount1 < 0 {
-			return account1, account2, ErrInsufficientBalance
-		}
-
-		return account1, account2, err
+	fromAccountID int64,
+	toAccountID int64,
+) (Account, Account, error) {
+	firstID, secondID := fromAccountID, toAccountID
+	if firstID > secondID {
+		firstID, secondID = secondID, firstID
 	}
 
-	account2, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
-		ID:     accountID2,
-		Amount: amount2,
-	})
-
+	first, err := q.GetAccountForUpdate(ctx, firstID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) && amount2 < 0 {
-			return account1, account2, ErrInsufficientBalance
-		}
-
-		return account1, account2, err
+		return Account{}, Account{}, err
 	}
-	return
+	second, err := q.GetAccountForUpdate(ctx, secondID)
+	if err != nil {
+		return Account{}, Account{}, err
+	}
+
+	if first.ID == fromAccountID {
+		return first, second, nil
+	}
+	return second, first, nil
 }

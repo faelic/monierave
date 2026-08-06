@@ -12,6 +12,7 @@ import (
 type Store interface {
 	Querier
 	CreateUserTx(ctx context.Context, arg CreateUserParams) (CreateUserTxResult, error)
+	CloseAccountTx(ctx context.Context, arg CloseAccountTxParams) (Account, error)
 	CreateSessionTx(ctx context.Context, arg CreateSessionParams) (Session, error)
 	ProcessEmailDeliveryEventTx(ctx context.Context, arg ProcessEmailDeliveryEventParams) (ProcessEmailDeliveryEventResult, error)
 	RequestEmailVerificationTx(ctx context.Context, username string) (RequestEmailVerificationTxResult, error)

@@ -59,6 +59,12 @@ type Account struct {
 	Balance   int64              `json:"balance"`
 	Currency  string             `json:"currency"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// Stable, non-sequential account identifier exposed through public APIs.
+	PublicID pgtype.UUID `json:"public_id"`
+	// Account lifecycle state. Frozen accounts may receive funds but cannot send; closed accounts cannot transact.
+	Status    string             `json:"status"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ClosedAt  pgtype.Timestamptz `json:"closed_at"`
 }
 
 // Append-only audit history. Intentionally has no foreign keys so records survive entity retention cleanup.

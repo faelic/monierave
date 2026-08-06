@@ -7,14 +7,18 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addAccountBalance = `-- name: AddAccountBalance :one
 UPDATE accounts
-SET balance = balance + $1
+SET
+  balance = balance + $1,
+  updated_at = now()
 WHERE id = $2
   AND balance + $1 >= 0
-RETURNING id, owner, balance, currency, created_at
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
 `
 
 type AddAccountBalanceParams struct {
@@ -31,29 +35,28 @@ func (q *Queries) AddAccountBalance(ctx context.Context, arg AddAccountBalancePa
 		&i.Balance,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
 	)
 	return i, err
 }
 
-const createAccount = `-- name: CreateAccount :one
-INSERT INTO accounts (
-  owner, 
-  balance,
-  currency
-) VALUES (
-  $1, $2, $3
-)
-RETURNING id, owner, balance, currency, created_at
+const closeAccount = `-- name: CloseAccount :one
+UPDATE accounts
+SET
+  status = 'closed',
+  closed_at = now(),
+  updated_at = now()
+WHERE id = $1
+  AND balance = 0
+  AND status <> 'closed'
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
 `
 
-type CreateAccountParams struct {
-	Owner    string `json:"owner"`
-	Balance  int64  `json:"balance"`
-	Currency string `json:"currency"`
-}
-
-func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
-	row := q.db.QueryRow(ctx, createAccount, arg.Owner, arg.Balance, arg.Currency)
+func (q *Queries) CloseAccount(ctx context.Context, id int64) (Account, error) {
+	row := q.db.QueryRow(ctx, closeAccount, id)
 	var i Account
 	err := row.Scan(
 		&i.ID,
@@ -61,22 +64,49 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Balance,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
 	)
 	return i, err
 }
 
-const deleteAccount = `-- name: DeleteAccount :exec
-DELETE FROM accounts
-WHERE id = $1
+const createAccount = `-- name: CreateAccount :one
+INSERT INTO accounts (
+  owner,
+  balance,
+  currency
+) VALUES (
+  $1, 0, $2
+)
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
 `
 
-func (q *Queries) DeleteAccount(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteAccount, id)
-	return err
+type CreateAccountParams struct {
+	Owner    string `json:"owner"`
+	Currency string `json:"currency"`
+}
+
+func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
+	row := q.db.QueryRow(ctx, createAccount, arg.Owner, arg.Currency)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Owner,
+		&i.Balance,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
+	)
+	return i, err
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, owner, balance, currency, created_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
 WHERE id = $1 LIMIT 1
 `
 
@@ -89,12 +119,61 @@ func (q *Queries) GetAccount(ctx context.Context, id int64) (Account, error) {
 		&i.Balance,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
+	)
+	return i, err
+}
+
+const getAccountByPublicID = `-- name: GetAccountByPublicID :one
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+WHERE public_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetAccountByPublicID(ctx context.Context, publicID pgtype.UUID) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccountByPublicID, publicID)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Owner,
+		&i.Balance,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
+	)
+	return i, err
+}
+
+const getAccountByPublicIDForUpdate = `-- name: GetAccountByPublicIDForUpdate :one
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+WHERE public_id = $1 LIMIT 1
+FOR NO KEY UPDATE
+`
+
+func (q *Queries) GetAccountByPublicIDForUpdate(ctx context.Context, publicID pgtype.UUID) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccountByPublicIDForUpdate, publicID)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Owner,
+		&i.Balance,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
 	)
 	return i, err
 }
 
 const getAccountForUpdate = `-- name: GetAccountForUpdate :one
-SELECT id, owner, balance, currency, created_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
 WHERE id = $1 LIMIT 1
 FOR NO KEY UPDATE
 `
@@ -108,14 +187,47 @@ func (q *Queries) GetAccountForUpdate(ctx context.Context, id int64) (Account, e
 		&i.Balance,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
+	)
+	return i, err
+}
+
+const getOwnedAccountByPublicID = `-- name: GetOwnedAccountByPublicID :one
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+WHERE public_id = $1
+  AND owner = $2
+LIMIT 1
+`
+
+type GetOwnedAccountByPublicIDParams struct {
+	PublicID pgtype.UUID `json:"public_id"`
+	Owner    string      `json:"owner"`
+}
+
+func (q *Queries) GetOwnedAccountByPublicID(ctx context.Context, arg GetOwnedAccountByPublicIDParams) (Account, error) {
+	row := q.db.QueryRow(ctx, getOwnedAccountByPublicID, arg.PublicID, arg.Owner)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Owner,
+		&i.Balance,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
 	)
 	return i, err
 }
 
 const listAccount = `-- name: ListAccount :many
-SELECT id, owner, balance, currency, created_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
 WHERE owner = $1
-ORDER BY id
+ORDER BY created_at, id
 LIMIT $2
 OFFSET $3
 `
@@ -141,6 +253,10 @@ func (q *Queries) ListAccount(ctx context.Context, arg ListAccountParams) ([]Acc
 			&i.Balance,
 			&i.Currency,
 			&i.CreatedAt,
+			&i.PublicID,
+			&i.Status,
+			&i.UpdatedAt,
+			&i.ClosedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -152,20 +268,24 @@ func (q *Queries) ListAccount(ctx context.Context, arg ListAccountParams) ([]Acc
 	return items, nil
 }
 
-const updateAccount = `-- name: UpdateAccount :one
+const setAccountStatus = `-- name: SetAccountStatus :one
 UPDATE accounts
-SET balance = $2
+SET
+  status = $2,
+  closed_at = NULL,
+  updated_at = now()
 WHERE id = $1
-RETURNING id, owner, balance, currency, created_at
+  AND $2 IN ('active', 'frozen')
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
 `
 
-type UpdateAccountParams struct {
-	ID      int64 `json:"id"`
-	Balance int64 `json:"balance"`
+type SetAccountStatusParams struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
 }
 
-func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error) {
-	row := q.db.QueryRow(ctx, updateAccount, arg.ID, arg.Balance)
+func (q *Queries) SetAccountStatus(ctx context.Context, arg SetAccountStatusParams) (Account, error) {
+	row := q.db.QueryRow(ctx, setAccountStatus, arg.ID, arg.Status)
 	var i Account
 	err := row.Scan(
 		&i.ID,
@@ -173,6 +293,10 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.Balance,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
 	)
 	return i, err
 }

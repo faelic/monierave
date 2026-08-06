@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AddAccountBalance(ctx context.Context, arg AddAccountBalanceParams) (Account, error)
 	ClaimOutboxEvents(ctx context.Context, arg ClaimOutboxEventsParams) ([]OutboxEvent, error)
+	CloseAccount(ctx context.Context, id int64) (Account, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
 	CreateEmailDeliveryEvent(ctx context.Context, arg CreateEmailDeliveryEventParams) (EmailDeliveryEvent, error)
@@ -22,7 +23,6 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTransfer(ctx context.Context, arg CreateTransferParams) (Transfer, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	DeleteAccount(ctx context.Context, id int64) error
 	DeleteEntry(ctx context.Context, id int64) error
 	DeleteExpiredPublishedOutboxEvents(ctx context.Context, publishedAt pgtype.Timestamptz) (int64, error)
 	DeleteExpiredSentEmailJobs(ctx context.Context, sentAt pgtype.Timestamptz) (int64, error)
@@ -31,6 +31,8 @@ type Querier interface {
 	DisableExpiredPendingUser(ctx context.Context, username string) (User, error)
 	DisableExpiredPendingUsers(ctx context.Context) (int64, error)
 	GetAccount(ctx context.Context, id int64) (Account, error)
+	GetAccountByPublicID(ctx context.Context, publicID pgtype.UUID) (Account, error)
+	GetAccountByPublicIDForUpdate(ctx context.Context, publicID pgtype.UUID) (Account, error)
 	GetAccountForUpdate(ctx context.Context, id int64) (Account, error)
 	GetEmailDeliveryEvent(ctx context.Context, webhookID string) (EmailDeliveryEvent, error)
 	GetEmailJob(ctx context.Context, id pgtype.UUID) (EmailJob, error)
@@ -38,6 +40,7 @@ type Querier interface {
 	GetEntry(ctx context.Context, id int64) (Entry, error)
 	GetLatestEmailJobForCurrentAddress(ctx context.Context, username string) (EmailJob, error)
 	GetOutboxEvent(ctx context.Context, id pgtype.UUID) (OutboxEvent, error)
+	GetOwnedAccountByPublicID(ctx context.Context, arg GetOwnedAccountByPublicIDParams) (Account, error)
 	GetSession(ctx context.Context, id pgtype.UUID) (Session, error)
 	GetSessionForUpdate(ctx context.Context, id pgtype.UUID) (Session, error)
 	GetTransfer(ctx context.Context, id int64) (Transfer, error)
@@ -62,8 +65,8 @@ type Querier interface {
 	RevokeAllUserSessions(ctx context.Context, arg RevokeAllUserSessionsParams) ([]Session, error)
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) (Session, error)
 	RotateSessionRefreshToken(ctx context.Context, arg RotateSessionRefreshTokenParams) (Session, error)
+	SetAccountStatus(ctx context.Context, arg SetAccountStatusParams) (Account, error)
 	StartEmailJobAttempt(ctx context.Context, id pgtype.UUID) (EmailJob, error)
-	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
 	UpdateCurrentUserEmailDeliverability(ctx context.Context, arg UpdateCurrentUserEmailDeliverabilityParams) (User, error)
 	UpdateEmailJobDelivery(ctx context.Context, arg UpdateEmailJobDeliveryParams) (EmailJob, error)
 	UpdateEntry(ctx context.Context, arg UpdateEntryParams) (Entry, error)
