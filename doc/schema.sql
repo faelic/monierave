@@ -26,11 +26,17 @@ CREATE TABLE "users" (
 
 CREATE TABLE "accounts" (
   "id" bigserial PRIMARY KEY,
+  "public_id" uuid UNIQUE NOT NULL DEFAULT (gen_random_uuid()),
   "owner" varchar NOT NULL,
-  "balance" bigint NOT NULL,
+  "balance" bigint NOT NULL DEFAULT 0,
   "currency" varchar NOT NULL,
+  "status" varchar NOT NULL DEFAULT 'active',
   "created_at" timestamptz NOT NULL DEFAULT (now()),
-  CHECK (balance >= 0)
+  "updated_at" timestamptz NOT NULL DEFAULT (now()),
+  "closed_at" timestamptz,
+  CHECK (balance >= 0),
+  CHECK (status IN ('active', 'frozen', 'closed')),
+  CHECK ((status = 'closed' AND closed_at IS NOT NULL AND balance = 0) OR (status <> 'closed' AND closed_at IS NULL))
 );
 
 CREATE TABLE "entries" (
@@ -144,6 +150,8 @@ CREATE INDEX "accounts_owner_idx" ON "accounts" ("owner");
 
 CREATE UNIQUE INDEX "accounts_owner_currency_key" ON "accounts" ("owner", "currency");
 
+CREATE INDEX "accounts_owner_status_idx" ON "accounts" ("owner", "status", "created_at", "id");
+
 CREATE INDEX "entries_account_id_idx" ON "entries" ("account_id");
 
 CREATE INDEX "transfers_from_account_id_idx" ON "transfers" ("from_account_id");
@@ -183,6 +191,10 @@ CREATE INDEX "email_delivery_events_job_idx" ON "email_delivery_events" ("email_
 CREATE INDEX "email_delivery_events_provider_message_idx" ON "email_delivery_events" ("provider_message_id", "occurred_at" DESC);
 
 COMMENT ON TABLE "users" IS 'Application users and their email verification lifecycle.';
+
+COMMENT ON COLUMN "accounts"."public_id" IS 'Stable, non-sequential account identifier exposed through public APIs.';
+
+COMMENT ON COLUMN "accounts"."status" IS 'Frozen accounts may receive funds but cannot send; closed accounts cannot transact.';
 
 COMMENT ON COLUMN "sessions"."refresh_token_hash" IS 'SHA-256 hash of the current refresh token; raw refresh tokens are never persisted.';
 

@@ -11,154 +11,133 @@ import (
 )
 
 func createRandomAccount(t *testing.T) Account {
+	t.Helper()
 	user := createRandomUser(t)
-
-	args := CreateAccountParams{
+	account, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
 		Owner:    user.Username,
-		Balance:  util.RandomMoney(),
 		Currency: util.RandomCurrency(),
-	}
-
-	account, err := testQueries.CreateAccount(context.Background(), args)
+	})
 	require.NoError(t, err)
-	require.NotEmpty(t, account)
-
-	require.Equal(t, args.Owner, account.Owner)
-	require.Equal(t, args.Balance, account.Balance)
-	require.Equal(t, args.Currency, account.Currency)
-
-	require.NotZero(t, account.ID)
-	require.NotZero(t, account.CreatedAt)
-
+	require.Equal(t, user.Username, account.Owner)
+	require.Zero(t, account.Balance)
+	require.Equal(t, FinancialAccountStatusActive, account.Status)
+	require.True(t, account.PublicID.Valid)
+	require.True(t, account.CreatedAt.Valid)
+	require.True(t, account.UpdatedAt.Valid)
+	require.False(t, account.ClosedAt.Valid)
 	return account
 }
-func TestCreateAccount(t *testing.T) {
-	createRandomAccount(t)
+
+func fundAccount(t *testing.T, account Account, amount int64) Account {
+	t.Helper()
+	funded, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
+		ID:     account.ID,
+		Amount: amount,
+	})
+	require.NoError(t, err)
+	return funded
 }
 
-func TestGetAccount(t *testing.T) {
-	account1 := createRandomAccount(t)
-	account2, err := testQueries.GetAccount(context.Background(), account1.ID)
+func TestCreateAndGetAccountByPublicID(t *testing.T) {
+	account := createRandomAccount(t)
 
+	got, err := testQueries.GetAccountByPublicID(context.Background(), account.PublicID)
 	require.NoError(t, err)
-	require.NotEmpty(t, account2)
+	require.Equal(t, account, got)
 
-	require.Equal(t, account1.ID, account2.ID)
-	require.Equal(t, account1.Owner, account2.Owner)
-	require.Equal(t, account1.Balance, account2.Balance)
-	require.Equal(t, account1.Currency, account2.Currency)
-	require.WithinDuration(t, account1.CreatedAt.Time, account2.CreatedAt.Time, time.Second)
+	owned, err := testQueries.GetOwnedAccountByPublicID(
+		context.Background(),
+		GetOwnedAccountByPublicIDParams{
+			PublicID: account.PublicID,
+			Owner:    account.Owner,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, account, owned)
 }
 
-func TestUpdateAccount(t *testing.T) {
-	account1 := createRandomAccount(t)
-
-	args := UpdateAccountParams{
-		ID:      account1.ID,
-		Balance: util.RandomMoney(),
-	}
-
-	account2, err := testQueries.UpdateAccount(context.Background(), args)
-	require.NoError(t, err)
-	require.NotEmpty(t, account2)
-
-	require.Equal(t, account1.ID, account2.ID)
-	require.Equal(t, account1.Owner, account2.Owner)
-	require.Equal(t, args.Balance, account2.Balance)
-	require.Equal(t, account1.Currency, account2.Currency)
-	require.WithinDuration(t, account1.CreatedAt.Time, account2.CreatedAt.Time, time.Second)
-}
-
-func TestDeleteAccount(t *testing.T) {
-	account1 := createRandomAccount(t)
-	err := testQueries.DeleteAccount(context.Background(), account1.ID)
-	require.NoError(t, err)
-
-	account2, err := testQueries.GetAccount(context.Background(), account1.ID)
-	require.Error(t, err)
-	require.Empty(t, account2)
+func TestOwnedAccountLookupHidesForeignAccount(t *testing.T) {
+	account := createRandomAccount(t)
+	_, err := testQueries.GetOwnedAccountByPublicID(
+		context.Background(),
+		GetOwnedAccountByPublicIDParams{
+			PublicID: account.PublicID,
+			Owner:    util.RandomOwner(),
+		},
+	)
+	require.ErrorIs(t, err, pgx.ErrNoRows)
 }
 
 func TestListAccount(t *testing.T) {
 	user := createRandomUser(t)
-
 	account1, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
-		Owner:    user.Username,
-		Balance:  util.RandomMoney(),
-		Currency: "USD",
+		Owner: user.Username, Currency: "USD",
 	})
 	require.NoError(t, err)
-
 	account2, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
-		Owner:    user.Username,
-		Balance:  util.RandomMoney(),
-		Currency: "EUR",
+		Owner: user.Username, Currency: "EUR",
 	})
 	require.NoError(t, err)
 
-	args := ListAccountParams{
-		Owner:  user.Username,
-		Limit:  5,
-		Offset: 0,
-	}
-
-	accounts, err := testQueries.ListAccount(context.Background(), args)
+	accounts, err := testQueries.ListAccount(context.Background(), ListAccountParams{
+		Owner: user.Username, Limit: 5, Offset: 0,
+	})
 	require.NoError(t, err)
-	require.Len(t, accounts, 2)
-
-	require.Contains(t, accounts, account1)
-	require.Contains(t, accounts, account2)
-
-	for _, account := range accounts {
-		require.NotEmpty(t, account)
-		require.Equal(t, user.Username, account.Owner)
-	}
+	require.Equal(t, []Account{account1, account2}, accounts)
 }
 
 func TestAddAccountBalance(t *testing.T) {
-	account1 := createRandomAccount(t)
-
-	addedAmount := int64(50)
-	account2, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
-		ID:     account1.ID,
-		Amount: addedAmount,
-	})
-	require.NoError(t, err)
-	require.Equal(t, account1.Balance+addedAmount, account2.Balance)
-
-	subtractedAmount := int64(-20)
-	account3, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
-		ID:     account1.ID,
-		Amount: subtractedAmount,
-	})
-	require.NoError(t, err)
-	require.Equal(t, account2.Balance+subtractedAmount, account3.Balance)
-}
-
-func TestAddAccountBalanceInsufficientBalance(t *testing.T) {
 	account := createRandomAccount(t)
+	updated := fundAccount(t, account, 50)
+	require.Equal(t, int64(50), updated.Balance)
+	require.True(t, updated.UpdatedAt.Time.After(account.UpdatedAt.Time) ||
+		updated.UpdatedAt.Time.Equal(account.UpdatedAt.Time))
 
-	_, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
-		ID:     account.ID,
-		Amount: -(account.Balance + 1),
+	updated, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
+		ID: updated.ID, Amount: -20,
 	})
-	require.Error(t, err)
-	require.ErrorIs(t, err, pgx.ErrNoRows)
-
-	updatedAccount, getErr := testQueries.GetAccount(context.Background(), account.ID)
-	require.NoError(t, getErr)
-	require.Equal(t, account.Balance, updatedAccount.Balance)
+	require.NoError(t, err)
+	require.Equal(t, int64(30), updated.Balance)
 }
 
-func TestGetAccountForUpdate(t *testing.T) {
-	account1 := createRandomAccount(t)
-	account2, err := testQueries.GetAccountForUpdate(context.Background(), account1.ID)
+func TestAddAccountBalanceRejectsOverdraft(t *testing.T) {
+	account := fundAccount(t, createRandomAccount(t), 25)
+	_, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
+		ID: account.ID, Amount: -26,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+}
 
+func TestCloseAccountTx(t *testing.T) {
+	account := createRandomAccount(t)
+	closed, err := testStore.CloseAccountTx(context.Background(), CloseAccountTxParams{
+		PublicID: account.PublicID,
+		Username: account.Owner,
+	})
 	require.NoError(t, err)
-	require.NotEmpty(t, account2)
-	require.Equal(t, account1.ID, account2.ID)
-	require.Equal(t, account1.Owner, account2.Owner)
-	require.Equal(t, account1.Balance, account2.Balance)
-	require.Equal(t, account1.Currency, account2.Currency)
-	require.WithinDuration(t, account1.CreatedAt.Time, account2.CreatedAt.Time, time.Second)
+	require.Equal(t, FinancialAccountStatusClosed, closed.Status)
+	require.True(t, closed.ClosedAt.Valid)
+	require.WithinDuration(t, time.Now(), closed.ClosedAt.Time, time.Second)
+
+	_, err = testStore.CloseAccountTx(context.Background(), CloseAccountTxParams{
+		PublicID: account.PublicID,
+		Username: account.Owner,
+	})
+	require.ErrorIs(t, err, ErrAccountClosed)
+}
+
+func TestCloseAccountTxRejectsNonZeroBalanceAndForeignOwner(t *testing.T) {
+	account := fundAccount(t, createRandomAccount(t), 100)
+
+	_, err := testStore.CloseAccountTx(context.Background(), CloseAccountTxParams{
+		PublicID: account.PublicID,
+		Username: account.Owner,
+	})
+	require.ErrorIs(t, err, ErrAccountBalanceNotZero)
+
+	_, err = testStore.CloseAccountTx(context.Background(), CloseAccountTxParams{
+		PublicID: account.PublicID,
+		Username: util.RandomOwner(),
+	})
+	require.ErrorIs(t, err, ErrAccountNotOwned)
 }

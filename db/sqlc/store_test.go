@@ -16,13 +16,10 @@ func createTransferTestAccount(t *testing.T) Account {
 
 	account, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
 		Owner:    user.Username,
-		Balance:  util.RandomMoney(),
 		Currency: "USD",
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, account)
-
-	return account
+	return fundAccount(t, account, util.RandomMoney())
 }
 
 func TestCreateUserTxCreatesEmailJobAndOutboxEvent(t *testing.T) {
@@ -494,9 +491,11 @@ func TestTransferTx(t *testing.T) {
 		go func() {
 			ctx := context.Background()
 			result, err := testStore.TransferTx(ctx, TransferTxParams{
-				FromAccountID: account1.ID,
-				ToAccountID:   account2.ID,
-				Amount:        amount,
+				FromAccountPublicID: account1.PublicID,
+				ToAccountPublicID:   account2.PublicID,
+				Amount:              amount,
+				Currency:            account1.Currency,
+				Username:            account1.Owner,
 			})
 
 			errs <- err
@@ -596,24 +595,26 @@ func TestTransferTxDeadlock(t *testing.T) {
 	errs := make(chan error)
 
 	for i := 0; i < n; i++ {
-		fromAccountID := account1.ID
-		toAccountID := account2.ID
+		fromAccount := account1
+		toAccount := account2
 
 		if i%2 == 1 {
-			fromAccountID = account2.ID
-			toAccountID = account1.ID
+			fromAccount = account2
+			toAccount = account1
 		}
 
-		go func() {
+		go func(fromAccount, toAccount Account) {
 			ctx := context.Background()
 			_, err := testStore.TransferTx(ctx, TransferTxParams{
-				FromAccountID: fromAccountID,
-				ToAccountID:   toAccountID,
-				Amount:        amount,
+				FromAccountPublicID: fromAccount.PublicID,
+				ToAccountPublicID:   toAccount.PublicID,
+				Amount:              amount,
+				Currency:            fromAccount.Currency,
+				Username:            fromAccount.Owner,
 			})
 
 			errs <- err
-		}()
+		}(fromAccount, toAccount)
 	}
 
 	// check results
@@ -644,9 +645,11 @@ func TestTransferTxInsufficientBalance(t *testing.T) {
 	amount := account1.Balance + 1
 
 	result, err := testStore.TransferTx(context.Background(), TransferTxParams{
-		FromAccountID: account1.ID,
-		ToAccountID:   account2.ID,
-		Amount:        amount,
+		FromAccountPublicID: account1.PublicID,
+		ToAccountPublicID:   account2.PublicID,
+		Amount:              amount,
+		Currency:            account1.Currency,
+		Username:            account1.Owner,
 	})
 
 	require.Error(t, err)
@@ -662,4 +665,132 @@ func TestTransferTxInsufficientBalance(t *testing.T) {
 	updatedAccount2, getErr := testQueries.GetAccount(context.Background(), account2.ID)
 	require.NoError(t, getErr)
 	require.Equal(t, account2.Balance, updatedAccount2.Balance)
+}
+
+func TestTransferTxAccountLifecycle(t *testing.T) {
+	testCases := []struct {
+		name          string
+		fromStatus    string
+		toStatus      string
+		expectedError error
+	}{
+		{
+			name:          "FrozenSource",
+			fromStatus:    FinancialAccountStatusFrozen,
+			toStatus:      FinancialAccountStatusActive,
+			expectedError: ErrAccountFrozen,
+		},
+		{
+			name:       "FrozenDestinationMayReceive",
+			fromStatus: FinancialAccountStatusActive,
+			toStatus:   FinancialAccountStatusFrozen,
+		},
+		{
+			name:          "ClosedSource",
+			fromStatus:    FinancialAccountStatusClosed,
+			toStatus:      FinancialAccountStatusActive,
+			expectedError: ErrAccountClosed,
+		},
+		{
+			name:          "ClosedDestination",
+			fromStatus:    FinancialAccountStatusActive,
+			toStatus:      FinancialAccountStatusClosed,
+			expectedError: ErrAccountClosed,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fromAccount := createTransferTestAccount(t)
+			toAccount := createTransferTestAccount(t)
+			var err error
+			fromAccount = setTransferTestAccountStatus(t, fromAccount, tc.fromStatus)
+			toAccount = setTransferTestAccountStatus(t, toAccount, tc.toStatus)
+
+			result, err := testStore.TransferTx(context.Background(), TransferTxParams{
+				FromAccountPublicID: fromAccount.PublicID,
+				ToAccountPublicID:   toAccount.PublicID,
+				Amount:              10,
+				Currency:            fromAccount.Currency,
+				Username:            fromAccount.Owner,
+			})
+			if tc.expectedError != nil {
+				require.ErrorIs(t, err, tc.expectedError)
+				require.Empty(t, result)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, int64(10), result.Transfer.Amount)
+		})
+	}
+}
+
+func setTransferTestAccountStatus(t *testing.T, account Account, status string) Account {
+	t.Helper()
+	if status == FinancialAccountStatusClosed {
+		_, err := testQueries.AddAccountBalance(context.Background(), AddAccountBalanceParams{
+			ID: account.ID, Amount: -account.Balance,
+		})
+		require.NoError(t, err)
+		closed, err := testStore.CloseAccountTx(context.Background(), CloseAccountTxParams{
+			PublicID: account.PublicID,
+			Username: account.Owner,
+		})
+		require.NoError(t, err)
+		return closed
+	}
+
+	updated, err := testQueries.SetAccountStatus(context.Background(), SetAccountStatusParams{
+		ID: account.ID, Status: status,
+	})
+	require.NoError(t, err)
+	return updated
+}
+
+func TestCloseAccountTxSerializesWithIncomingTransfer(t *testing.T) {
+	fromAccount := createTransferTestAccount(t)
+	toAccount := createTransferTestAccount(t)
+
+	start := make(chan struct{})
+	transferResult := make(chan error, 1)
+	closeResult := make(chan error, 1)
+
+	go func() {
+		<-start
+		_, err := testStore.TransferTx(context.Background(), TransferTxParams{
+			FromAccountPublicID: fromAccount.PublicID,
+			ToAccountPublicID:   toAccount.PublicID,
+			Amount:              10,
+			Currency:            fromAccount.Currency,
+			Username:            fromAccount.Owner,
+		})
+		transferResult <- err
+	}()
+	go func() {
+		<-start
+		_, err := testStore.CloseAccountTx(context.Background(), CloseAccountTxParams{
+			PublicID: toAccount.PublicID,
+			Username: toAccount.Owner,
+		})
+		closeResult <- err
+	}()
+
+	close(start)
+	transferErr := <-transferResult
+	closeErr := <-closeResult
+
+	if transferErr == nil {
+		require.ErrorIs(t, closeErr, ErrAccountBalanceNotZero)
+	} else {
+		require.ErrorIs(t, transferErr, ErrAccountClosed)
+		require.NoError(t, closeErr)
+	}
+
+	finalAccount, err := testQueries.GetAccount(context.Background(), toAccount.ID)
+	require.NoError(t, err)
+	if finalAccount.Status == FinancialAccountStatusClosed {
+		require.Zero(t, finalAccount.Balance)
+	} else {
+		require.Equal(t, int64(10)+toAccount.Balance, finalAccount.Balance)
+	}
 }

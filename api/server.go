@@ -79,10 +79,9 @@ func (server *Server) setupRouter() {
 	}
 	financialRoutes := router.Group("/").Use(financialMiddleware...)
 	financialRoutes.POST("/accounts", server.createAccount)
-	financialRoutes.GET("/accounts/:id", server.getAccount)
+	financialRoutes.GET("/accounts/:public_id", server.getAccount)
 	financialRoutes.GET("/accounts", server.listAccount)
-	financialRoutes.PUT("/accounts/:id", server.updateAccount)
-	financialRoutes.DELETE("/accounts/:id", server.deleteAccount)
+	financialRoutes.POST("/accounts/:public_id/close", server.closeAccount)
 	financialRoutes.POST("/transfers", server.createTransfer)
 
 	server.router = router

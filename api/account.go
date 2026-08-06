@@ -1,16 +1,62 @@
 package api
 
 import (
-	"database/sql"
 	"errors"
-	"log"
 	"net/http"
+	"time"
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/token"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type accountResponse struct {
+	ID        string     `json:"id"`
+	Balance   int64      `json:"balance"`
+	Currency  string     `json:"currency"`
+	Status    string     `json:"status"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	ClosedAt  *time.Time `json:"closed_at"`
+}
+
+func newAccountResponse(account db.Account) accountResponse {
+	var closedAt *time.Time
+	if account.ClosedAt.Valid {
+		value := account.ClosedAt.Time
+		closedAt = &value
+	}
+
+	return accountResponse{
+		ID:        uuid.UUID(account.PublicID.Bytes).String(),
+		Balance:   account.Balance,
+		Currency:  account.Currency,
+		Status:    account.Status,
+		CreatedAt: account.CreatedAt.Time,
+		UpdatedAt: account.UpdatedAt.Time,
+		ClosedAt:  closedAt,
+	}
+}
+
+func newAccountResponses(accounts []db.Account) []accountResponse {
+	responses := make([]accountResponse, 0, len(accounts))
+	for _, account := range accounts {
+		responses = append(responses, newAccountResponse(account))
+	}
+	return responses
+}
+
+func parsePublicID(value string) (pgtype.UUID, error) {
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}, nil
+}
 
 type createAccountRequest struct {
 	Currency string `json:"currency" binding:"required,currency"`
@@ -18,193 +64,122 @@ type createAccountRequest struct {
 
 func (server *Server) createAccount(ctx *gin.Context) {
 	var req createAccountRequest
-	var pgErr *pgconn.PgError
-
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
 		return
 	}
 
-	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-
-	arg := db.CreateAccountParams{
-		Owner:    authPayLoad.Username,
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	account, err := server.store.CreateAccount(ctx, db.CreateAccountParams{
+		Owner:    authPayload.Username,
 		Currency: req.Currency,
-		Balance:  0,
-	}
-	account, err := server.store.CreateAccount(ctx, arg)
+	})
 	if err != nil {
-		if errors.As(err, &pgErr) {
-			switch pgErr.Code {
-			case "23503", "23505":
-				ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
-				return
-			}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23505") {
+			ctx.JSON(http.StatusConflict, errorResponse(ErrAccountAlreadyExists))
+			return
 		}
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
-	ctx.JSON(http.StatusOK, account)
+
+	ctx.JSON(http.StatusCreated, newAccountResponse(account))
 }
 
-type getAccountRequest struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
+type accountURIRequest struct {
+	PublicID string `uri:"public_id" binding:"required"`
 }
 
 func (server *Server) getAccount(ctx *gin.Context) {
-	var req getAccountRequest
-
-	if err := ctx.ShouldBindUri(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+	publicID, ok := bindAccountPublicID(ctx)
+	if !ok {
 		return
 	}
 
-	account, err := server.store.GetAccount(ctx, req.ID)
-
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	account, err := server.store.GetOwnedAccountByPublicID(ctx, db.GetOwnedAccountByPublicIDParams{
+		PublicID: publicID,
+		Owner:    authPayload.Username,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+		return
+	}
 	if err != nil {
-		if err == sql.ErrNoRows {
-			ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
-			return
-		}
-
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
-	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-	if account.Owner != authPayLoad.Username {
-		ctx.JSON(http.StatusUnauthorized, errorResponse(ErrUnauthorized))
-		return
-	}
-
-	ctx.JSON(http.StatusOK, account)
+	ctx.JSON(http.StatusOK, newAccountResponse(account))
 }
 
 type listAccountRequest struct {
 	PageID   int32 `form:"page_id" binding:"required,min=1"`
-	PageSize int32 `form:"page_size" binding:"required,min=5,max=10"`
+	PageSize int32 `form:"page_size" binding:"required,min=5,max=100"`
 }
 
 func (server *Server) listAccount(ctx *gin.Context) {
 	var req listAccountRequest
-
 	if err := ctx.ShouldBindQuery(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
 		return
 	}
 
-	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-
-	arg := db.ListAccountParams{
-		Owner:  authPayLoad.Username,
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	accounts, err := server.store.ListAccount(ctx, db.ListAccountParams{
+		Owner:  authPayload.Username,
 		Limit:  req.PageSize,
 		Offset: (req.PageID - 1) * req.PageSize,
-	}
-
-	accounts, err := server.store.ListAccount(ctx, arg)
+	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, accounts)
+	ctx.JSON(http.StatusOK, newAccountResponses(accounts))
 }
 
-type DeleteAccountRequest struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
+func (server *Server) closeAccount(ctx *gin.Context) {
+	publicID, ok := bindAccountPublicID(ctx)
+	if !ok {
+		return
+	}
+
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	account, err := server.store.CloseAccountTx(ctx, db.CloseAccountTxParams{
+		PublicID: publicID,
+		Username: authPayload.Username,
+	})
+	switch {
+	case errors.Is(err, db.ErrAccountNotFound), errors.Is(err, db.ErrAccountNotOwned):
+		ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
+		return
+	case errors.Is(err, db.ErrAccountBalanceNotZero):
+		ctx.JSON(http.StatusConflict, errorResponse(ErrAccountBalanceNotZero))
+		return
+	case errors.Is(err, db.ErrAccountClosed):
+		ctx.JSON(http.StatusConflict, errorResponse(ErrAccountAlreadyClosed))
+		return
+	case err != nil:
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, newAccountResponse(account))
 }
 
-// Delete account handler
-func (server *Server) deleteAccount(ctx *gin.Context) {
-	var req DeleteAccountRequest
-
+func bindAccountPublicID(ctx *gin.Context) (pgtype.UUID, bool) {
+	var req accountURIRequest
 	if err := ctx.ShouldBindUri(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		return
+		return pgtype.UUID{}, false
 	}
 
-	account, err := server.store.GetAccount(ctx, req.ID)
-
+	publicID, err := parsePublicID(req.PublicID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
-			return
-		}
-
-		log.Printf("failed to get account %d before delete: %v", req.ID, err)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
-		return
+		ctx.JSON(http.StatusBadRequest, errorResponse(ErrInvalidAccountID))
+		return pgtype.UUID{}, false
 	}
-
-	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-	if account.Owner != authPayLoad.Username {
-		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
-		return
-	}
-
-	err = server.store.DeleteAccount(ctx, req.ID)
-	if err != nil {
-		log.Printf("failed to delete account %d: %v", req.ID, err)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
-		return
-	}
-
-	ctx.JSON(http.StatusOK, req)
-}
-
-// update account handler
-type UpdateAccountUriRequest struct {
-	ID int64 `uri:"id" binding:"required,min=1"`
-}
-
-type UpdateAccountBodyRequest struct {
-	Balance int64 `json:"balance" binding:"required,min=1"`
-}
-
-func (server *Server) updateAccount(ctx *gin.Context) {
-	var uriReq UpdateAccountUriRequest
-
-	if err := ctx.ShouldBindUri(&uriReq); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		return
-	}
-
-	var bodyReq UpdateAccountBodyRequest
-
-	if err := ctx.ShouldBindJSON(&bodyReq); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
-		return
-	}
-
-	arg := db.UpdateAccountParams{
-		ID:      uriReq.ID,
-		Balance: bodyReq.Balance,
-	}
-
-	account, err := server.store.GetAccount(ctx, arg.ID)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			ctx.JSON(http.StatusNotFound, errorResponse(ErrAccountNotFound))
-			return
-		}
-
-		log.Printf("failed to get account %d before delete: %v", arg.ID, err)
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
-		return
-	}
-
-	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-	if account.Owner != authPayLoad.Username {
-		ctx.JSON(http.StatusForbidden, errorResponse(ErrForbidden))
-		return
-	}
-
-	updatedAccount, err := server.store.UpdateAccount(ctx, arg)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(ErrInternalServer))
-		return
-	}
-
-	ctx.JSON(http.StatusOK, updatedAccount)
+	return publicID, true
 }
