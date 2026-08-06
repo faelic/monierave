@@ -164,8 +164,13 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
+	deviceSecret, err := token.NewDeviceSecret()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
+		return
+	}
 
-	session, err := server.store.CreateSessionTx(ctx, db.CreateSessionParams{
+	session, err := server.store.CreateExclusiveSessionTx(ctx, db.CreateSessionParams{
 		ID: pgtype.UUID{
 			Bytes: sessionUUID,
 			Valid: true,
@@ -176,8 +181,9 @@ func (server *Server) loginUser(ctx *gin.Context) {
 			Bytes: refreshPayload.ID,
 			Valid: true,
 		},
-		UserAgent: ctx.Request.UserAgent(),
-		ClientIp:  ctx.ClientIP(),
+		DeviceTokenHash: token.Hash(deviceSecret),
+		UserAgent:       ctx.Request.UserAgent(),
+		ClientIp:        ctx.ClientIP(),
 		ExpiresAt: pgtype.Timestamptz{
 			Time:  refreshPayload.ExpiresAt.Time,
 			Valid: true,
@@ -193,6 +199,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 	}
 
 	server.setRefreshCookie(ctx, refreshToken, refreshPayload.ExpiresAt.Time)
+	server.setDeviceCookie(ctx, deviceSecret, refreshPayload.ExpiresAt.Time)
 	rsp := loginUserResponse{
 		SessionID:            session.ID,
 		AccessToken:          accessToken,
@@ -312,7 +319,7 @@ func (server *Server) updateUser(ctx *gin.Context) {
 	}
 
 	if arg.RevokeSessions {
-		server.clearRefreshCookie(ctx)
+		server.clearSessionCookies(ctx)
 	}
 	ctx.JSON(http.StatusOK, newUserResponse(result.User))
 

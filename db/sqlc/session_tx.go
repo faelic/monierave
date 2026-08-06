@@ -15,25 +15,50 @@ var (
 	ErrSessionExpired    = errors.New("session expired")
 	ErrSessionRevoked    = errors.New("session revoked")
 	ErrSessionMismatch   = errors.New("session does not match token")
+	ErrDeviceMismatch    = errors.New("session device does not match")
 	ErrRefreshTokenReuse = errors.New("refresh token reuse detected")
 )
 
 type RotateRefreshTokenTxParams struct {
-	SessionID          pgtype.UUID
-	Username           string
-	PresentedTokenHash []byte
-	PresentedRefreshID pgtype.UUID
-	NewTokenHash       []byte
-	NewRefreshID       pgtype.UUID
+	SessionID           pgtype.UUID
+	Username            string
+	PresentedTokenHash  []byte
+	PresentedRefreshID  pgtype.UUID
+	PresentedDeviceHash []byte
+	NewTokenHash        []byte
+	NewRefreshID        pgtype.UUID
 }
 
-func (store *SQLStore) CreateSessionTx(
+func (store *SQLStore) CreateExclusiveSessionTx(
 	ctx context.Context,
 	arg CreateSessionParams,
 ) (Session, error) {
 	var result Session
 	err := store.execTx(ctx, func(q *Queries) error {
-		var err error
+		if _, err := q.GetUserForUpdate(ctx, arg.Username); err != nil {
+			return err
+		}
+		replaced, err := q.RevokeAllUserSessions(ctx, RevokeAllUserSessionsParams{
+			Username:      arg.Username,
+			RevokedReason: textValue("replaced_by_new_login"),
+		})
+		if err != nil {
+			return err
+		}
+		for _, session := range replaced {
+			if err := createSessionAudit(
+				ctx,
+				q,
+				session,
+				"session_replaced_by_login",
+				"user",
+				"active",
+				"revoked",
+			); err != nil {
+				return err
+			}
+		}
+
 		result, err = q.CreateSession(ctx, arg)
 		if err != nil {
 			return err
@@ -70,6 +95,7 @@ func (store *SQLStore) ValidateSession(
 	ctx context.Context,
 	id pgtype.UUID,
 	username string,
+	deviceTokenHash []byte,
 ) error {
 	session, err := store.GetSession(ctx, id)
 	if err != nil {
@@ -83,6 +109,9 @@ func (store *SQLStore) ValidateSession(
 	}
 	if !time.Now().Before(session.ExpiresAt.Time) {
 		return ErrSessionExpired
+	}
+	if !constantTimeHashEqual(session.DeviceTokenHash, deviceTokenHash) {
+		return ErrDeviceMismatch
 	}
 	return nil
 }
@@ -108,9 +137,17 @@ func (store *SQLStore) RotateRefreshTokenTx(
 		if !time.Now().Before(session.ExpiresAt.Time) {
 			return ErrSessionExpired
 		}
+		if !constantTimeHashEqual(
+			session.DeviceTokenHash,
+			arg.PresentedDeviceHash,
+		) {
+			return ErrDeviceMismatch
+		}
 
-		hashMatches := len(session.RefreshTokenHash) == len(arg.PresentedTokenHash) &&
-			subtle.ConstantTimeCompare(session.RefreshTokenHash, arg.PresentedTokenHash) == 1
+		hashMatches := constantTimeHashEqual(
+			session.RefreshTokenHash,
+			arg.PresentedTokenHash,
+		)
 		idMatches := session.RefreshTokenID == arg.PresentedRefreshID
 		if !hashMatches || !idMatches {
 			reused = true
@@ -161,10 +198,21 @@ func (store *SQLStore) RotateRefreshTokenTx(
 func (store *SQLStore) RevokeSessionTx(
 	ctx context.Context,
 	id pgtype.UUID,
+	deviceTokenHash []byte,
 	reason string,
 	actor string,
 ) error {
 	return store.execTx(ctx, func(q *Queries) error {
+		current, err := q.GetSessionForUpdate(ctx, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !constantTimeHashEqual(current.DeviceTokenHash, deviceTokenHash) {
+			return ErrDeviceMismatch
+		}
 		session, err := q.RevokeSession(ctx, RevokeSessionParams{
 			ID:            id,
 			RevokedReason: textValue(reason),
@@ -245,6 +293,11 @@ func createSessionAudit(
 		Metadata:      metadata,
 	})
 	return err
+}
+
+func constantTimeHashEqual(expected, actual []byte) bool {
+	return len(expected) == len(actual) &&
+		subtle.ConstantTimeCompare(expected, actual) == 1
 }
 
 func textValue(value string) pgtype.Text {

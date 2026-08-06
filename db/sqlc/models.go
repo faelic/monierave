@@ -231,6 +231,8 @@ type Session struct {
 	// Non-null means every access and refresh token bound to this session is revoked.
 	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
 	RevokedReason pgtype.Text        `json:"revoked_reason"`
+	// SHA-256 hash of the browser-bound device secret; raw device secrets are never persisted.
+	DeviceTokenHash []byte `json:"device_token_hash"`
 }
 
 type User struct {

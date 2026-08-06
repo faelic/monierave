@@ -9,10 +9,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Build and test
+    name: Validate, build, and test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -47,6 +52,7 @@ jobs:
       ACCESS_TOKEN_DURATION: "15m"
       REFRESH_TOKEN_DURATION: "24h"
       REFRESH_COOKIE_NAME: "monierave_refresh"
+      DEVICE_COOKIE_NAME: "monierave_device"
       REFRESH_COOKIE_DOMAIN: ""
       REFRESH_COOKIE_SECURE: "false"
       REFRESH_COOKIE_SAME_SITE: "lax"
@@ -60,9 +66,11 @@ jobs:
       PUBLIC_API_URL: "http://localhost:8080"
       EMAIL_VERIFICATION_DURATION: "24h"
       ENFORCE_EMAIL_VERIFICATION: "true"
+      LOG_LEVEL: "info"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -70,34 +78,42 @@ jobs:
           go-version: "1.26.4"
           cache: true
 
-      - name: Install golang migrate
+      - name: Install database and generation tools
         run: |
           curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz | tar -xz
           sudo install migrate /usr/local/bin/migrate
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 
-      - name: Run migrations
-        run: migrate -path db/migration -database "$DB_SOURCE" -verbose up
-
-      - name: Verify dependencies
+      - name: Verify module dependencies
         run: go mod verify
 
       - name: Check formatting
-        run: |
-          unformatted="$(gofmt -l $(git ls-files '*.go'))"
-          if [[ -n "$unformatted" ]]; then
-            echo "The following Go files need formatting:"
-            echo "$unformatted"
-            exit 1
-          fi
+        run: make format-check
+
+      - name: Check SQLC generation drift
+        run: make generated-check
+
+      - name: Validate migration up/down/up cycle
+        run: make migration-check
 
       - name: Vet
-        run: go vet ./...
+        run: make vet
 
       - name: Build application
         run: go build -v ./...
 
-      - name: Run tests
-        run: go test -race -cover ./...
+      - name: Run financial invariant tests
+        run: make test-invariants
+
+      - name: Run race-enabled test suite with coverage
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: error
 
       - name: Build production image
         run: docker build --tag monierave:ci .

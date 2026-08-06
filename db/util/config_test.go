@@ -84,8 +84,27 @@ func TestValidateAPIConfigDoesNotRequireWebhookSecret(t *testing.T) {
 		AccessTokenDuration:   time.Minute,
 		RefreshTokenDuration:  time.Hour,
 		RefreshCookieName:     "monierave_refresh",
+		DeviceCookieName:      "monierave_device",
 		RefreshCookieSameSite: "lax",
 	})
 
 	require.NoError(t, err)
+}
+
+func TestValidateAPIConfigRejectsSharedSessionCookieName(t *testing.T) {
+	config := Config{
+		DBSource:              "postgresql://localhost/database",
+		RedisAddress:          "localhost:6379",
+		ServerAddress:         "0.0.0.0:8080",
+		SecretKey:             "12345678901234567890123456789012",
+		AccessTokenDuration:   time.Minute,
+		RefreshTokenDuration:  time.Hour,
+		RefreshCookieName:     "monierave_session",
+		DeviceCookieName:      "monierave_session",
+		RefreshCookieSameSite: "lax",
+	}
+
+	err := ValidateAPIConfig(config)
+
+	require.ErrorContains(t, err, "must differ")
 }

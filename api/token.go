@@ -28,9 +28,15 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidToken))
 		return
 	}
+	deviceToken, err := server.deviceCookie(ctx)
+	if err != nil {
+		server.clearSessionCookies(ctx)
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidToken))
+		return
+	}
 	refreshPayload, err := server.tokenMaker.VerifyRefreshToken(currentRefreshToken)
 	if err != nil {
-		server.clearRefreshCookie(ctx)
+		server.clearSessionCookies(ctx)
 		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidToken))
 		return
 	}
@@ -39,7 +45,7 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 	session, err := server.store.GetSession(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			server.clearRefreshCookie(ctx)
+			server.clearSessionCookies(ctx)
 			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidSession))
 			return
 		}
@@ -49,7 +55,7 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 
 	remaining := time.Until(session.ExpiresAt.Time)
 	if session.RevokedAt.Valid || remaining <= 0 {
-		server.clearRefreshCookie(ctx)
+		server.clearSessionCookies(ctx)
 		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidSession))
 		return
 	}
@@ -74,19 +80,21 @@ func (server *Server) renewAccessToken(ctx *gin.Context) {
 	}
 
 	_, err = server.store.RotateRefreshTokenTx(ctx, db.RotateRefreshTokenTxParams{
-		SessionID:          sessionID,
-		Username:           refreshPayload.Username,
-		PresentedTokenHash: token.Hash(currentRefreshToken),
-		PresentedRefreshID: pgtype.UUID{Bytes: refreshPayload.ID, Valid: true},
-		NewTokenHash:       token.Hash(newRefreshToken),
-		NewRefreshID:       pgtype.UUID{Bytes: newRefreshPayload.ID, Valid: true},
+		SessionID:           sessionID,
+		Username:            refreshPayload.Username,
+		PresentedTokenHash:  token.Hash(currentRefreshToken),
+		PresentedRefreshID:  pgtype.UUID{Bytes: refreshPayload.ID, Valid: true},
+		PresentedDeviceHash: token.Hash(deviceToken),
+		NewTokenHash:        token.Hash(newRefreshToken),
+		NewRefreshID:        pgtype.UUID{Bytes: newRefreshPayload.ID, Valid: true},
 	})
 	if err != nil {
-		server.clearRefreshCookie(ctx)
+		server.clearSessionCookies(ctx)
 		switch {
 		case errors.Is(err, db.ErrRefreshTokenReuse),
 			errors.Is(err, db.ErrSessionExpired),
 			errors.Is(err, db.ErrSessionRevoked),
+			errors.Is(err, db.ErrDeviceMismatch),
 			errors.Is(err, db.ErrSessionMismatch),
 			errors.Is(err, pgx.ErrNoRows):
 			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidSession))
@@ -109,8 +117,9 @@ func (server *Server) logoutCurrentSession(ctx *gin.Context) {
 		return
 	}
 	value, err := server.refreshCookie(ctx)
-	server.clearRefreshCookie(ctx)
-	if err != nil {
+	deviceToken, deviceErr := server.deviceCookie(ctx)
+	server.clearSessionCookies(ctx)
+	if err != nil || deviceErr != nil {
 		ctx.Status(http.StatusNoContent)
 		return
 	}
@@ -123,10 +132,15 @@ func (server *Server) logoutCurrentSession(ctx *gin.Context) {
 	err = server.store.RevokeSessionTx(
 		ctx,
 		pgtype.UUID{Bytes: payload.SessionID, Valid: true},
+		token.Hash(deviceToken),
 		"user_logout",
 		"user",
 	)
 	if err != nil {
+		if errors.Is(err, db.ErrDeviceMismatch) {
+			ctx.Status(http.StatusNoContent)
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
@@ -144,6 +158,6 @@ func (server *Server) logoutAllSessions(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
 	}
-	server.clearRefreshCookie(ctx)
+	server.clearSessionCookies(ctx)
 	ctx.Status(http.StatusNoContent)
 }

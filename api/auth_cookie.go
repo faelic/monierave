@@ -14,8 +14,25 @@ func (server *Server) setRefreshCookie(
 	value string,
 	expiresAt time.Time,
 ) {
+	server.setSessionCookie(ctx, server.config.RefreshCookieName, value, expiresAt)
+}
+
+func (server *Server) setDeviceCookie(
+	ctx *gin.Context,
+	value string,
+	expiresAt time.Time,
+) {
+	server.setSessionCookie(ctx, server.config.DeviceCookieName, value, expiresAt)
+}
+
+func (server *Server) setSessionCookie(
+	ctx *gin.Context,
+	name string,
+	value string,
+	expiresAt time.Time,
+) {
 	http.SetCookie(ctx.Writer, &http.Cookie{
-		Name:     server.config.RefreshCookieName,
+		Name:     name,
 		Value:    value,
 		Path:     "/",
 		Domain:   server.config.RefreshCookieDomain,
@@ -28,8 +45,21 @@ func (server *Server) setRefreshCookie(
 }
 
 func (server *Server) clearRefreshCookie(ctx *gin.Context) {
+	server.clearSessionCookie(ctx, server.config.RefreshCookieName)
+}
+
+func (server *Server) clearDeviceCookie(ctx *gin.Context) {
+	server.clearSessionCookie(ctx, server.config.DeviceCookieName)
+}
+
+func (server *Server) clearSessionCookies(ctx *gin.Context) {
+	server.clearRefreshCookie(ctx)
+	server.clearDeviceCookie(ctx)
+}
+
+func (server *Server) clearSessionCookie(ctx *gin.Context, name string) {
 	http.SetCookie(ctx.Writer, &http.Cookie{
-		Name:     server.config.RefreshCookieName,
+		Name:     name,
 		Path:     "/",
 		Domain:   server.config.RefreshCookieDomain,
 		MaxAge:   -1,
@@ -41,7 +71,15 @@ func (server *Server) clearRefreshCookie(ctx *gin.Context) {
 }
 
 func (server *Server) refreshCookie(ctx *gin.Context) (string, error) {
-	cookie, err := ctx.Request.Cookie(server.config.RefreshCookieName)
+	return sessionCookie(ctx, server.config.RefreshCookieName)
+}
+
+func (server *Server) deviceCookie(ctx *gin.Context) (string, error) {
+	return sessionCookie(ctx, server.config.DeviceCookieName)
+}
+
+func sessionCookie(ctx *gin.Context, name string) (string, error) {
+	cookie, err := ctx.Request.Cookie(name)
 	if err != nil || cookie.Value == "" {
 		return "", ErrInvalidToken
 	}

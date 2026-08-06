@@ -15,7 +15,7 @@ type Store interface {
 	CreateUserTx(ctx context.Context, arg CreateUserParams) (CreateUserTxResult, error)
 	CloseAccountTx(ctx context.Context, arg CloseAccountTxParams) (Account, error)
 	CreateBeneficiaryTx(ctx context.Context, arg CreateBeneficiaryTxParams) (CreateBeneficiaryTxResult, error)
-	CreateSessionTx(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateExclusiveSessionTx(ctx context.Context, arg CreateSessionParams) (Session, error)
 	DepositTx(ctx context.Context, arg DepositTxParams) (MoneyMovementTxResult, error)
 	IdempotentTransferTx(ctx context.Context, arg IdempotentTransferTxParams) (TransferTxResult, error)
 	ProcessEmailDeliveryEventTx(ctx context.Context, arg ProcessEmailDeliveryEventParams) (ProcessEmailDeliveryEventResult, error)
@@ -25,12 +25,23 @@ type Store interface {
 	ReplayEmailJobTx(ctx context.Context, jobID pgtype.UUID) (ReplayEmailJobTxResult, error)
 	ReverseTransactionTx(ctx context.Context, arg ReverseTransactionTxParams) (ReverseTransactionTxResult, error)
 	RevokeAllUserSessionsTx(ctx context.Context, username, reason, eventType string) error
-	RevokeSessionTx(ctx context.Context, id pgtype.UUID, reason, actor string) error
+	RevokeSessionTx(
+		ctx context.Context,
+		id pgtype.UUID,
+		deviceTokenHash []byte,
+		reason string,
+		actor string,
+	) error
 	RotateRefreshTokenTx(ctx context.Context, arg RotateRefreshTokenTxParams) (Session, error)
 	SetAccountStatusTx(ctx context.Context, arg AccountStatusTxParams) (AccountStatusTxResult, error)
 	TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
 	UpdateUserTx(ctx context.Context, arg UpdateUserTxParams) (UpdateUserTxResult, error)
-	ValidateSession(ctx context.Context, id pgtype.UUID, username string) error
+	ValidateSession(
+		ctx context.Context,
+		id pgtype.UUID,
+		username string,
+		deviceTokenHash []byte,
+	) error
 	VerifyUserEmailTx(ctx context.Context, arg VerifyUserEmailTxParams) (User, error)
 	WithdrawTx(ctx context.Context, arg WithdrawTxParams) (MoneyMovementTxResult, error)
 }

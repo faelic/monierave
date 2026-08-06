@@ -23,6 +23,7 @@ func newTestServer(t *testing.T, store db.Store) *Server {
 		AccessTokenDuration:   time.Minute,
 		RefreshTokenDuration:  time.Minute,
 		RefreshCookieName:     "monierave_refresh",
+		DeviceCookieName:      "monierave_device",
 		RefreshCookieSameSite: "lax",
 		AllowedOrigins:        "http://localhost:3000",
 	}
@@ -41,11 +42,12 @@ func (testSessionStore) ValidateSession(
 	context.Context,
 	pgtype.UUID,
 	string,
+	[]byte,
 ) error {
 	return nil
 }
 
-func (store testSessionStore) CreateSessionTx(
+func (store testSessionStore) CreateExclusiveSessionTx(
 	ctx context.Context,
 	arg db.CreateSessionParams,
 ) (db.Session, error) {

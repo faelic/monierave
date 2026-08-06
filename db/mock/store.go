@@ -267,6 +267,21 @@ func (mr *MockStoreMockRecorder) CreateEmailJob(ctx, arg any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEmailJob", reflect.TypeOf((*MockStore)(nil).CreateEmailJob), ctx, arg)
 }
 
+// CreateExclusiveSessionTx mocks base method.
+func (m *MockStore) CreateExclusiveSessionTx(ctx context.Context, arg db.CreateSessionParams) (db.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateExclusiveSessionTx", ctx, arg)
+	ret0, _ := ret[0].(db.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateExclusiveSessionTx indicates an expected call of CreateExclusiveSessionTx.
+func (mr *MockStoreMockRecorder) CreateExclusiveSessionTx(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateExclusiveSessionTx", reflect.TypeOf((*MockStore)(nil).CreateExclusiveSessionTx), ctx, arg)
+}
+
 // CreateIdempotencyKey mocks base method.
 func (m *MockStore) CreateIdempotencyKey(ctx context.Context, arg db.CreateIdempotencyKeyParams) (db.IdempotencyKey, error) {
 	m.ctrl.T.Helper()
@@ -325,21 +340,6 @@ func (m *MockStore) CreateSession(ctx context.Context, arg db.CreateSessionParam
 func (mr *MockStoreMockRecorder) CreateSession(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSession", reflect.TypeOf((*MockStore)(nil).CreateSession), ctx, arg)
-}
-
-// CreateSessionTx mocks base method.
-func (m *MockStore) CreateSessionTx(ctx context.Context, arg db.CreateSessionParams) (db.Session, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateSessionTx", ctx, arg)
-	ret0, _ := ret[0].(db.Session)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateSessionTx indicates an expected call of CreateSessionTx.
-func (mr *MockStoreMockRecorder) CreateSessionTx(ctx, arg any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSessionTx", reflect.TypeOf((*MockStore)(nil).CreateSessionTx), ctx, arg)
 }
 
 // CreateUser mocks base method.
@@ -1464,17 +1464,17 @@ func (mr *MockStoreMockRecorder) RevokeSession(ctx, arg any) *gomock.Call {
 }
 
 // RevokeSessionTx mocks base method.
-func (m *MockStore) RevokeSessionTx(ctx context.Context, id pgtype.UUID, reason, actor string) error {
+func (m *MockStore) RevokeSessionTx(ctx context.Context, id pgtype.UUID, deviceTokenHash []byte, reason, actor string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RevokeSessionTx", ctx, id, reason, actor)
+	ret := m.ctrl.Call(m, "RevokeSessionTx", ctx, id, deviceTokenHash, reason, actor)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RevokeSessionTx indicates an expected call of RevokeSessionTx.
-func (mr *MockStoreMockRecorder) RevokeSessionTx(ctx, id, reason, actor any) *gomock.Call {
+func (mr *MockStoreMockRecorder) RevokeSessionTx(ctx, id, deviceTokenHash, reason, actor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeSessionTx", reflect.TypeOf((*MockStore)(nil).RevokeSessionTx), ctx, id, reason, actor)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeSessionTx", reflect.TypeOf((*MockStore)(nil).RevokeSessionTx), ctx, id, deviceTokenHash, reason, actor)
 }
 
 // RotateRefreshTokenTx mocks base method.
@@ -1643,17 +1643,17 @@ func (mr *MockStoreMockRecorder) UpdateUserTx(ctx, arg any) *gomock.Call {
 }
 
 // ValidateSession mocks base method.
-func (m *MockStore) ValidateSession(ctx context.Context, id pgtype.UUID, username string) error {
+func (m *MockStore) ValidateSession(ctx context.Context, id pgtype.UUID, username string, deviceTokenHash []byte) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ValidateSession", ctx, id, username)
+	ret := m.ctrl.Call(m, "ValidateSession", ctx, id, username, deviceTokenHash)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ValidateSession indicates an expected call of ValidateSession.
-func (mr *MockStoreMockRecorder) ValidateSession(ctx, id, username any) *gomock.Call {
+func (mr *MockStoreMockRecorder) ValidateSession(ctx, id, username, deviceTokenHash any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateSession", reflect.TypeOf((*MockStore)(nil).ValidateSession), ctx, id, username)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidateSession", reflect.TypeOf((*MockStore)(nil).ValidateSession), ctx, id, username, deviceTokenHash)
 }
 
 // VerifyUserEmailTx mocks base method.

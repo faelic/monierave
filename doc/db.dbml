@@ -183,6 +183,7 @@ Table sessions {
   username varchar [not null, ref: > U.username]
   refresh_token_hash bytea [not null, note: 'SHA-256 hash of the current refresh token; raw refresh tokens are never persisted.']
   refresh_token_id uuid [not null]
+  device_token_hash bytea [not null, note: 'SHA-256 hash of the browser-bound device secret; raw device secrets are never persisted.']
   user_agent varchar [not null]
   client_ip varchar [not null]
   expires_at timestamptz [not null]
@@ -194,7 +195,8 @@ Table sessions {
   indexes {
     username [name: 'sessions_username_idx']
     refresh_token_hash [unique, name: 'sessions_refresh_token_hash_idx']
-    (username, expires_at) [name: 'sessions_active_username_idx', note: 'Partial index where revoked_at IS NULL.']
+    device_token_hash [unique, name: 'sessions_device_token_hash_idx']
+    username [unique, name: 'sessions_one_active_per_user_idx', note: 'Partial index where revoked_at IS NULL.']
   }
 }
 

@@ -4,11 +4,12 @@ INSERT INTO sessions (
   username,
   refresh_token_hash,
   refresh_token_id,
+  device_token_hash,
   user_agent,
   client_ip,
   expires_at
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7
+  $1, $2, $3, $4, $5, $6, $7, $8
 )
 RETURNING *;
 

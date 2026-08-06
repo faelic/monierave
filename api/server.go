@@ -92,7 +92,11 @@ func (server *Server) setupRouter() {
 	router.POST("/sessions/logout", server.logoutCurrentSession)
 	router.POST("/webhooks/resend", server.handleResendWebhook)
 
-	authRoutes := router.Group("/").Use(authMiddleware(server.tokenMaker, server.store))
+	authRoutes := router.Group("/").Use(authMiddleware(
+		server.tokenMaker,
+		server.store,
+		server.config.DeviceCookieName,
+	))
 	authRoutes.PATCH("/users/me", server.updateUser)
 	authRoutes.GET("/users/me/email-status", server.getUserEmailStatus)
 	authRoutes.POST(
@@ -108,7 +112,11 @@ func (server *Server) setupRouter() {
 	authRoutes.POST("/sessions/logout-all", server.logoutAllSessions)
 
 	financialMiddleware := []gin.HandlerFunc{
-		authMiddleware(server.tokenMaker, server.store),
+		authMiddleware(
+			server.tokenMaker,
+			server.store,
+			server.config.DeviceCookieName,
+		),
 	}
 	if server.config.EnforceEmailVerification {
 		financialMiddleware = append(

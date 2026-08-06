@@ -52,6 +52,7 @@ func newOperationalTestServer(
 		AccessTokenDuration:   time.Minute,
 		RefreshTokenDuration:  time.Minute,
 		RefreshCookieName:     "monierave_refresh",
+		DeviceCookieName:      "monierave_device",
 		RefreshCookieSameSite: "lax",
 		AllowedOrigins:        "http://localhost:3000",
 	}
