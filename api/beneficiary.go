@@ -40,8 +40,8 @@ type listBeneficiaryRequest struct {
 
 func (server *Server) createBeneficiary(ctx *gin.Context) {
 	var req createBeneficiaryRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
+	if err := bindJSON(ctx, &req); err != nil {
+		writeBindingError(ctx, err)
 		return
 	}
 	nickname, ok := normalizedBeneficiaryNickname(ctx, req.Nickname)
@@ -135,8 +135,8 @@ func (server *Server) updateBeneficiary(ctx *gin.Context) {
 		return
 	}
 	var req updateBeneficiaryRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
+	if err := bindJSON(ctx, &req); err != nil {
+		writeBindingError(ctx, err)
 		return
 	}
 	nickname, ok := normalizedBeneficiaryNickname(ctx, req.Nickname)

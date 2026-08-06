@@ -20,6 +20,9 @@ CREATE TABLE "users" (
   "email_bounced_at" timestamptz,
   "account_status" varchar NOT NULL DEFAULT 'active',
   "registration_expires_at" timestamptz,
+  CHECK (char_length(username) BETWEEN 3 AND 32),
+  CHECK (char_length(btrim(full_name)) BETWEEN 1 AND 100),
+  CHECK (char_length(email) BETWEEN 3 AND 254),
   CHECK (email_deliverability_status IN ('unknown', 'pending', 'deliverable', 'undeliverable')),
   CHECK (account_status IN ('pending', 'active', 'disabled'))
 );
@@ -278,7 +281,7 @@ COMMENT ON COLUMN "sessions"."revoked_at" IS 'Non-null means every access and re
 
 COMMENT ON COLUMN "users"."account_status" IS 'Pending accounts may only manage email verification; active accounts may use financial features; disabled registrations exceeded the verification window.';
 
-COMMENT ON COLUMN "users"."registration_expires_at" IS 'Unverified registrations expire after 24 hours.';
+COMMENT ON COLUMN "users"."registration_expires_at" IS 'Unverified registrations remain recoverable for seven days. Verification tokens expire independently after 24 hours.';
 
 COMMENT ON TABLE "ledger_accounts" IS 'Customer and system accounts used by the double-entry ledger.';
 
@@ -304,7 +307,7 @@ COMMENT ON TABLE "outbox_events" IS 'Transactional outbox records committed in t
 
 COMMENT ON TABLE "audit_logs" IS 'Append-only audit history. Intentionally has no foreign keys so records survive entity retention cleanup.';
 
-COMMENT ON TABLE "email_delivery_events" IS 'Idempotent append-only record of verified email provider webhook events.';
+COMMENT ON TABLE "email_delivery_events" IS 'Immutable verified provider events. email_job_id intentionally has no foreign key so retained history survives email-job cleanup with its original UUID.';
 
 ALTER TABLE "accounts" ADD FOREIGN KEY ("owner") REFERENCES "users" ("username") DEFERRABLE INITIALLY IMMEDIATE;
 
@@ -331,8 +334,6 @@ ALTER TABLE "email_jobs" ADD FOREIGN KEY ("parent_job_id") REFERENCES "email_job
 ALTER TABLE "email_jobs" ADD FOREIGN KEY ("username") REFERENCES "users" ("username");
 
 ALTER TABLE "outbox_events" ADD FOREIGN KEY ("email_job_id") REFERENCES "email_jobs" ("id");
-
-ALTER TABLE "email_delivery_events" ADD FOREIGN KEY ("email_job_id") REFERENCES "email_jobs" ("id") ON DELETE SET NULL;
 
 CREATE FUNCTION audit_email_job_changes()
 RETURNS trigger
@@ -499,6 +500,6 @@ FOR EACH STATEMENT
 EXECUTE FUNCTION prevent_audit_log_mutation();
 
 CREATE TRIGGER email_delivery_events_append_only
-BEFORE UPDATE OR DELETE ON email_delivery_events
-FOR EACH ROW
+BEFORE UPDATE OR DELETE OR TRUNCATE ON email_delivery_events
+FOR EACH STATEMENT
 EXECUTE FUNCTION prevent_email_delivery_event_mutation();

@@ -63,13 +63,15 @@ func TestResendMailerIncludesVerificationURL(t *testing.T) {
 		response: &resend.SendEmailResponse{Id: "resend-message-id"},
 	}
 	emailMailer := &ResendMailer{sender: sender, from: "no-reply@example.com"}
+	expiresAt := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
 
 	_, err := emailMailer.SendVerificationEmail(context.Background(), VerificationEmail{
 		JobID:     "job-id",
 		Username:  "Favour",
 		Recipient: "favour@example.com",
 		Payload: jsonPayload(t, map[string]string{
-			"verification_url": "https://example.com/verify?token=secret&source=email",
+			"verification_url":        "https://example.com/verify?token=secret&source=email",
+			"verification_expires_at": expiresAt.Format(time.RFC3339),
 		}),
 	})
 
@@ -80,7 +82,7 @@ func TestResendMailerIncludesVerificationURL(t *testing.T) {
 		`href="https://example.com/verify?token=secret&amp;source=email"`,
 	))
 	require.Contains(t, sender.params.Html, "copy and paste this link")
-	require.Contains(t, sender.params.Html, "expires in 24 hours")
+	require.Contains(t, sender.params.Html, "expires at "+expiresAt.Format(time.RFC3339))
 	require.Contains(
 		t,
 		sender.params.Text,

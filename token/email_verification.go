@@ -22,7 +22,12 @@ type EmailVerificationPayload struct {
 }
 
 type EmailVerificationMaker interface {
-	Create(username string, email string, jobID string, duration time.Duration) (string, error)
+	Create(
+		username string,
+		email string,
+		jobID string,
+		duration time.Duration,
+	) (string, time.Time, error)
 	Verify(value string) (*EmailVerificationPayload, error)
 }
 
@@ -44,12 +49,13 @@ func (maker *JWTEmailVerificationMaker) Create(
 	email string,
 	jobID string,
 	duration time.Duration,
-) (string, error) {
+) (string, time.Time, error) {
 	if username == "" || email == "" || jobID == "" || duration <= 0 {
-		return "", ErrInvalidToken
+		return "", time.Time{}, ErrInvalidToken
 	}
 
 	now := time.Now().UTC()
+	expiresAt := now.Add(duration)
 	payload := EmailVerificationPayload{
 		Username: username,
 		Email:    email,
@@ -59,16 +65,16 @@ func (maker *JWTEmailVerificationMaker) Create(
 			Audience:  jwt.ClaimStrings{emailVerificationAudience},
 			Subject:   username,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
 		},
 	}
 
 	value, err := jwt.NewWithClaims(jwt.SigningMethodHS256, payload).
 		SignedString(maker.secretKey)
 	if err != nil {
-		return "", fmt.Errorf("sign email verification token: %w", err)
+		return "", time.Time{}, fmt.Errorf("sign email verification token: %w", err)
 	}
-	return value, nil
+	return value, expiresAt, nil
 }
 
 func (maker *JWTEmailVerificationMaker) Verify(value string) (*EmailVerificationPayload, error) {

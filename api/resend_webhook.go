@@ -1,8 +1,10 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -31,10 +33,22 @@ type resendEmailData struct {
 }
 
 type resendBounceData struct {
-	DiagnosticCode []string `json:"diagnosticCode"`
-	Message        string   `json:"message"`
-	Subtype        string   `json:"subType"`
-	Type           string   `json:"type"`
+	Subtype string `json:"subType"`
+	Type    string `json:"type"`
+}
+
+type normalizedResendWebhook struct {
+	EventType         string                  `json:"event_type"`
+	ProviderMessageID string                  `json:"provider_message_id"`
+	JobID             string                  `json:"job_id,omitempty"`
+	OccurredAt        time.Time               `json:"occurred_at"`
+	Bounce            *normalizedResendBounce `json:"bounce,omitempty"`
+	RawPayloadSHA256  string                  `json:"raw_payload_sha256"`
+}
+
+type normalizedResendBounce struct {
+	Type    string `json:"type,omitempty"`
+	Subtype string `json:"subtype,omitempty"`
 }
 
 func (server *Server) handleResendWebhook(ctx *gin.Context) {
@@ -87,15 +101,8 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 		return
 	}
 
-	if !strings.HasPrefix(event.Type, "email.") {
-		log.Info().
-			Str("webhook_id", ctx.GetHeader("svix-id")).
-			Str("event_type", event.Type).
-			Msg("verified non-email Resend webhook ignored")
-		ctx.Status(http.StatusOK)
-		return
-	}
-	if event.Data.EmailID == "" {
+	isEmailEvent := strings.HasPrefix(event.Type, "email.")
+	if isEmailEvent && event.Data.EmailID == "" {
 		ctx.JSON(http.StatusBadRequest, codedErrorResponse(
 			ctx,
 			"missing_email_id",
@@ -113,20 +120,41 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 		))
 		return
 	}
+	providerMessageID := event.Data.EmailID
+	if providerMessageID == "" {
+		// Non-email events do not necessarily carry an email ID. The verified
+		// webhook ID is stable and preserves append-only observability.
+		providerMessageID = ctx.GetHeader("svix-id")
+	}
+
+	normalizedPayload, err := normalizeResendWebhookPayload(
+		event,
+		providerMessageID,
+		occurredAt,
+		body,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, codedErrorResponse(
+			ctx,
+			"webhook_processing_failed",
+			errors.New("failed to normalize webhook"),
+		))
+		return
+	}
 
 	result, err := server.store.ProcessEmailDeliveryEventTx(
 		ctx,
 		db.ProcessEmailDeliveryEventParams{
 			WebhookID:         ctx.GetHeader("svix-id"),
 			EventType:         event.Type,
-			ProviderMessageID: event.Data.EmailID,
+			ProviderMessageID: providerMessageID,
 			JobID:             parseOptionalWebhookJobID(event.Data.Tags["job_id"]),
 			OccurredAt:        occurredAt,
-			Payload:           body,
+			Payload:           normalizedPayload,
 			DeliveryStatus:    deliveryStatusForResendEvent(event.Type),
 			BounceType:        event.Data.Bounce.Type,
 			BounceSubtype:     event.Data.Bounce.Subtype,
-			BounceMessage:     event.Data.Bounce.Message,
+			BounceMessage:     safeDeliveryFailureMessage(event.Type),
 		},
 	)
 	if err != nil {
@@ -134,7 +162,7 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 			Err(err).
 			Str("webhook_id", ctx.GetHeader("svix-id")).
 			Str("event_type", event.Type).
-			Str("provider_message_id", event.Data.EmailID).
+			Str("provider_message_id", providerMessageID).
 			Msg("failed to persist Resend webhook")
 		ctx.JSON(http.StatusInternalServerError, codedErrorResponse(
 			ctx,
@@ -147,13 +175,51 @@ func (server *Server) handleResendWebhook(ctx *gin.Context) {
 	log.Info().
 		Str("webhook_id", ctx.GetHeader("svix-id")).
 		Str("event_type", event.Type).
-		Str("provider_message_id", event.Data.EmailID).
+		Str("provider_message_id", providerMessageID).
 		Bool("duplicate", result.Duplicate).
 		Bool("job_matched", result.JobMatched).
 		Bool("state_updated", result.StateUpdated).
 		Msg("verified Resend webhook processed")
 
 	ctx.Status(http.StatusOK)
+}
+
+func normalizeResendWebhookPayload(
+	event resendWebhookEvent,
+	providerMessageID string,
+	occurredAt time.Time,
+	rawPayload []byte,
+) ([]byte, error) {
+	rawHash := sha256.Sum256(rawPayload)
+	payload := normalizedResendWebhook{
+		EventType:         event.Type,
+		ProviderMessageID: providerMessageID,
+		JobID:             event.Data.Tags["job_id"],
+		OccurredAt:        occurredAt,
+		RawPayloadSHA256:  fmt.Sprintf("%x", rawHash),
+	}
+	if event.Data.Bounce.Type != "" || event.Data.Bounce.Subtype != "" {
+		payload.Bounce = &normalizedResendBounce{
+			Type:    event.Data.Bounce.Type,
+			Subtype: event.Data.Bounce.Subtype,
+		}
+	}
+	return json.Marshal(payload)
+}
+
+func safeDeliveryFailureMessage(eventType string) string {
+	switch eventType {
+	case "email.bounced":
+		return "email provider reported a bounce"
+	case "email.failed":
+		return "email provider reported a delivery failure"
+	case "email.suppressed":
+		return "email provider suppressed delivery"
+	case "email.complained":
+		return "recipient reported the email as unwanted"
+	default:
+		return ""
+	}
 }
 
 func deliveryStatusForResendEvent(eventType string) string {

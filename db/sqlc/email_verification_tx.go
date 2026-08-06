@@ -47,6 +47,13 @@ func (store *SQLStore) VerifyUserEmailTx(
 		if user.AccountStatus == AccountStatusDisabled {
 			return ErrRegistrationDisabled
 		}
+		if user.EmailDeliverabilityStatus == EmailDeliverabilityUndeliverable {
+			return ErrEmailAddressUndeliverable
+		}
+		if user.AccountStatus == AccountStatusActive && user.EmailVerifiedAt.Valid {
+			result = user
+			return nil
+		}
 
 		result, err = q.MarkUserEmailVerified(ctx, MarkUserEmailVerifiedParams{
 			Username: arg.Username,
@@ -56,7 +63,7 @@ func (store *SQLStore) VerifyUserEmailTx(
 			return err
 		}
 
-		metadata, err := json.Marshal(map[string]string{"email": arg.Email})
+		metadata, err := json.Marshal(map[string]string{})
 		if err != nil {
 			return err
 		}
@@ -95,6 +102,9 @@ func (store *SQLStore) RequestEmailVerificationTx(
 		}
 		if user.EmailVerifiedAt.Valid && user.AccountStatus == AccountStatusActive {
 			return ErrEmailAlreadyVerified
+		}
+		if user.EmailDeliverabilityStatus == EmailDeliverabilityUndeliverable {
+			return ErrEmailAddressUndeliverable
 		}
 
 		latest, latestErr := q.GetLatestEmailJobForCurrentAddress(ctx, username)

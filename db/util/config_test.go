@@ -77,15 +77,18 @@ func TestValidateWorkerConfig(t *testing.T) {
 
 func TestValidateAPIConfigDoesNotRequireWebhookSecret(t *testing.T) {
 	err := ValidateAPIConfig(Config{
-		DBSource:              "postgresql://localhost/database",
-		RedisAddress:          "localhost:6379",
-		ServerAddress:         "0.0.0.0:8080",
-		SecretKey:             "12345678901234567890123456789012",
-		AccessTokenDuration:   time.Minute,
-		RefreshTokenDuration:  time.Hour,
-		RefreshCookieName:     "monierave_refresh",
-		DeviceCookieName:      "monierave_device",
-		RefreshCookieSameSite: "lax",
+		DBSource:               "postgresql://localhost/database",
+		RedisAddress:           "localhost:6379",
+		ServerAddress:          "0.0.0.0:8080",
+		SecretKey:              "12345678901234567890123456789012",
+		AccessTokenDuration:    time.Minute,
+		RefreshTokenDuration:   time.Hour,
+		RefreshCookieName:      "monierave_refresh",
+		DeviceCookieName:       "monierave_device",
+		RefreshCookieSameSite:  "lax",
+		PasswordBreachCheckURL: "https://api.pwnedpasswords.com/range",
+		PasswordBreachTimeout:  2 * time.Second,
+		PasswordBreachCacheTTL: 24 * time.Hour,
 	})
 
 	require.NoError(t, err)
@@ -93,15 +96,18 @@ func TestValidateAPIConfigDoesNotRequireWebhookSecret(t *testing.T) {
 
 func TestValidateAPIConfigRejectsSharedSessionCookieName(t *testing.T) {
 	config := Config{
-		DBSource:              "postgresql://localhost/database",
-		RedisAddress:          "localhost:6379",
-		ServerAddress:         "0.0.0.0:8080",
-		SecretKey:             "12345678901234567890123456789012",
-		AccessTokenDuration:   time.Minute,
-		RefreshTokenDuration:  time.Hour,
-		RefreshCookieName:     "monierave_session",
-		DeviceCookieName:      "monierave_session",
-		RefreshCookieSameSite: "lax",
+		DBSource:               "postgresql://localhost/database",
+		RedisAddress:           "localhost:6379",
+		ServerAddress:          "0.0.0.0:8080",
+		SecretKey:              "12345678901234567890123456789012",
+		AccessTokenDuration:    time.Minute,
+		RefreshTokenDuration:   time.Hour,
+		RefreshCookieName:      "monierave_session",
+		DeviceCookieName:       "monierave_session",
+		RefreshCookieSameSite:  "lax",
+		PasswordBreachCheckURL: "https://api.pwnedpasswords.com/range",
+		PasswordBreachTimeout:  2 * time.Second,
+		PasswordBreachCacheTTL: 24 * time.Hour,
 	}
 
 	err := ValidateAPIConfig(config)

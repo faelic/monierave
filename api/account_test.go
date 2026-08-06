@@ -38,7 +38,6 @@ func TestCreateAccountAPI(t *testing.T) {
 	server := newTestServer(t, store)
 	body, err := json.Marshal(map[string]any{
 		"currency": account.Currency,
-		"balance":  999_999,
 	})
 	require.NoError(t, err)
 
@@ -51,6 +50,32 @@ func TestCreateAccountAPI(t *testing.T) {
 	requireAccountResponse(t, recorder.Body, account)
 	require.NotContains(t, recorder.Body.String(), `"owner"`)
 	require.NotContains(t, recorder.Body.String(), fmt.Sprintf(`"id":%d`, account.ID))
+}
+
+func TestCreateAccountRejectsClientSuppliedBalance(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+
+	body, err := json.Marshal(map[string]any{
+		"currency": util.RandomCurrency(),
+		"balance":  999_999,
+	})
+	require.NoError(t, err)
+
+	request := httptest.NewRequest(http.MethodPost, "/accounts", bytes.NewReader(body))
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		util.RandomOwner(),
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
 }
 
 func TestGetAccountAPIUsesOwnedPublicID(t *testing.T) {

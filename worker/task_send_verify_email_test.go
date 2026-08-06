@@ -175,7 +175,7 @@ func TestProcessTaskSendFinancialNotificationPermanentFailureGoesToDLQ(
 			arg db.MarkEmailJobDeadLetterParams,
 		) (db.EmailJob, error) {
 			require.Equal(t, pgUUID(id), arg.ID)
-			require.Contains(t, arg.LastError.String, "invalid financial payload")
+			require.Equal(t, "permanent email delivery failure", arg.LastError.String)
 			return started, nil
 		})
 
@@ -226,9 +226,13 @@ func TestProcessTaskSendVerifyEmailAddsSignedVerificationURL(t *testing.T) {
 	require.NoError(t, err)
 
 	var payload struct {
-		VerificationURL string `json:"verification_url"`
+		VerificationURL       string `json:"verification_url"`
+		VerificationExpiresAt string `json:"verification_expires_at"`
 	}
 	require.NoError(t, json.Unmarshal(emailMailer.message.Payload, &payload))
+	expiresAt, err := time.Parse(time.RFC3339, payload.VerificationExpiresAt)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(24*time.Hour), expiresAt, time.Second)
 	parsedURL, err := url.Parse(payload.VerificationURL)
 	require.NoError(t, err)
 	require.Equal(t, "https://api.example.com/users/verify-email", parsedURL.Scheme+"://"+parsedURL.Host+parsedURL.Path)
@@ -290,7 +294,7 @@ func TestProcessTaskSendVerifyEmailTransientFailure(t *testing.T) {
 		Return(started, nil)
 
 	err := processor.ProcessTaskSendVerifyEmail(context.Background(), newEmailTask(t, id))
-	require.ErrorIs(t, err, sendErr)
+	require.EqualError(t, err, "temporary email delivery failure")
 	require.False(t, errors.Is(err, asynq.SkipRetry))
 }
 
@@ -347,7 +351,7 @@ func TestProcessTaskSendVerifyEmailFinalAttempt(t *testing.T) {
 		Return(started, nil)
 
 	err := processor.ProcessTaskSendVerifyEmail(context.Background(), newEmailTask(t, id))
-	require.ErrorIs(t, err, sendErr)
+	require.EqualError(t, err, "email delivery retries exhausted")
 	require.False(t, errors.Is(err, asynq.SkipRetry))
 }
 

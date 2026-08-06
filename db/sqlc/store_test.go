@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,6 +93,22 @@ func TestVerifyUserEmailTxActivatesMatchingCurrentAddress(t *testing.T) {
 	)
 	require.NoError(t, err)
 	requireAuditEvent(t, auditLogs, "email_verified")
+	for _, auditLog := range auditLogs {
+		require.NotContains(t, string(auditLog.Metadata), created.User.Email)
+	}
+
+	_, err = testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
+		Username: created.User.Username,
+		Email:    created.User.Email,
+		JobID:    created.EmailJob.ID,
+	})
+	require.NoError(t, err)
+	afterReplay, err := testQueries.ListAuditLogsByJob(
+		context.Background(),
+		ListAuditLogsByJobParams{EntityID: created.EmailJob.ID, Limit: 30},
+	)
+	require.NoError(t, err)
+	require.Len(t, afterReplay, len(auditLogs))
 }
 
 func TestVerifyUserEmailTxRejectsOldAddress(t *testing.T) {
@@ -269,6 +286,129 @@ func TestProcessPermanentBounceUpdatesJobAndCurrentUser(t *testing.T) {
 	job, err := testQueries.GetEmailJob(context.Background(), created.EmailJob.ID)
 	require.NoError(t, err)
 	require.Equal(t, EmailDeliveryStatusBounced, job.DeliveryStatus)
+
+	_, err = testStore.RequestEmailVerificationTx(
+		context.Background(),
+		created.User.Username,
+	)
+	require.ErrorIs(t, err, ErrEmailAddressUndeliverable)
+}
+
+func TestEmailDeliveryEventSurvivesJobCleanupAndIsImmutable(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	providerMessageID := "resend-" + util.RandomString(12)
+	markEmailJobAccepted(t, created.EmailJob.ID, providerMessageID)
+	webhookID := "webhook-" + util.RandomString(12)
+
+	_, err := testStore.ProcessEmailDeliveryEventTx(
+		context.Background(),
+		ProcessEmailDeliveryEventParams{
+			WebhookID:         webhookID,
+			EventType:         "email.delivered",
+			ProviderMessageID: providerMessageID,
+			JobID:             created.EmailJob.ID,
+			OccurredAt:        time.Now().UTC(),
+			Payload:           []byte(`{"event_type":"email.delivered"}`),
+			DeliveryStatus:    EmailDeliveryStatusDelivered,
+		},
+	)
+	require.NoError(t, err)
+
+	_, err = testDB.Exec(
+		context.Background(),
+		"DELETE FROM outbox_events WHERE email_job_id = $1",
+		created.EmailJob.ID,
+	)
+	require.NoError(t, err)
+	_, err = testDB.Exec(
+		context.Background(),
+		"DELETE FROM email_jobs WHERE id = $1",
+		created.EmailJob.ID,
+	)
+	require.NoError(t, err)
+
+	event, err := testQueries.GetEmailDeliveryEvent(context.Background(), webhookID)
+	require.NoError(t, err)
+	require.Equal(t, created.EmailJob.ID, event.EmailJobID)
+
+	lateWebhookID := "webhook-late-" + util.RandomString(8)
+	lateResult, err := testStore.ProcessEmailDeliveryEventTx(
+		context.Background(),
+		ProcessEmailDeliveryEventParams{
+			WebhookID:         lateWebhookID,
+			EventType:         "email.delivered",
+			ProviderMessageID: providerMessageID,
+			JobID:             created.EmailJob.ID,
+			OccurredAt:        time.Now().UTC(),
+			Payload:           []byte(`{"event_type":"email.delivered"}`),
+			DeliveryStatus:    EmailDeliveryStatusDelivered,
+		},
+	)
+	require.NoError(t, err)
+	require.False(t, lateResult.JobMatched)
+	lateEvent, err := testQueries.GetEmailDeliveryEvent(
+		context.Background(),
+		lateWebhookID,
+	)
+	require.NoError(t, err)
+	require.Equal(t, created.EmailJob.ID, lateEvent.EmailJobID)
+
+	_, err = testDB.Exec(
+		context.Background(),
+		"DELETE FROM email_delivery_events WHERE webhook_id = $1",
+		webhookID,
+	)
+	require.ErrorContains(t, err, "append-only")
+	_, err = testDB.Exec(context.Background(), "TRUNCATE email_delivery_events")
+	require.ErrorContains(t, err, "append-only")
+}
+
+func TestConcurrentEmailDeliveryEventsDoNotRegressState(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	providerMessageID := "resend-" + util.RandomString(12)
+	markEmailJobAccepted(t, created.EmailJob.ID, providerMessageID)
+	baseTime := time.Now().UTC()
+	events := []ProcessEmailDeliveryEventParams{
+		{
+			WebhookID:         "webhook-delayed-" + util.RandomString(8),
+			EventType:         "email.delivery_delayed",
+			ProviderMessageID: providerMessageID,
+			JobID:             created.EmailJob.ID,
+			OccurredAt:        baseTime.Add(time.Second),
+			Payload:           []byte(`{"event_type":"email.delivery_delayed"}`),
+			DeliveryStatus:    EmailDeliveryStatusDelayed,
+		},
+		{
+			WebhookID:         "webhook-delivered-" + util.RandomString(8),
+			EventType:         "email.delivered",
+			ProviderMessageID: providerMessageID,
+			JobID:             created.EmailJob.ID,
+			OccurredAt:        baseTime.Add(2 * time.Second),
+			Payload:           []byte(`{"event_type":"email.delivered"}`),
+			DeliveryStatus:    EmailDeliveryStatusDelivered,
+		},
+	}
+
+	var waitGroup sync.WaitGroup
+	errors := make(chan error, len(events))
+	for _, event := range events {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			_, err := testStore.ProcessEmailDeliveryEventTx(context.Background(), event)
+			errors <- err
+		}()
+	}
+	waitGroup.Wait()
+	close(errors)
+	for err := range errors {
+		require.NoError(t, err)
+	}
+
+	job, err := testQueries.GetEmailJob(context.Background(), created.EmailJob.ID)
+	require.NoError(t, err)
+	require.Equal(t, EmailDeliveryStatusDelivered, job.DeliveryStatus)
+	require.WithinDuration(t, events[1].OccurredAt, job.DeliveryEventAt.Time, time.Millisecond)
 }
 
 func TestProcessEmailDeliveryEventDoesNotRegressOrChangeNewAddress(t *testing.T) {

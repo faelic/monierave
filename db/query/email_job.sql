@@ -22,6 +22,18 @@ SELECT * FROM email_jobs
 WHERE provider_message_id = $1
 LIMIT 1;
 
+-- name: GetEmailJobForUpdate :one
+SELECT * FROM email_jobs
+WHERE id = $1
+LIMIT 1
+FOR UPDATE;
+
+-- name: GetEmailJobByProviderMessageIDForUpdate :one
+SELECT * FROM email_jobs
+WHERE provider_message_id = $1
+LIMIT 1
+FOR UPDATE;
+
 -- name: GetLatestEmailJobForCurrentAddress :one
 SELECT email_jobs.*
 FROM email_jobs
@@ -118,7 +130,7 @@ SET
 WHERE id = sqlc.arg(id)
   AND (
     delivery_event_at IS NULL
-    OR delivery_event_at <= sqlc.arg(occurred_at)
+    OR delivery_event_at < sqlc.arg(occurred_at)
   )
 RETURNING *;
 

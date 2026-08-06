@@ -12,8 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-var ErrEmailDeliveryJobMismatch = errors.New("email delivery event does not match the referenced job")
-
 type ProcessEmailDeliveryEventParams struct {
 	WebhookID         string
 	EventType         string
@@ -71,6 +69,14 @@ func (store *SQLStore) ProcessEmailDeliveryEventTx(
 		}
 
 		previousStatus := job.DeliveryStatus
+		if !canApplyEmailDeliveryTransition(
+			previousStatus,
+			arg.DeliveryStatus,
+			job.DeliveryEventAt,
+			arg.OccurredAt,
+		) {
+			return nil
+		}
 		result.EmailJob, err = q.UpdateEmailJobDelivery(ctx, UpdateEmailJobDeliveryParams{
 			ProviderMessageID: pgtype.Text{String: arg.ProviderMessageID, Valid: true},
 			DeliveryStatus:    arg.DeliveryStatus,
@@ -120,7 +126,7 @@ func findEmailJobForDeliveryEvent(
 	q *Queries,
 	arg ProcessEmailDeliveryEventParams,
 ) (EmailJob, bool, error) {
-	job, err := q.GetEmailJobByProviderMessageID(ctx, pgtype.Text{
+	job, err := q.GetEmailJobByProviderMessageIDForUpdate(ctx, pgtype.Text{
 		String: arg.ProviderMessageID,
 		Valid:  true,
 	})
@@ -134,17 +140,74 @@ func findEmailJobForDeliveryEvent(
 		return EmailJob{}, false, nil
 	}
 
-	job, err = q.GetEmailJob(ctx, arg.JobID)
+	job, err = q.GetEmailJobForUpdate(ctx, arg.JobID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return EmailJob{}, false, nil
+		return EmailJob{ID: arg.JobID}, false, nil
 	}
 	if err != nil {
 		return EmailJob{}, false, err
 	}
 	if job.ProviderMessageID.Valid && job.ProviderMessageID.String != arg.ProviderMessageID {
-		return EmailJob{}, false, ErrEmailDeliveryJobMismatch
+		return EmailJob{ID: arg.JobID}, false, nil
 	}
 	return job, true, nil
+}
+
+func canApplyEmailDeliveryTransition(
+	current string,
+	next string,
+	currentOccurredAt pgtype.Timestamptz,
+	nextOccurredAt time.Time,
+) bool {
+	if current == next {
+		return false
+	}
+	if currentOccurredAt.Valid && !nextOccurredAt.After(currentOccurredAt.Time) {
+		return false
+	}
+
+	switch current {
+	case EmailDeliveryStatusPending:
+		return isRecognizedEmailDeliveryStatus(next)
+	case EmailDeliveryStatusAccepted:
+		return next == EmailDeliveryStatusDelayed ||
+			next == EmailDeliveryStatusDelivered ||
+			isTerminalEmailDeliveryStatus(next)
+	case EmailDeliveryStatusDelayed:
+		return next == EmailDeliveryStatusDelivered ||
+			isTerminalEmailDeliveryStatus(next)
+	case EmailDeliveryStatusDelivered:
+		return next == EmailDeliveryStatusComplained
+	default:
+		return false
+	}
+}
+
+func isRecognizedEmailDeliveryStatus(status string) bool {
+	switch status {
+	case EmailDeliveryStatusAccepted,
+		EmailDeliveryStatusDelivered,
+		EmailDeliveryStatusDelayed,
+		EmailDeliveryStatusBounced,
+		EmailDeliveryStatusFailed,
+		EmailDeliveryStatusSuppressed,
+		EmailDeliveryStatusComplained:
+		return true
+	default:
+		return false
+	}
+}
+
+func isTerminalEmailDeliveryStatus(status string) bool {
+	switch status {
+	case EmailDeliveryStatusBounced,
+		EmailDeliveryStatusFailed,
+		EmailDeliveryStatusSuppressed,
+		EmailDeliveryStatusComplained:
+		return true
+	default:
+		return false
+	}
 }
 
 func userDeliverabilityForEvent(arg ProcessEmailDeliveryEventParams) string {
@@ -194,7 +257,6 @@ func createDeliveryAuditLog(
 		Actor:         "resend_webhook",
 		FromState:     nullableText(previousStatus),
 		ToState:       nullableText(arg.DeliveryStatus),
-		Message:       nullableText(arg.BounceMessage),
 		Metadata:      metadata,
 	})
 	return err

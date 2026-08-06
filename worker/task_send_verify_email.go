@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/mailer"
@@ -99,28 +100,29 @@ func (processor *RedisTaskProcessor) ProcessTaskSendEmail(
 
 	providerMessageID, sendErr := processor.sendEmailJob(ctx, job, payload.JobID)
 	if sendErr != nil {
+		safeError := safeEmailSendError(sendErr)
 		if mailer.IsPermanent(sendErr) || job.AttemptCount >= job.MaxAttempts {
 			if _, err := processor.store.MarkEmailJobDeadLetter(ctx, db.MarkEmailJobDeadLetterParams{
 				ID:        jobID,
-				LastError: pgtype.Text{String: sendErr.Error(), Valid: true},
+				LastError: pgtype.Text{String: safeError, Valid: true},
 			}); err != nil {
 				return fmt.Errorf("persist dead-letter state after send failure: %w", err)
 			}
 
 			if mailer.IsPermanent(sendErr) {
-				return fmt.Errorf("permanent email failure: %v: %w", sendErr, asynq.SkipRetry)
+				return fmt.Errorf("%s: %w", safeError, asynq.SkipRetry)
 			}
-			return fmt.Errorf("email retries exhausted: %w", sendErr)
+			return errors.New("email delivery retries exhausted")
 		}
 
 		if _, err := processor.store.MarkEmailJobRetrying(ctx, db.MarkEmailJobRetryingParams{
 			ID:        jobID,
-			LastError: pgtype.Text{String: sendErr.Error(), Valid: true},
+			LastError: pgtype.Text{String: safeError, Valid: true},
 		}); err != nil {
 			return fmt.Errorf("persist retrying state after send failure: %w", err)
 		}
 		observability.Default.RecordWorkerRetry()
-		return fmt.Errorf("send verification email: %w", sendErr)
+		return errors.New(safeError)
 	}
 
 	if _, err := processor.store.MarkEmailJobSent(ctx, db.MarkEmailJobSentParams{
@@ -136,12 +138,18 @@ func (processor *RedisTaskProcessor) ProcessTaskSendEmail(
 		Str("event_id", payload.EventID).
 		Str("correlation_id", payload.CorrelationID).
 		Str("event_type", payload.EventType).
-		Str("email", job.Recipient).
 		Str("provider_message_id", providerMessageID).
 		Int32("attempt", job.AttemptCount).
 		Str("job_type", job.JobType).
 		Msg("email accepted by provider")
 	return nil
+}
+
+func safeEmailSendError(err error) string {
+	if mailer.IsPermanent(err) {
+		return "permanent email delivery failure"
+	}
+	return "temporary email delivery failure"
 }
 
 func (processor *RedisTaskProcessor) ProcessTaskSendVerifyEmail(
@@ -197,7 +205,7 @@ func (processor *RedisTaskProcessor) verificationEmailPayload(
 		return job.Payload, nil
 	}
 
-	value, err := processor.emailVerificationMaker.Create(
+	value, expiresAt, err := processor.emailVerificationMaker.Create(
 		job.Username,
 		job.Recipient,
 		jobID,
@@ -218,6 +226,7 @@ func (processor *RedisTaskProcessor) verificationEmailPayload(
 	}
 	payload["verification_url"] = strings.TrimRight(processor.publicAPIURL, "/") +
 		"/users/verify-email?token=" + url.QueryEscape(value)
+	payload["verification_expires_at"] = expiresAt.Format(time.RFC3339)
 
 	return json.Marshal(payload)
 }

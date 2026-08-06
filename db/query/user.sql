@@ -102,7 +102,11 @@ WHERE username = sqlc.arg(username)
   AND lower(email) = lower(sqlc.arg(recipient))
   AND (
     email_deliverability_updated_at IS NULL
-    OR email_deliverability_updated_at <= sqlc.arg(occurred_at)
+    OR email_deliverability_updated_at < sqlc.arg(occurred_at)
+  )
+  AND (
+    email_deliverability_status <> 'undeliverable'
+    OR sqlc.arg(deliverability_status)::varchar = 'undeliverable'
   )
 RETURNING *;
 

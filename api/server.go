@@ -24,6 +24,7 @@ type Server struct {
 	redisReady             ReadinessCheck
 	rateLimiter            RateLimiter
 	metrics                *observability.Registry
+	passwordBreachChecker  PasswordBreachChecker
 }
 
 func NewServer(
@@ -46,6 +47,7 @@ func NewServer(
 		tokenMaker:             tokenMaker,
 		emailVerificationMaker: emailVerificationMaker,
 		metrics:                observability.Default,
+		passwordBreachChecker:  noopPasswordBreachChecker{},
 	}
 	for _, option := range options {
 		option(server)
@@ -54,16 +56,26 @@ func NewServer(
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 		v.RegisterValidation("currency", validCurrency)
 	}
+	binding.EnableDecoderDisallowUnknownFields = true
 
 	server.setupRouter()
 
 	return server, nil
 }
 
+func WithPasswordBreachChecker(checker PasswordBreachChecker) ServerOption {
+	return func(server *Server) {
+		if checker != nil {
+			server.passwordBreachChecker = checker
+		}
+	}
+}
+
 func (server *Server) setupRouter() {
 	router := gin.New()
 
 	router.Use(
+		server.requestBodyLimitMiddleware(),
 		server.requestContextMiddleware(),
 		server.requestLoggerMiddleware(),
 		server.recoveryMiddleware(),
@@ -77,13 +89,18 @@ func (server *Server) setupRouter() {
 	router.GET("/livez", server.live)
 	router.GET("/readyz", server.ready)
 	router.GET("/metrics", gin.WrapH(server.metricsHandler()))
-	router.POST("/users", server.CreateUser)
+	router.POST(
+		"/users",
+		server.rateLimitMiddleware("signup", 5, time.Hour, clientIPRateLimitKey),
+		server.CreateUser,
+	)
 	router.POST(
 		"/users/login",
 		server.rateLimitMiddleware("login", 5, time.Minute, clientIPRateLimitKey),
 		server.loginUser,
 	)
 	router.GET("/users/verify-email", server.verifyUserEmail)
+	router.POST("/users/verify-email", server.confirmUserEmail)
 	router.POST(
 		"/tokens/renew_access",
 		server.rateLimitMiddleware("refresh", 10, time.Minute, clientIPRateLimitKey),

@@ -119,7 +119,8 @@ type Beneficiary struct {
 
 // Idempotent append-only record of verified email provider webhook events.
 type EmailDeliveryEvent struct {
-	WebhookID         string             `json:"webhook_id"`
+	WebhookID string `json:"webhook_id"`
+	// Immutable historical job UUID. No foreign key is used so retained events survive email-job cleanup without mutation.
 	EmailJobID        pgtype.UUID        `json:"email_job_id"`
 	ProviderMessageID string             `json:"provider_message_id"`
 	EventType         string             `json:"event_type"`
