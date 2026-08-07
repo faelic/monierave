@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { selectVaultCapability } from "./vault-capabilities";
+import { selectWalletCapability } from "./wallet-runtime-policy";
 
 const capableEnvironment = {
   deviceMemory: 8,
@@ -11,9 +11,9 @@ const capableEnvironment = {
   webglAvailable: true,
 };
 
-describe("selectVaultCapability", () => {
+describe("selectWalletCapability", () => {
   it("allows the interactive scene on capable devices", () => {
-    expect(selectVaultCapability(capableEnvironment)).toEqual({
+    expect(selectWalletCapability(capableEnvironment)).toEqual({
       mode: "interactive",
     });
   });
@@ -27,7 +27,7 @@ describe("selectVaultCapability", () => {
     ["webgl-unavailable", { webglAvailable: false }],
   ] as const)("selects the %s fallback", (reason, overrides) => {
     expect(
-      selectVaultCapability({ ...capableEnvironment, ...overrides }),
+      selectWalletCapability({ ...capableEnvironment, ...overrides }),
     ).toEqual({
       mode: "static",
       reason,

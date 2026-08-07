@@ -9,9 +9,7 @@ test("explains the supported product clearly", async ({ page }) => {
     }),
   ).toBeVisible();
   await expect(page.getByRole("main")).toBeVisible();
-  await expect(
-    page.getByText("Internal Monierave transfers currently carry no fee."),
-  ).toBeVisible();
+  await expect(page.getByText("Zero-fee internal")).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "Financial clarity has a vocabulary.",
@@ -63,8 +61,37 @@ test("removes nonessential entrance motion when requested", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  await expect(page.locator(".marketing-reveal").first()).toHaveCSS(
-    "animation-name",
-    "none",
+  await expect(page.locator("[data-pipeline-mode]")).toHaveAttribute(
+    "data-pipeline-mode",
+    "fallback",
   );
+  await expect(page.locator(".landing-hero canvas")).toHaveCount(0);
+});
+
+test("matches the canonical desktop hero structure", async ({ page }) => {
+  await page.setViewportSize({ height: 823, width: 1440 });
+  await page.goto("/");
+
+  const heading = page.getByRole("heading", {
+    name: "Your money, without mystery.",
+  });
+  const box = await heading.boundingBox();
+
+  expect(box).not.toBeNull();
+  expect(box?.x).toBeGreaterThanOrEqual(65);
+  expect(box?.x).toBeLessThanOrEqual(90);
+  expect(box?.y).toBeGreaterThanOrEqual(145);
+  expect(box?.y).toBeLessThanOrEqual(220);
+  await expect(heading.locator("span")).toHaveCount(3);
+  await expect(page.getByRole("link", { name: "Get started" })).toBeVisible();
+  await expect(
+    page.getByRole("img", {
+      name: "A metallic network of Monierave payment rails",
+    }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

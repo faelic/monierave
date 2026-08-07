@@ -13,7 +13,7 @@ export function BrandMark({
     <Link
       aria-label="Monierave home"
       className={cn(
-        "group inline-flex min-h-11 items-center gap-2.5 no-underline",
+        "group inline-flex min-h-9 items-center gap-2 no-underline",
         inverse ? "text-white" : "",
         className,
       )}
@@ -22,7 +22,7 @@ export function BrandMark({
       <svg
         aria-hidden="true"
         className={cn(
-          "size-8",
+          "size-6",
           inverse ? "text-jade-100" : "text-evergreen-800",
         )}
         fill="none"
@@ -53,7 +53,7 @@ export function BrandMark({
       </svg>
       <span
         className={cn(
-          "text-xl font-bold tracking-[-0.035em]",
+          "font-display text-[0.9375rem] font-bold tracking-[-0.045em]",
           inverse ? "text-white" : "text-evergreen-900",
         )}
       >

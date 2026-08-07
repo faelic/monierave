@@ -1,14 +1,14 @@
-export type VaultFallbackReason =
+export type WalletFallbackReason =
   | "compact-viewport"
   | "low-power"
   | "reduced-motion"
   | "save-data"
   | "webgl-unavailable";
 
-export type VaultCapability =
-  { mode: "interactive" } | { mode: "static"; reason: VaultFallbackReason };
+export type WalletCapability =
+  { mode: "interactive" } | { mode: "static"; reason: WalletFallbackReason };
 
-export type VaultEnvironment = {
+export type WalletEnvironment = {
   deviceMemory: number | undefined;
   hardwareConcurrency: number | undefined;
   prefersReducedMotion: boolean;
@@ -17,9 +17,9 @@ export type VaultEnvironment = {
   webglAvailable: boolean;
 };
 
-export function selectVaultCapability(
-  environment: VaultEnvironment,
-): VaultCapability {
+export function selectWalletCapability(
+  environment: WalletEnvironment,
+): WalletCapability {
   if (environment.prefersReducedMotion) {
     return { mode: "static", reason: "reduced-motion" };
   }
@@ -64,7 +64,7 @@ function hasWebGLSupport() {
   }
 }
 
-export function readVaultEnvironment(): VaultEnvironment {
+export function readWalletEnvironment(): WalletEnvironment {
   const navigatorWithHints = navigator as NavigatorWithHints;
 
   return {
@@ -78,7 +78,7 @@ export function readVaultEnvironment(): VaultEnvironment {
   };
 }
 
-export const vaultFallbackMessages: Record<VaultFallbackReason, string> = {
+export const walletFallbackMessages: Record<WalletFallbackReason, string> = {
   "compact-viewport":
     "The lightweight version is active to preserve clarity on this screen.",
   "low-power":

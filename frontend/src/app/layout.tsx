@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "@fontsource-variable/fraunces";
+import "@fontsource-variable/manrope";
 import "@fontsource-variable/source-sans-3";
 
 import { AppProviders } from "@/app/providers";

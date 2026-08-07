@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 
 const navigation: ReadonlyArray<{ href: Route; label: string }> = [
-  { href: "/", label: "Home" },
+  { href: "/#product" as Route, label: "Product" },
+  { href: "/#how-it-works" as Route, label: "How it works" },
   { href: "/security", label: "Security" },
+  { href: "/help", label: "Help" },
 ];
 
 function NavigationLink({
@@ -34,10 +36,10 @@ function NavigationLink({
         "relative flex min-h-11 items-center font-semibold no-underline",
         mobile
           ? "border-line-200 text-ink-950 border-b py-4 text-xl"
-          : "text-ink-700 hover:text-evergreen-800 px-1 text-sm",
+          : "px-1 text-xs text-white/58 transition-colors hover:text-white",
         active &&
           !mobile &&
-          "text-evergreen-900 after:bg-jade-500 after:absolute after:right-1 after:bottom-0 after:left-1 after:h-0.5",
+          "text-white after:absolute after:right-1 after:bottom-0 after:left-1 after:h-px after:bg-white/55",
       )}
       href={href}
     >
@@ -50,13 +52,13 @@ function NavigationLink({
 
 export function MarketingHeader() {
   return (
-    <header className="border-line-200 bg-paper-50/95 sticky top-0 z-40 border-b backdrop-blur-md">
-      <div className="mx-auto flex h-18 max-w-[90rem] items-center justify-between px-5 sm:h-20 sm:px-8 xl:px-12">
-        <BrandMark />
+    <header className="bg-evergreen-900 sticky top-0 z-40 text-white">
+      <div className="mx-auto flex h-19 max-w-[90rem] items-center justify-between px-5 sm:px-8 lg:px-[4.625rem]">
+        <BrandMark inverse />
 
         <nav
           aria-label="Primary navigation"
-          className="hidden items-center gap-8 md:flex"
+          className="hidden items-center gap-7 md:flex lg:mr-auto lg:ml-20"
         >
           {navigation.map((item) => (
             <NavigationLink key={item.href} {...item} />
@@ -64,10 +66,20 @@ export function MarketingHeader() {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button asChild variant="quiet">
+          <Button
+            asChild
+            className="min-h-9 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white"
+            size="compact"
+            variant="quiet"
+          >
             <a href="/login">Sign in</a>
           </Button>
-          <Button asChild>
+          <Button
+            asChild
+            className="min-h-9 rounded-full bg-white px-4 text-xs text-black hover:bg-white/88"
+            size="compact"
+            variant="secondary"
+          >
             <a href="/signup">Create account</a>
           </Button>
         </div>
@@ -76,7 +88,7 @@ export function MarketingHeader() {
           <Dialog.Trigger asChild>
             <button
               aria-label="Open navigation"
-              className="border-line-300 text-evergreen-900 inline-flex size-11 items-center justify-center rounded-sm border bg-white md:hidden"
+              className="inline-flex size-11 items-center justify-center rounded-sm border border-white/20 bg-white/6 text-white md:hidden"
               type="button"
             >
               <Menu aria-hidden="true" className="size-5" />

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="640" viewBox="0 0 1024 640">
+  <rect width="1024" height="640" rx="58" fill="#292A2E"/>
+  <path d="M0 0h1024v180C774 252 553 204 346 132C229 91 112 72 0 88Z" fill="#D7D7DA" opacity=".15"/>
+  <g fill="none" stroke="#F3F3F1" stroke-linecap="round">
+    <rect x="76" y="68" width="48" height="48" rx="14" stroke-width="7"/>
+    <path d="M88 103V81l12 11 12-11v22M91 110h18" stroke-width="6"/>
+  </g>
+  <text x="144" y="105" fill="#F3F3F1" font-family="Source Sans 3, sans-serif" font-size="40" font-weight="700" letter-spacing="5">MONIERAVE</text>
+  <g transform="translate(774 227)" fill="none" stroke="#A7A8AD" stroke-width="13">
+    <circle cx="86" cy="86" r="79"/>
+    <path d="M43 87h86M87 43v86" stroke-linecap="round"/>
+  </g>
+  <rect x="78" y="511" width="210" height="14" rx="7" fill="#D7D7DA"/>
+  <text x="78" y="574" fill="#F3F3F1" font-family="Source Sans 3, sans-serif" font-size="27" font-weight="600" letter-spacing="4">RESERVE</text>
+</svg>

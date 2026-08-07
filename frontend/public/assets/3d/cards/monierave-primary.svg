@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="640" viewBox="0 0 1024 640">
+  <rect width="1024" height="640" rx="58" fill="#111113"/>
+  <path d="M0 545C210 500 388 528 560 566C724 602 872 586 1024 522V640H0Z" fill="#A7A8AD" opacity=".2"/>
+  <g fill="none" stroke="#F3F3F1" stroke-linecap="round">
+    <rect x="76" y="68" width="48" height="48" rx="14" stroke-width="7"/>
+    <path d="M88 103V81l12 11 12-11v22M91 110h18" stroke-width="6"/>
+  </g>
+  <text x="144" y="105" fill="#F3F3F1" font-family="Source Sans 3, sans-serif" font-size="40" font-weight="700" letter-spacing="5">MONIERAVE</text>
+  <g transform="translate(82 226)">
+    <rect width="138" height="104" rx="18" fill="#D7D7DA" stroke="#F3F3F1" stroke-width="5"/>
+    <path d="M46 0v104M92 0v104M0 35h138M0 69h138" stroke="#85868B" stroke-width="4"/>
+    <rect x="46" y="35" width="46" height="34" rx="8" fill="#BFC0C4"/>
+  </g>
+  <g fill="none" stroke="#F3F3F1" stroke-linecap="round" stroke-width="10" transform="translate(820 241)">
+    <path d="M0 54c24-20 24-66 0-86"/>
+    <path d="M25 70c39-32 39-98 0-118"/>
+    <path d="M50 86c56-45 56-130 0-150"/>
+  </g>
+  <rect x="78" y="511" width="246" height="14" rx="7" fill="#A7A8AD"/>
+  <text x="78" y="574" fill="#F3F3F1" font-family="Source Sans 3, sans-serif" font-size="27" font-weight="600" letter-spacing="4">DIGITAL PAYMENTS</text>
+</svg>

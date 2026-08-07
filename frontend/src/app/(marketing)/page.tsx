@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   BookOpen,
-  CircleCheck,
   Landmark,
   ListChecks,
   Send,
@@ -11,7 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { AdaptiveVaultVisual } from "@/features/three-vault/adaptive-vault-visual";
+import { StaticReferenceArtwork } from "@/features/pipeline-hero/static-reference-artwork";
 
 export const metadata: Metadata = {
   title: "Clear digital banking",
@@ -61,46 +60,67 @@ const steps = [
   },
 ] as const;
 
+const trustMarks = [
+  "Account identity",
+  "Posted ledger",
+  "Verified users",
+  "Zero-fee internal",
+  "Secure sessions",
+] as const;
+
 export default function MarketingHomePage() {
   return (
     <>
-      <section className="marketing-hero overflow-hidden">
-        <div className="mx-auto grid min-h-[calc(100svh-5rem)] max-w-[90rem] items-center gap-10 px-5 py-16 sm:px-8 md:py-20 lg:grid-cols-[1.02fr_0.98fr] xl:px-12">
-          <div className="marketing-reveal max-w-3xl">
-            <p className="text-evergreen-700 text-sm font-bold tracking-[0.18em] uppercase">
-              Clear money movement
-            </p>
-            <h1 className="mt-5 max-w-3xl font-serif text-[clamp(3.25rem,7vw,6.75rem)] leading-[0.94] font-medium tracking-[-0.055em]">
-              Your money,
-              <span className="text-evergreen-700 block">without mystery.</span>
-            </h1>
-            <p className="text-ink-700 mt-7 max-w-xl text-lg leading-8 sm:text-xl">
-              Monierave brings accounts, recipients, and same-currency transfers
-              into one calm place. Every important detail is reviewed before
-              anything moves.
-            </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Button asChild className="px-6">
+      <section className="landing-hero">
+        <div className="landing-hero-frame mx-auto max-w-[90rem]">
+          <div className="relative grid min-h-[34rem] px-5 pt-14 pb-8 sm:px-8 md:grid-cols-[42%_58%] md:items-center md:pt-10 lg:px-[4.625rem] lg:pt-0">
+            <div className="relative z-10 max-w-[35.75rem] md:-translate-y-8">
+              <h1 className="font-display text-[clamp(3.25rem,8.4vw,4.6rem)] leading-[0.97] font-extrabold tracking-[-0.055em] text-[#f3f3f1]">
+                <span className="block">Your money,</span>
+                <span className="block">without</span>
+                <span className="block">mystery.</span>
+              </h1>
+              <p className="mt-5 max-w-[28rem] text-[0.9375rem] leading-[1.48] text-white/52 sm:text-base">
+                Monierave brings accounts, recipients, and same-currency
+                transfers into one calm place, with every important detail
+                reviewed before money moves.
+              </p>
+              <Button
+                asChild
+                className="mt-6 min-h-10 rounded-full border-0 bg-white px-5 text-xs text-black hover:bg-white/88"
+                size="compact"
+                variant="secondary"
+              >
                 <a href="/signup">
-                  Create account
-                  <ArrowRight aria-hidden="true" className="size-4" />
+                  Get started
+                  <ArrowRight aria-hidden="true" className="size-3.5" />
                 </a>
               </Button>
-              <Button asChild className="px-6" variant="secondary">
-                <Link href="#how-it-works">See how it works</Link>
-              </Button>
             </div>
-            <p className="text-ink-600 mt-5 flex items-start gap-2 text-sm">
-              <CircleCheck
-                aria-hidden="true"
-                className="text-success-700 mt-0.5 size-4 shrink-0"
-              />
-              Internal Monierave transfers currently carry no fee.
-            </p>
+
+            <StaticReferenceArtwork className="mt-8 aspect-[735/290] min-h-[20rem] md:absolute md:inset-0 md:mt-0 md:size-full" />
           </div>
 
-          <div className="marketing-reveal marketing-reveal-delay">
-            <AdaptiveVaultVisual className="aspect-square w-full" />
+          <div className="relative z-10 px-5 pb-5 sm:px-8 lg:px-[4.625rem] lg:pb-7">
+            <p className="text-[0.6875rem] text-white/30">
+              The controls a modern money platform should make visible:
+            </p>
+            <ul className="mt-4 grid grid-cols-2 items-center gap-x-7 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+              {trustMarks.map((mark, index) => (
+                <li
+                  className="landing-trust-mark flex items-center gap-2 text-[0.67rem] font-bold"
+                  key={mark}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="grid size-4 place-items-center rounded-[0.2rem] border border-current text-[0.5rem]"
+                  >
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  {mark}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>

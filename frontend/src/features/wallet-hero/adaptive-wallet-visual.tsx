@@ -3,28 +3,24 @@
 import dynamic from "next/dynamic";
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { LedgerVaultVisual } from "@/components/marketing/ledger-vault-visual";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 
+import { SceneFallback } from "./components/scene-fallback";
 import {
-  readVaultEnvironment,
-  selectVaultCapability,
-  vaultFallbackMessages,
-  type VaultCapability,
-} from "./vault-capabilities";
+  readWalletEnvironment,
+  selectWalletCapability,
+  walletFallbackMessages,
+  type WalletCapability,
+} from "./wallet-runtime-policy";
 
-const VaultScene = dynamic(() => import("./vault-scene"), {
-  loading: () => (
-    <div className="grid size-full place-items-center" role="status">
-      <span
-        aria-label="Preparing optional 3D preview"
-        className="border-jade-500 size-7 animate-spin rounded-full border-2 border-r-transparent motion-reduce:animate-none"
-      />
-    </div>
-  ),
-  ssr: false,
-});
+const WalletScene = dynamic(
+  () => import("@/features/wallet-hero/monierave-wallet-scene"),
+  {
+    loading: () => <SceneFallback />,
+    ssr: false,
+  },
+);
 
 class SceneErrorBoundary extends Component<
   { children: ReactNode; onFailure: () => void },
@@ -45,30 +41,66 @@ class SceneErrorBoundary extends Component<
   }
 }
 
-export function AdaptiveVaultVisual({
+export function AdaptiveWalletVisual({
   className,
   fallbackClassName,
   showControl = true,
   showStatus = false,
   theme = "light",
+  activationDelayMs = 0,
 }: {
   className?: string;
   fallbackClassName?: string;
   showControl?: boolean;
   showStatus?: boolean;
   theme?: "dark" | "light";
+  activationDelayMs?: number;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const [capability, setCapability] = useState<VaultCapability | null>(null);
+  const [capability, setCapability] = useState<WalletCapability | null>(null);
   const [inViewport, setInViewport] = useState(false);
   const [preferStatic, setPreferStatic] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
   const [sceneFailed, setSceneFailed] = useState(false);
+  const [activationReady, setActivationReady] = useState(
+    activationDelayMs === 0,
+  );
+
+  useEffect(() => {
+    if (activationDelayMs <= 0) {
+      return;
+    }
+
+    let activationTimer = window.setTimeout(
+      () => setActivationReady(true),
+      activationDelayMs,
+    );
+    const deferForInteraction = () => {
+      setActivationReady(false);
+      window.clearTimeout(activationTimer);
+      activationTimer = window.setTimeout(
+        () => setActivationReady(true),
+        activationDelayMs,
+      );
+    };
+
+    window.addEventListener("input", deferForInteraction);
+    window.addEventListener("keydown", deferForInteraction);
+    window.addEventListener("pointerdown", deferForInteraction);
+
+    return () => {
+      window.clearTimeout(activationTimer);
+      window.removeEventListener("input", deferForInteraction);
+      window.removeEventListener("keydown", deferForInteraction);
+      window.removeEventListener("pointerdown", deferForInteraction);
+    };
+  }, [activationDelayMs]);
 
   useEffect(() => {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const wideViewport = window.matchMedia("(min-width: 64rem)");
     const evaluate = () => {
-      setCapability(selectVaultCapability(readVaultEnvironment()));
+      setCapability(selectWalletCapability(readWalletEnvironment()));
     };
     const initialCheck = window.setTimeout(evaluate, 0);
 
@@ -110,37 +142,53 @@ export function AdaptiveVaultVisual({
 
   const interactive =
     capability?.mode === "interactive" &&
+    activationReady &&
     inViewport &&
     !preferStatic &&
     !sceneFailed;
   const fallbackMessage = sceneFailed
-    ? "The 3D preview stopped safely, so the lightweight version is now active."
+    ? "The wallet animation stopped safely, so the still version is now active."
     : preferStatic
       ? "You selected the lightweight still version."
       : capability?.mode === "static"
-        ? vaultFallbackMessages[capability.reason]
-        : "Checking this device before loading the optional 3D preview.";
+        ? walletFallbackMessages[capability.reason]
+        : "Checking this device before loading the optional wallet animation.";
 
   return (
     <div
       className={cn("relative", className)}
-      data-vault-mode={interactive ? "interactive" : "static"}
+      data-wallet-mode={interactive ? "interactive" : "static"}
       ref={container}
     >
       <div className="size-full">
         {interactive ? (
           <SceneErrorBoundary onFailure={() => setSceneFailed(true)}>
-            <VaultScene onSceneFailure={() => setSceneFailed(true)} />
+            {!sceneReady ? (
+              <div className="absolute inset-0">
+                <SceneFallback />
+              </div>
+            ) : null}
+            <div
+              className={cn(
+                "size-full transition-opacity duration-300 motion-reduce:transition-none",
+                sceneReady ? "opacity-100" : "opacity-0",
+              )}
+            >
+              <WalletScene
+                onReady={() => setSceneReady(true)}
+                onSceneFailure={() => setSceneFailed(true)}
+              />
+            </div>
           </SceneErrorBoundary>
         ) : (
           <div
             className="mx-auto grid size-full max-w-[44rem] place-items-center px-4"
-            data-testid="vault-static-fallback"
+            data-testid="wallet-static-fallback"
           >
             {fallbackClassName ? (
-              <LedgerVaultVisual className={fallbackClassName} />
+              <SceneFallback className={fallbackClassName} />
             ) : (
-              <LedgerVaultVisual />
+              <SceneFallback />
             )}
           </div>
         )}
@@ -161,7 +209,7 @@ export function AdaptiveVaultVisual({
           size="compact"
           variant="secondary"
         >
-          {preferStatic ? "Use 3D preview" : "Pause 3D preview"}
+          {preferStatic ? "Play wallet animation" : "Pause wallet animation"}
         </Button>
       ) : null}
 
@@ -173,7 +221,11 @@ export function AdaptiveVaultVisual({
             : "sr-only"
         }
       >
-        {interactive ? "Interactive preview active." : fallbackMessage}
+        {interactive ? "Wallet animation active." : fallbackMessage}
+      </p>
+      <p className="sr-only">
+        The visual represents a digital wallet opening to reveal three Monierave
+        payment cards while two abstract transaction tokens move around it.
       </p>
     </div>
   );

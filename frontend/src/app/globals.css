@@ -3,6 +3,7 @@
 @theme inline {
   --font-sans: var(--font-interface);
   --font-serif: var(--font-editorial);
+  --font-display: var(--font-geometric);
 
   --color-ink-950: var(--ink-950);
   --color-ink-700: var(--ink-700);
@@ -34,27 +35,28 @@
   color-scheme: light;
   --font-interface: "Source Sans 3 Variable", sans-serif;
   --font-editorial: "Fraunces Variable", serif;
+  --font-geometric: "Manrope Variable", sans-serif;
 
-  --ink-950: #14211d;
-  --ink-700: #394a43;
-  --ink-600: #55655e;
-  --evergreen-900: #0e332c;
-  --evergreen-800: #16483d;
-  --evergreen-700: #1c5b4c;
-  --jade-500: #24a779;
-  --jade-100: #d8f1e7;
-  --paper-50: #f8f6f0;
-  --paper-100: #f0ede4;
-  --line-200: #d8ded9;
-  --line-300: #c4cdc7;
+  --ink-950: #111113;
+  --ink-700: #414248;
+  --ink-600: #65666c;
+  --evergreen-900: #050505;
+  --evergreen-800: #171719;
+  --evergreen-700: #303034;
+  --jade-500: #a7a8ad;
+  --jade-100: #e9e9eb;
+  --paper-50: #f7f7f5;
+  --paper-100: #eeeeec;
+  --line-200: #dedee0;
+  --line-300: #c7c8cc;
   --success-700: #15704d;
   --warning-700: #8a5200;
   --danger-700: #a62a22;
   --info-700: #17627a;
 
-  --shadow-1: 0 6px 20px rgb(20 33 29 / 8%);
-  --shadow-2: 0 16px 40px rgb(20 33 29 / 12%);
-  --focus-ring: #17627a;
+  --shadow-1: 0 6px 20px rgb(5 5 5 / 9%);
+  --shadow-2: 0 16px 40px rgb(5 5 5 / 15%);
+  --focus-ring: #2b57c9;
 }
 
 * {
@@ -113,35 +115,30 @@ a {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-.auth-trust-panel {
+.wallet-auth-panel {
   background:
     radial-gradient(
-      circle at 72% 34%,
-      rgb(36 167 121 / 28%),
-      transparent 18rem
+      circle at 52% 43%,
+      rgb(205 206 211 / 58%),
+      transparent 23rem
     ),
-    linear-gradient(155deg, #16483d, #092720 72%);
+    linear-gradient(145deg, rgb(255 255 255 / 72%), transparent 52%),
+    var(--paper-50);
 }
 
-.auth-trust-panel::before {
+.wallet-auth-panel::before {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgb(255 255 255 / 4%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 4%) 1px, transparent 1px);
+    linear-gradient(rgb(5 5 5 / 4%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(5 5 5 / 4%) 1px, transparent 1px);
   background-size: 4rem 4rem;
-  mask-image: linear-gradient(to bottom, black, transparent 78%);
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
   content: "";
 }
 
-.auth-vault {
-  border: 1px solid rgb(255 255 255 / 16%);
-  background:
-    radial-gradient(circle, rgb(36 167 121 / 28%), transparent 62%),
-    rgb(255 255 255 / 3%);
-  box-shadow:
-    0 0 0 2.4rem rgb(255 255 255 / 3%),
-    0 0 0 4.8rem rgb(255 255 255 / 2%);
+.wallet-auth-visual {
+  filter: drop-shadow(0 2rem 3rem rgb(5 5 5 / 12%));
 }
 
 .auth-form-enter {
@@ -164,7 +161,7 @@ a {
   background:
     radial-gradient(
       circle at 78% 42%,
-      rgb(36 167 121 / 13%),
+      rgb(185 187 192 / 10%),
       transparent 28rem
     ),
     linear-gradient(115deg, rgb(255 255 255 / 75%), transparent 56%),
@@ -172,102 +169,113 @@ a {
       90deg,
       transparent 0,
       transparent calc(8.333% - 1px),
-      rgb(14 51 44 / 4%) calc(8.333% - 1px),
-      rgb(14 51 44 / 4%) 8.333%
+      rgb(5 5 5 / 4%) calc(8.333% - 1px),
+      rgb(5 5 5 / 4%) 8.333%
     ),
     var(--paper-50);
 }
 
-.vault-visual {
+.marketing-security-panel {
+  background:
+    radial-gradient(
+      circle at 85% 0%,
+      rgb(167 168 173 / 20%),
+      transparent 22rem
+    ),
+    linear-gradient(115deg, var(--evergreen-900), #151518);
+}
+
+.landing-hero {
+  position: relative;
+  min-height: calc(100svh - 4.75rem);
+  overflow: hidden;
+  background:
+    radial-gradient(
+      ellipse 54% 60% at 73% 40%,
+      rgb(54 55 61 / 34%),
+      transparent 67%
+    ),
+    radial-gradient(
+      ellipse 40% 25% at 69% 76%,
+      rgb(22 23 27 / 74%),
+      transparent 76%
+    ),
+    linear-gradient(180deg, #050505 0%, #050505 72%, #030303 100%);
+  color: #f3f3f1;
+}
+
+.landing-hero::after {
+  position: absolute;
+  inset: auto 0 0;
+  height: 34%;
+  background: linear-gradient(180deg, transparent, rgb(0 0 0 / 72%));
+  pointer-events: none;
+  content: "";
+}
+
+.landing-hero-frame {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-height: calc(100svh - 4.75rem);
+  grid-template-rows: minmax(34rem, 1fr) auto;
+}
+
+.landing-pipeline {
+  filter: drop-shadow(0 2.25rem 3.5rem rgb(0 0 0 / 42%));
+}
+
+.landing-reference-art {
+  position: relative;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  background-image: url("/references/landing-reference-art.png");
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: 100% auto;
   isolation: isolate;
 }
 
-.vault-visual::before {
+.landing-reference-art::after {
   position: absolute;
-  inset: 10%;
-  z-index: -2;
-  border: 1px solid rgb(14 51 44 / 12%);
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 35% 30%, rgb(255 255 255 / 85%), transparent 28%),
-    radial-gradient(circle at 60% 65%, rgb(36 167 121 / 14%), transparent 35%),
-    rgb(216 241 231 / 38%);
-  box-shadow:
-    inset 0 0 5rem rgb(255 255 255 / 60%),
-    0 1.5rem 5rem rgb(14 51 44 / 10%);
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #050505 0%,
+    #050505 44%,
+    rgb(5 5 5 / 96%) 48%,
+    rgb(5 5 5 / 72%) 51%,
+    transparent 56%
+  );
+  pointer-events: none;
   content: "";
 }
 
-.vault-visual::after {
-  position: absolute;
-  inset: 18%;
-  z-index: -1;
-  border: 1px solid rgb(255 255 255 / 75%);
-  border-radius: 999px;
-  box-shadow: inset 0 0 2rem rgb(14 51 44 / 8%);
-  content: "";
+@media (min-width: 48rem) {
+  .landing-reference-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
 }
 
-.vault-orbit {
-  position: absolute;
-  z-index: -1;
-  border: 1px solid rgb(28 91 76 / 22%);
-  border-radius: 50%;
-}
-
-.vault-orbit-outer {
-  inset: 5% 12%;
-  transform: rotate(32deg);
-}
-
-.vault-orbit-inner {
-  inset: 18% 4%;
-  transform: rotate(-28deg);
-}
-
-.vault-node {
-  position: absolute;
-  z-index: 1;
-  width: 0.85rem;
-  height: 0.85rem;
-  border: 3px solid var(--paper-50);
-  border-radius: 0.25rem;
-  background: var(--jade-500);
-  box-shadow: 0 0 0 1px rgb(14 51 44 / 18%);
-}
-
-.vault-card {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(68%, 24rem);
-  min-height: 16.5rem;
-  padding: clamp(1.25rem, 4vw, 2rem);
-  transform: translate(-50%, -50%) rotate(-4deg);
-  border: 1px solid rgb(255 255 255 / 18%);
-  border-radius: 1rem;
-  background:
-    linear-gradient(140deg, rgb(255 255 255 / 9%), transparent 45%),
-    var(--evergreen-900);
-  box-shadow: 0 2rem 4rem rgb(14 51 44 / 25%);
-}
-
-.marketing-security-panel {
-  background:
-    radial-gradient(circle at 85% 0%, rgb(36 167 121 / 28%), transparent 22rem),
-    linear-gradient(115deg, var(--evergreen-900), #092720);
+.landing-trust-mark {
+  color: rgb(243 243 241 / 27%);
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
 }
 
 .vault-lab-page {
   background:
     radial-gradient(
       circle at 76% 28%,
-      rgb(36 167 121 / 18%),
+      rgb(167 168 173 / 14%),
       transparent 26rem
     ),
     linear-gradient(rgb(255 255 255 / 3%) 1px, transparent 1px),
     linear-gradient(90deg, rgb(255 255 255 / 3%) 1px, transparent 1px),
-    linear-gradient(145deg, #123e35, #071f1a 68%);
+    linear-gradient(145deg, #19191c, #050505 68%);
   background-size:
     auto,
     4rem 4rem,
@@ -277,7 +285,7 @@ a {
 
 .vault-lab-stage {
   background:
-    radial-gradient(circle at 50% 50%, rgb(36 167 121 / 18%), transparent 42%),
+    radial-gradient(circle at 50% 50%, rgb(167 168 173 / 14%), transparent 42%),
     linear-gradient(145deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 1%));
   box-shadow:
     inset 0 1px rgb(255 255 255 / 8%),
@@ -322,6 +330,12 @@ a {
   .auth-form-enter {
     transform: none;
     animation: none;
+  }
+}
+
+@media (max-width: 63.999rem) {
+  .landing-hero-frame {
+    grid-template-rows: auto auto;
   }
 }
 
