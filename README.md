@@ -152,6 +152,9 @@ go run main.go worker
 | `PUBLIC_API_URL` | Public URL used in verification links. |
 | `EMAIL_VERIFICATION_DURATION` | Verification-token lifetime, currently `24h`. |
 | `ENFORCE_EMAIL_VERIFICATION` | Restricts financial routes until verification. |
+| `PASSWORD_BREACH_CHECK_URL` | HIBP Pwned Passwords range API base URL. |
+| `PASSWORD_BREACH_CHECK_TIMEOUT` | Maximum HIBP request duration, normally `2s`. |
+| `PASSWORD_BREACH_CACHE_TTL` | In-memory HIBP prefix-cache lifetime, normally `24h`. |
 | `LOG_LEVEL` | Zerolog level such as `debug`, `info`, `warn`, or `error`. |
 
 ## Authentication and cookies
@@ -199,9 +202,18 @@ Signup creates the user, verification job, audit record, and outbox event in
 one database transaction. The HTTP request does not wait for Redis or Resend.
 
 Unverified users can authenticate, update their profile or email, inspect
-verification status, resend verification, and log out. Financial endpoints,
-including accounts, beneficiaries, statements, and transfers, are restricted.
-Pending registrations expire after 24 hours unless the email is verified.
+verification status, request a new verification message, and log out. Account,
+beneficiary, transaction, statement, deposit, withdrawal, transfer, and other
+financial routes remain unavailable until verification.
+
+A verification token is valid for 24 hours. The pending registration remains
+recoverable for seven days, so an unverified user can request a fresh token
+during that grace period. Permanently bounced, suppressed, or complained
+addresses cannot request another message until the user changes the address.
+
+Opening `GET /users/verify-email?token=...` validates the signed link and renders
+a confirmation page without changing user state. The page submits the token to
+`POST /users/verify-email`; JSON clients may post `{"token":"..."}` directly.
 
 For local development without sending email:
 
@@ -469,13 +481,22 @@ API errors use a stable envelope:
 
 Redis-backed rate limits currently protect:
 
+- Signup: 5 requests per hour per IP.
 - Login: 5 requests per minute per IP.
+- Failed login: 10 attempts per 15 minutes per hashed normalized username.
 - Refresh: 10 requests per minute per IP.
 - Verification resend: 3 requests per hour per user.
 - Transfers: 30 requests per minute per user.
 
 Rate-limited responses return `429` and `Retry-After`. If Redis is unavailable,
 protected endpoints fail closed with `503`.
+
+New passwords must contain 8 to 72 bytes, with at least 8 Unicode characters,
+and have no composition requirement. Signup and password changes check the
+password through the HIBP k-anonymity range API. Only the first five SHA-1
+characters are sent with response padding enabled; passwords, complete hashes,
+and suffixes are never transmitted or logged. If this check is unavailable,
+these operations fail closed with `503`.
 
 API, relay, and worker respond to `SIGINT` and `SIGTERM`. The API drains HTTP
 requests, the relay releases its context-controlled polling loop, and Asynq
@@ -495,7 +516,8 @@ device cookie.
 | `GET` | `/metrics` | Public | Prometheus metrics. |
 | `POST` | `/users` | Public | Create a pending user and verification job. |
 | `POST` | `/users/login` | Public | Replace prior sessions and issue access/device credentials. |
-| `GET` | `/users/verify-email?token=...` | Public | Verify the current email address. |
+| `GET` | `/users/verify-email?token=...` | Public | Validate a link and render the confirmation page without activating the user. |
+| `POST` | `/users/verify-email` | Public | Confirm the form or JSON token and activate the verified user. |
 | `POST` | `/tokens/renew_access` | Refresh cookie | Rotate refresh token and issue access token. |
 | `POST` | `/sessions/logout` | Refresh cookie | Revoke current session and clear cookie. |
 | `POST` | `/webhooks/resend` | Signed Resend | Record provider delivery events. |

@@ -92,7 +92,10 @@ var unverifiedAllowedFeatures = []string{
 }
 
 var unverifiedRestrictedFeatures = []string{
-	"create, view, update, or delete accounts",
+	"create, view, freeze, or close accounts",
+	"deposit or withdraw money",
+	"create or manage beneficiaries",
+	"view transactions or account statements",
 	"send money or create transfers",
 }
 

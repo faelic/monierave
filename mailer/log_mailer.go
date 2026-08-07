@@ -23,7 +23,6 @@ func (m *LogMailer) SendVerificationEmail(
 	providerMessageID := fmt.Sprintf("log-%s", message.JobID)
 	log.Info().
 		Str("job_id", message.JobID).
-		Str("recipient", message.Recipient).
 		Str("provider_message_id", providerMessageID).
 		Msg("development mailer accepted verification email")
 	return providerMessageID, nil
@@ -45,7 +44,6 @@ func (m *LogMailer) SendFinancialNotification(
 		Str("event_id", payload.EventID).
 		Str("correlation_id", payload.CorrelationID).
 		Str("event_type", payload.EventType).
-		Str("recipient", message.Recipient).
 		Str("provider_message_id", providerMessageID).
 		Msg("development mailer accepted financial notification")
 	return providerMessageID, nil

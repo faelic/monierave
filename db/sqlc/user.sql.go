@@ -260,7 +260,11 @@ WHERE username = $4
   AND lower(email) = lower($5)
   AND (
     email_deliverability_updated_at IS NULL
-    OR email_deliverability_updated_at <= $2
+    OR email_deliverability_updated_at < $2
+  )
+  AND (
+    email_deliverability_status <> 'undeliverable'
+    OR $1::varchar = 'undeliverable'
   )
 RETURNING username, hashed_password, full_name, email, password_changed_at, created_at, email_verified_at, email_deliverability_status, email_deliverability_updated_at, email_bounced_at, account_status, registration_expires_at
 `

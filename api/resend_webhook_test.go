@@ -62,7 +62,19 @@ func TestResendWebhookProcessesVerifiedBounce(t *testing.T) {
 			require.Equal(t, db.EmailDeliveryStatusBounced, arg.DeliveryStatus)
 			require.Equal(t, "Permanent", arg.BounceType)
 			require.Equal(t, "General", arg.BounceSubtype)
-			require.Equal(t, "mailbox does not exist", arg.BounceMessage)
+			require.Equal(t, "email provider reported a bounce", arg.BounceMessage)
+
+			var normalized normalizedResendWebhook
+			require.NoError(t, json.Unmarshal(arg.Payload, &normalized))
+			require.Equal(t, "email.bounced", normalized.EventType)
+			require.Equal(t, providerMessageID, normalized.ProviderMessageID)
+			require.Equal(t, jobID, normalized.JobID)
+			require.Equal(t, createdAt, normalized.OccurredAt)
+			require.Equal(t, fmt.Sprintf("%x", sha256.Sum256(body)), normalized.RawPayloadSHA256)
+			require.NotNil(t, normalized.Bounce)
+			require.Equal(t, "Permanent", normalized.Bounce.Type)
+			require.Equal(t, "General", normalized.Bounce.Subtype)
+			require.NotContains(t, string(arg.Payload), "mailbox does not exist")
 			return db.ProcessEmailDeliveryEventResult{JobMatched: true, StateUpdated: true}, nil
 		})
 
@@ -90,6 +102,40 @@ func TestResendWebhookRejectsInvalidSignature(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	server.router.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+}
+
+func TestResendWebhookPersistsIgnoredEvent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	secretBytes := []byte("local-webhook-test-secret")
+	server.config.ResendWebhookSecret = "whsec_" +
+		base64.StdEncoding.EncodeToString(secretBytes)
+	webhookID := "msg_domain_event"
+	body, err := json.Marshal(map[string]any{
+		"created_at": time.Now().UTC().Format(time.RFC3339Nano),
+		"type":       "domain.updated",
+		"data":       map[string]any{},
+	})
+	require.NoError(t, err)
+
+	store.EXPECT().
+		ProcessEmailDeliveryEventTx(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ any,
+			arg db.ProcessEmailDeliveryEventParams,
+		) (db.ProcessEmailDeliveryEventResult, error) {
+			require.Equal(t, webhookID, arg.ProviderMessageID)
+			require.Equal(t, "domain.updated", arg.EventType)
+			require.Empty(t, arg.DeliveryStatus)
+			require.False(t, arg.JobID.Valid)
+			return db.ProcessEmailDeliveryEventResult{}, nil
+		})
+
+	request := signedWebhookRequest(t, body, webhookID, secretBytes)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
 func signedWebhookRequest(

@@ -38,6 +38,9 @@ type Config struct {
 	EmailVerificationDuration time.Duration `mapstructure:"EMAIL_VERIFICATION_DURATION"`
 	EnforceEmailVerification  bool          `mapstructure:"ENFORCE_EMAIL_VERIFICATION"`
 	LogLevel                  string        `mapstructure:"LOG_LEVEL"`
+	PasswordBreachCheckURL    string        `mapstructure:"PASSWORD_BREACH_CHECK_URL"`
+	PasswordBreachTimeout     time.Duration `mapstructure:"PASSWORD_BREACH_CHECK_TIMEOUT"`
+	PasswordBreachCacheTTL    time.Duration `mapstructure:"PASSWORD_BREACH_CACHE_TTL"`
 }
 
 func LoadConfig(path string) (config Config, err error) {
@@ -69,6 +72,9 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("EMAIL_VERIFICATION_DURATION")
 	_ = viper.BindEnv("ENFORCE_EMAIL_VERIFICATION")
 	_ = viper.BindEnv("LOG_LEVEL")
+	_ = viper.BindEnv("PASSWORD_BREACH_CHECK_URL")
+	_ = viper.BindEnv("PASSWORD_BREACH_CHECK_TIMEOUT")
+	_ = viper.BindEnv("PASSWORD_BREACH_CACHE_TTL")
 
 	viper.SetDefault("MAILER_PROVIDER", "log")
 	viper.SetDefault("REFRESH_COOKIE_NAME", "monierave_refresh")
@@ -83,6 +89,9 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetDefault("EMAIL_VERIFICATION_DURATION", 24*time.Hour)
 	viper.SetDefault("ENFORCE_EMAIL_VERIFICATION", true)
 	viper.SetDefault("LOG_LEVEL", "info")
+	viper.SetDefault("PASSWORD_BREACH_CHECK_URL", "https://api.pwnedpasswords.com/range")
+	viper.SetDefault("PASSWORD_BREACH_CHECK_TIMEOUT", 2*time.Second)
+	viper.SetDefault("PASSWORD_BREACH_CACHE_TTL", 24*time.Hour)
 
 	err = viper.ReadInConfig()
 	if err != nil {
@@ -146,6 +155,20 @@ func ValidateAPIConfig(config Config) error {
 			(parsed.Scheme != "http" && parsed.Scheme != "https") {
 			return fmt.Errorf("ALLOWED_ORIGINS must contain absolute HTTP or HTTPS origins")
 		}
+	}
+	if config.PasswordBreachCheckURL == "" {
+		return fmt.Errorf("PASSWORD_BREACH_CHECK_URL is required")
+	}
+	breachURL, err := url.Parse(config.PasswordBreachCheckURL)
+	if err != nil || breachURL.Host == "" ||
+		(breachURL.Scheme != "http" && breachURL.Scheme != "https") {
+		return fmt.Errorf("PASSWORD_BREACH_CHECK_URL must be an absolute HTTP or HTTPS URL")
+	}
+	if config.PasswordBreachTimeout <= 0 {
+		return fmt.Errorf("PASSWORD_BREACH_CHECK_TIMEOUT must be greater than 0")
+	}
+	if config.PasswordBreachCacheTTL <= 0 {
+		return fmt.Errorf("PASSWORD_BREACH_CACHE_TTL must be greater than 0")
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,6 +37,11 @@ type RateLimiter interface {
 		limit int64,
 		window time.Duration,
 	) (bool, time.Duration, error)
+	Reset(ctx context.Context, key string) error
+}
+
+func (limiter *redisRateLimiter) Reset(ctx context.Context, key string) error {
+	return limiter.client.Del(ctx, "monierave:rate:"+key).Err()
 }
 
 type redisRateLimiter struct {
@@ -168,42 +174,62 @@ func (server *Server) rateLimitMiddleware(
 	key func(*gin.Context) string,
 ) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		if server.rateLimiter == nil {
-			ctx.Next()
-			return
-		}
-		allowed, retryAfter, err := server.rateLimiter.Allow(
-			ctx.Request.Context(),
-			endpoint+":"+key(ctx),
-			limit,
-			window,
-		)
-		if err != nil {
-			log.Ctx(ctx.Request.Context()).Error().
-				Err(err).
-				Str("endpoint", endpoint).
-				Msg("rate limiter unavailable")
-			ctx.AbortWithStatusJSON(
-				http.StatusServiceUnavailable,
-				codedErrorResponse(
-					ctx,
-					"dependency_unavailable",
-					ErrServiceUnavailable,
-				),
-			)
-			return
-		}
-		if !allowed {
-			server.metrics.RecordRateLimit(endpoint)
-			seconds := max(1, int(retryAfter.Round(time.Second).Seconds()))
-			ctx.Header("Retry-After", strconv.Itoa(seconds))
-			ctx.AbortWithStatusJSON(
-				http.StatusTooManyRequests,
-				codedErrorResponse(ctx, "rate_limited", ErrRateLimited),
-			)
+		if !server.allowRateLimitedRequest(ctx, endpoint, key(ctx), limit, window) {
 			return
 		}
 		ctx.Next()
+	}
+}
+
+func (server *Server) allowRateLimitedRequest(
+	ctx *gin.Context,
+	endpoint string,
+	key string,
+	limit int64,
+	window time.Duration,
+) bool {
+	if server.rateLimiter == nil {
+		return true
+	}
+	allowed, retryAfter, err := server.rateLimiter.Allow(
+		ctx.Request.Context(),
+		endpoint+":"+key,
+		limit,
+		window,
+	)
+	if err != nil {
+		log.Ctx(ctx.Request.Context()).Error().
+			Err(err).
+			Str("endpoint", endpoint).
+			Msg("rate limiter unavailable")
+		ctx.AbortWithStatusJSON(
+			http.StatusServiceUnavailable,
+			codedErrorResponse(ctx, "dependency_unavailable", ErrServiceUnavailable),
+		)
+		return false
+	}
+	if allowed {
+		return true
+	}
+	server.metrics.RecordRateLimit(endpoint)
+	seconds := max(1, int(retryAfter.Round(time.Second).Seconds()))
+	ctx.Header("Retry-After", strconv.Itoa(seconds))
+	ctx.AbortWithStatusJSON(
+		http.StatusTooManyRequests,
+		codedErrorResponse(ctx, "rate_limited", ErrRateLimited),
+	)
+	return false
+}
+
+func (server *Server) resetRateLimit(ctx *gin.Context, endpoint, key string) {
+	if server.rateLimiter == nil {
+		return
+	}
+	if err := server.rateLimiter.Reset(ctx, endpoint+":"+key); err != nil {
+		log.Ctx(ctx.Request.Context()).Error().
+			Err(err).
+			Str("endpoint", endpoint).
+			Msg("failed to reset rate limit")
 	}
 }
 
@@ -217,6 +243,11 @@ func authenticatedRateLimitKey(ctx *gin.Context) string {
 		return ctx.ClientIP()
 	}
 	return payload.(*token.Payload).Username
+}
+
+func privateRateLimitKey(value string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(value))))
+	return fmt.Sprintf("%x", sum)
 }
 
 func (server *Server) live(ctx *gin.Context) {

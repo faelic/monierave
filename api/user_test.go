@@ -523,7 +523,61 @@ func TestVerifyUserEmail(t *testing.T) {
 	user, err := randomUser(util.RandomString(8))
 	require.NoError(t, err)
 	jobID := uuid.New()
-	value, err := server.emailVerificationMaker.Create(
+	value, _, err := server.emailVerificationMaker.Create(
+		user.Username,
+		user.Email,
+		jobID.String(),
+		time.Hour,
+	)
+	require.NoError(t, err)
+
+	request, err := http.NewRequest(
+		http.MethodGet,
+		"/users/verify-email?token="+url.QueryEscape(value),
+		nil,
+	)
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "Confirm your email")
+	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+	require.Equal(t, "no-referrer", recorder.Header().Get("Referrer-Policy"))
+	require.Equal(t, "DENY", recorder.Header().Get("X-Frame-Options"))
+	require.NotEmpty(t, recorder.Header().Get("Content-Security-Policy"))
+
+	verifiedUser := user
+	verifiedUser.AccountStatus = db.AccountStatusActive
+	verifiedUser.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	store.EXPECT().
+		VerifyUserEmailTx(gomock.Any(), db.VerifyUserEmailTxParams{
+			Username: user.Username,
+			Email:    user.Email,
+			JobID:    pgtype.UUID{Bytes: jobID, Valid: true},
+		}).
+		Return(verifiedUser, nil)
+
+	request, err = http.NewRequest(
+		http.MethodPost,
+		"/users/verify-email",
+		strings.NewReader(url.Values{"token": []string{value}}.Encode()),
+	)
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder = httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "Email verified")
+}
+
+func TestConfirmUserEmailJSON(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	user, err := randomUser(util.RandomString(8))
+	require.NoError(t, err)
+	jobID := uuid.New()
+	value, _, err := server.emailVerificationMaker.Create(
 		user.Username,
 		user.Email,
 		jobID.String(),
@@ -542,16 +596,39 @@ func TestVerifyUserEmail(t *testing.T) {
 		}).
 		Return(verifiedUser, nil)
 
-	request, err := http.NewRequest(
-		http.MethodGet,
-		"/users/verify-email?token="+url.QueryEscape(value),
-		nil,
-	)
+	body, err := json.Marshal(map[string]string{"token": value})
 	require.NoError(t, err)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/users/verify-email",
+		bytes.NewReader(body),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
 	recorder := httptest.NewRecorder()
 	server.router.ServeHTTP(recorder, request)
+
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Body.String(), "email verified successfully")
+	require.Contains(t, recorder.Body.String(), `"message":"email verified successfully"`)
+	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
+func TestConfirmUserEmailFormRendersInvalidTokenError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	server := newTestServer(t, mockdb.NewMockStore(ctrl))
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/users/verify-email",
+		strings.NewReader(url.Values{"token": []string{"invalid-token"}}.Encode()),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Header().Get("Content-Type"), "text/html")
+	require.Contains(t, recorder.Body.String(), "Verification unavailable")
 }
 
 func TestResendUserEmailVerification(t *testing.T) {

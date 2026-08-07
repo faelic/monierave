@@ -36,12 +36,14 @@ type ResendMailer struct {
 }
 
 type resendPayload struct {
-	VerificationURL string `json:"verification_url"`
+	VerificationURL       string `json:"verification_url"`
+	VerificationExpiresAt string `json:"verification_expires_at"`
 }
 
 type resendTemplateData struct {
-	Username        string
-	VerificationURL string
+	Username              string
+	VerificationURL       string
+	VerificationExpiresAt string
 }
 
 type financialPayload struct {
@@ -90,7 +92,7 @@ var resendHTMLTemplate = template.Must(template.New("verification-email").Parse(
       <p style="margin:0 0 24px;font:14px/1.6 Arial,sans-serif;word-break:break-all;overflow-wrap:anywhere;">
         <a href="{{.VerificationURL}}" target="_blank" rel="noopener noreferrer" style="color:#276749;text-decoration:underline;word-break:break-all;">{{.VerificationURL}}</a>
       </p>
-      <p style="margin:0 0 24px;color:#5d655f;font:14px/1.6 Arial,sans-serif;">This verification link expires in 24 hours.</p>
+      <p style="margin:0 0 24px;color:#5d655f;font:14px/1.6 Arial,sans-serif;">This verification link expires at {{.VerificationExpiresAt}}.</p>
       {{end}}
       <p style="margin:0;color:#5d655f;font-size:14px;line-height:1.6;">If you did not create this account, you can safely ignore this email.</p>
     </div>
@@ -105,7 +107,7 @@ We received a request to create a Monierave account using this email address.
 Verify your email address: {{.VerificationURL}}
 
 If the link is not clickable, copy and paste it into your browser.
-This verification link expires in 24 hours.
+This verification link expires at {{.VerificationExpiresAt}}.
 {{end}}
 If you did not create this account, you can safely ignore this email.
 `))
@@ -185,11 +187,18 @@ func (mailer *ResendMailer) SendVerificationEmail(
 				"verification_url must be an absolute HTTP or HTTPS URL",
 			))
 		}
+		expiresAt, err := time.Parse(time.RFC3339, payload.VerificationExpiresAt)
+		if err != nil || !expiresAt.After(time.Now()) {
+			return "", NewPermanentError(errors.New(
+				"verification_expires_at must be a future RFC3339 timestamp",
+			))
+		}
 	}
 
 	htmlBody, textBody, err := renderResendEmail(resendTemplateData{
-		Username:        message.Username,
-		VerificationURL: payload.VerificationURL,
+		Username:              message.Username,
+		VerificationURL:       payload.VerificationURL,
+		VerificationExpiresAt: payload.VerificationExpiresAt,
 	})
 	if err != nil {
 		return "", NewPermanentError(fmt.Errorf("render verification email: %w", err))

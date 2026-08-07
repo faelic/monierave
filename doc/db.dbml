@@ -20,13 +20,16 @@ Table users as U {
   email_deliverability_updated_at timestamptz
   email_bounced_at timestamptz
   account_status varchar [not null, default: 'active', note: 'Pending accounts may only manage email verification; active accounts may use financial features; disabled registrations exceeded the verification window.']
-  registration_expires_at timestamptz [note: 'Unverified registrations expire after 24 hours.']
+  registration_expires_at timestamptz [note: 'Unverified registrations remain recoverable for seven days. Verification tokens expire independently after 24 hours.']
 
   indexes {
     `lower(email)` [unique, name: 'users_email_lower_idx']
   }
 
   checks {
+    `char_length(username) BETWEEN 3 AND 32`
+    `char_length(btrim(full_name)) BETWEEN 1 AND 100`
+    `char_length(email) BETWEEN 3 AND 254`
     `email_deliverability_status IN ('unknown', 'pending', 'deliverable', 'undeliverable')`
     `account_status IN ('pending', 'active', 'disabled')`
   }
@@ -313,7 +316,5 @@ Table email_delivery_events {
     (provider_message_id, occurred_at) [name: 'email_delivery_events_provider_message_idx', note: 'occurred_at is indexed in descending order.']
   }
 
-  Note: 'Idempotent append-only record of verified email provider webhook events.'
+  Note: 'Immutable verified provider events. email_job_id intentionally has no foreign key so retained history survives email-job cleanup with its original UUID.'
 }
-
-Ref: email_delivery_events.email_job_id > email_jobs.id [delete: set null]

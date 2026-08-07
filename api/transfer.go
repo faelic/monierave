@@ -79,8 +79,8 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 	}
 
 	var req transferRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
+	if err := bindJSON(ctx, &req); err != nil {
+		writeBindingError(ctx, err)
 		return
 	}
 

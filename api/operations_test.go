@@ -38,6 +38,10 @@ func (limiter *stubRateLimiter) Allow(
 	return limiter.allowed, limiter.retryAfter, limiter.err
 }
 
+func (limiter *stubRateLimiter) Reset(context.Context, string) error {
+	return nil
+}
+
 func newOperationalTestServer(
 	t *testing.T,
 	limiter RateLimiter,
@@ -201,4 +205,19 @@ func TestLoginRateLimit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSignupRateLimit(t *testing.T) {
+	limiter := &stubRateLimiter{retryAfter: time.Minute}
+	server := newOperationalTestServer(t, limiter, nil, nil)
+	request := httptest.NewRequest(http.MethodPost, "/users", nil)
+	request.RemoteAddr = "192.0.2.11:1234"
+	recorder := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Equal(t, "signup:192.0.2.11", limiter.key)
+	require.Equal(t, int64(5), limiter.limit)
+	require.Equal(t, time.Hour, limiter.window)
 }

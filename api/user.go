@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
@@ -18,10 +19,10 @@ import (
 )
 
 type createUserRequest struct {
-	Username string `json:"username" binding:"required,alphanum"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username string `json:"username" binding:"required,alphanum,min=3,max=32"`
+	Password string `json:"password" binding:"required"`
 	FullName string `json:"full_name" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
+	Email    string `json:"email" binding:"required,email,max=254"`
 }
 
 type userResponse struct {
@@ -56,14 +57,23 @@ func (server *Server) CreateUser(ctx *gin.Context) {
 	var req createUserRequest
 	var pgErr *pgconn.PgError
 
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, friendlyValidationError(err)))
+	if err := bindJSON(ctx, &req); err != nil {
+		writeBindingError(ctx, err)
+		return
+	}
+	fullName := strings.TrimSpace(req.FullName)
+	if utf8.RuneCountInString(fullName) < 1 ||
+		utf8.RuneCountInString(fullName) > 100 {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidFullName))
+		return
+	}
+	if !server.acceptNewPassword(ctx, req.Password) {
 		return
 	}
 
 	arg := db.CreateUserParams{
 		Username: strings.ToLower(strings.TrimSpace(req.Username)),
-		FullName: strings.TrimSpace(req.FullName),
+		FullName: fullName,
 		Email:    strings.ToLower(strings.TrimSpace(req.Email)),
 	}
 
@@ -107,8 +117,8 @@ func (server *Server) CreateUser(ctx *gin.Context) {
 }
 
 type loginUserRequest struct {
-	Username string `json:"username" binding:"required,alphanum"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username string `json:"username" binding:"required,alphanum,min=3,max=32"`
+	Password string `json:"password" binding:"required"`
 }
 
 type loginUserResponse struct {
@@ -120,17 +130,39 @@ type loginUserResponse struct {
 
 func (server *Server) loginUser(ctx *gin.Context) {
 	var req loginUserRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, friendlyValidationError(err)))
+	if err := bindJSON(ctx, &req); err != nil {
+		writeBindingError(ctx, err)
+		return
+	}
+	if err := validateNewPassword(req.Password); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
 		return
 	}
 
 	normalizedUsername := strings.ToLower(req.Username)
+	accountRateKey := privateRateLimitKey(normalizedUsername)
+	if !server.allowRateLimitedRequest(
+		ctx,
+		"login_account",
+		accountRateKey,
+		10,
+		15*time.Minute,
+	) {
+		return
+	}
+	resetAccountRateLimit := true
+	defer func() {
+		if resetAccountRateLimit {
+			server.resetRateLimit(ctx, "login_account", accountRateKey)
+		}
+	}()
 
 	user, err := server.store.GetUser(ctx, normalizedUsername)
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			_ = util.CheckPassword(req.Password, dummyPasswordHash)
 			server.recordLoginFailure(ctx, normalizedUsername, "unknown_user")
+			resetAccountRateLimit = false
 			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
 			return
 		}
@@ -140,6 +172,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 
 	if err := util.CheckPassword(req.Password, user.HashedPassword); err != nil {
 		server.recordLoginFailure(ctx, normalizedUsername, "invalid_password")
+		resetAccountRateLimit = false
 		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
 		return
 	}
@@ -182,7 +215,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 			Valid: true,
 		},
 		DeviceTokenHash: token.Hash(deviceSecret),
-		UserAgent:       ctx.Request.UserAgent(),
+		UserAgent:       boundedString(ctx.Request.UserAgent(), 512),
 		ClientIp:        ctx.ClientIP(),
 		ExpiresAt: pgtype.Timestamptz{
 			Time:  refreshPayload.ExpiresAt.Time,
@@ -218,7 +251,7 @@ func (server *Server) recordLoginFailure(
 	if err := server.store.RecordLoginFailure(ctx, db.LoginFailureAuditParams{
 		Username:  username,
 		ClientIP:  ctx.ClientIP(),
-		UserAgent: ctx.Request.UserAgent(),
+		UserAgent: boundedString(ctx.Request.UserAgent(), 512),
 		Reason:    reason,
 	}); err != nil {
 		log.Ctx(ctx.Request.Context()).Error().
@@ -229,17 +262,25 @@ func (server *Server) recordLoginFailure(
 
 type updateUserRequest struct {
 	CurrentPassword *string `json:"current_password"`
-	Password        *string `json:"password" binding:"omitempty,min=6"`
-	FullName        *string `json:"full_name" binding:"omitempty"`
-	Email           *string `json:"email" binding:"omitempty,email"`
+	Password        *string `json:"password"`
+	FullName        *string `json:"full_name"`
+	Email           *string `json:"email" binding:"omitempty,email,max=254"`
 }
 
 func (server *Server) updateUser(ctx *gin.Context) {
 	var req updateUserRequest
 
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, friendlyValidationError(err)))
+	if err := bindJSON(ctx, &req); err != nil {
+		writeBindingError(ctx, err)
 		return
+	}
+	if req.FullName != nil {
+		fullName := strings.TrimSpace(*req.FullName)
+		if utf8.RuneCountInString(fullName) < 1 ||
+			utf8.RuneCountInString(fullName) > 100 {
+			ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidFullName))
+			return
+		}
 	}
 
 	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
@@ -266,6 +307,9 @@ func (server *Server) updateUser(ctx *gin.Context) {
 		}
 		if err := util.CheckPassword(*req.CurrentPassword, currentUser.HashedPassword); err != nil {
 			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
+			return
+		}
+		if !server.acceptNewPassword(ctx, *req.Password) {
 			return
 		}
 		hashedpassword, err := util.HashPassword(*req.Password)
@@ -400,29 +444,71 @@ func (server *Server) getUserEmailStatus(ctx *gin.Context) {
 }
 
 type verifyEmailRequest struct {
-	Token string `form:"token" binding:"required"`
+	Token string `form:"token" json:"token" binding:"required"`
 }
 
 func (server *Server) verifyUserEmail(ctx *gin.Context) {
 	var req verifyEmailRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidToken))
+		verificationErrorPage(ctx, http.StatusBadRequest, ErrInvalidToken)
 		return
 	}
 
 	payload, err := server.emailVerificationMaker.Verify(req.Token)
 	if err != nil {
 		if errors.Is(err, token.ErrExpiredToken) {
-			ctx.JSON(http.StatusGone, errorResponse(ctx, ErrExpiredToken))
+			verificationErrorPage(ctx, http.StatusGone, ErrExpiredToken)
 			return
 		}
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidToken))
+		verificationErrorPage(ctx, http.StatusBadRequest, ErrInvalidToken)
+		return
+	}
+
+	if _, err := uuid.Parse(payload.JobID); err != nil {
+		verificationErrorPage(ctx, http.StatusBadRequest, ErrInvalidToken)
+		return
+	}
+	renderVerificationPage(
+		ctx,
+		http.StatusOK,
+		"Confirm your email",
+		"Select the button below to finish verifying your Monierave email address.",
+		req.Token,
+		true,
+	)
+}
+
+func (server *Server) confirmUserEmail(ctx *gin.Context) {
+	if !server.originAllowed(ctx) {
+		server.writeVerificationError(ctx, http.StatusForbidden, ErrForbidden)
+		return
+	}
+
+	var req verifyEmailRequest
+	var err error
+	if ctx.ContentType() == "application/json" {
+		err = bindJSON(ctx, &req)
+	} else {
+		err = ctx.ShouldBind(&req)
+	}
+	if err != nil {
+		server.writeVerificationError(ctx, http.StatusBadRequest, ErrInvalidToken)
+		return
+	}
+
+	payload, err := server.emailVerificationMaker.Verify(req.Token)
+	if err != nil {
+		if errors.Is(err, token.ErrExpiredToken) {
+			server.writeVerificationError(ctx, http.StatusGone, ErrExpiredToken)
+			return
+		}
+		server.writeVerificationError(ctx, http.StatusBadRequest, ErrInvalidToken)
 		return
 	}
 
 	jobID, err := uuid.Parse(payload.JobID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidToken))
+		server.writeVerificationError(ctx, http.StatusBadRequest, ErrInvalidToken)
 		return
 	}
 	user, err := server.store.VerifyUserEmailTx(ctx, db.VerifyUserEmailTxParams{
@@ -434,19 +520,69 @@ func (server *Server) verifyUserEmail(ctx *gin.Context) {
 		switch {
 		case errors.Is(err, db.ErrEmailVerificationAddressStale),
 			errors.Is(err, db.ErrEmailVerificationJobMismatch):
-			ctx.JSON(http.StatusConflict, errorResponse(ctx, ErrInvalidToken))
+			server.writeVerificationError(ctx, http.StatusConflict, ErrInvalidToken)
+		case errors.Is(err, db.ErrEmailAddressUndeliverable):
+			server.writeVerificationError(
+				ctx,
+				http.StatusConflict,
+				ErrEmailAddressUndeliverable,
+			)
 		case errors.Is(err, db.ErrRegistrationDisabled):
-			ctx.JSON(http.StatusGone, errorResponse(ctx, ErrRegistrationExpired))
+			server.writeVerificationError(ctx, http.StatusGone, ErrRegistrationExpired)
 		default:
-			ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
+			server.writeVerificationError(
+				ctx,
+				http.StatusInternalServerError,
+				ErrInternalServer,
+			)
 		}
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"message": "email verified successfully",
-		"user":    newUserResponse(user),
-	})
+	if wantsJSON(ctx) {
+		setVerificationPageHeaders(ctx)
+		ctx.JSON(http.StatusOK, gin.H{
+			"message": "email verified successfully",
+			"user":    newUserResponse(user),
+		})
+		return
+	}
+	renderVerificationPage(
+		ctx,
+		http.StatusOK,
+		"Email verified",
+		"Your email address has been verified successfully. You can return to Monierave.",
+		"",
+		false,
+	)
+}
+
+func (server *Server) writeVerificationError(
+	ctx *gin.Context,
+	status int,
+	err error,
+) {
+	if wantsJSON(ctx) {
+		setVerificationPageHeaders(ctx)
+		ctx.JSON(status, codedErrorResponse(ctx, verificationErrorCode(err), err))
+		return
+	}
+	verificationErrorPage(ctx, status, err)
+}
+
+func verificationErrorCode(err error) string {
+	switch {
+	case errors.Is(err, ErrInvalidToken):
+		return "invalid_token"
+	case errors.Is(err, ErrExpiredToken):
+		return "expired_token"
+	case errors.Is(err, ErrRegistrationExpired):
+		return "registration_expired"
+	case errors.Is(err, ErrEmailAddressUndeliverable):
+		return "email_address_undeliverable"
+	default:
+		return stableErrorCode(err)
+	}
 }
 
 func (server *Server) resendUserEmailVerification(ctx *gin.Context) {
@@ -458,6 +594,15 @@ func (server *Server) resendUserEmailVerification(ctx *gin.Context) {
 			ctx.JSON(http.StatusConflict, errorResponse(ctx, ErrEmailAlreadyVerified))
 		case errors.Is(err, db.ErrEmailVerificationCooldown):
 			ctx.JSON(http.StatusTooManyRequests, errorResponse(ctx, ErrVerificationCooldown))
+		case errors.Is(err, db.ErrEmailAddressUndeliverable):
+			ctx.JSON(
+				http.StatusConflict,
+				codedErrorResponse(
+					ctx,
+					"email_address_undeliverable",
+					ErrEmailAddressUndeliverable,
+				),
+			)
 		case errors.Is(err, pgx.ErrNoRows):
 			ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrUserNotFound))
 		default:
@@ -470,4 +615,51 @@ func (server *Server) resendUserEmailVerification(ctx *gin.Context) {
 		"message": "verification email queued",
 		"job_id":  result.EmailJob.ID,
 	})
+}
+
+const dummyPasswordHash = "$2y$10$.YHQ0/Sslk.qBO8PUSiEyuvsGeHK9Mcjl4kEu2sW88rEcAp1WMFDK"
+
+func (server *Server) acceptNewPassword(ctx *gin.Context, password string) bool {
+	if err := validateNewPassword(password); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
+		return false
+	}
+	compromised, err := server.passwordBreachChecker.IsCompromised(
+		ctx.Request.Context(),
+		password,
+	)
+	if err != nil {
+		log.Ctx(ctx.Request.Context()).Error().
+			Err(err).
+			Msg("password breach check unavailable")
+		ctx.JSON(
+			http.StatusServiceUnavailable,
+			codedErrorResponse(
+				ctx,
+				"password_breach_check_unavailable",
+				ErrPasswordCheckUnavailable,
+			),
+		)
+		return false
+	}
+	if compromised {
+		ctx.JSON(
+			http.StatusBadRequest,
+			codedErrorResponse(ctx, "password_compromised", ErrPasswordCompromised),
+		)
+		return false
+	}
+	return true
+}
+
+func boundedString(value string, maxBytes int) string {
+	value = strings.ToValidUTF8(value, "")
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := maxBytes
+	for end > 0 && !utf8.ValidString(value[:end]) {
+		end--
+	}
+	return value[:end]
 }

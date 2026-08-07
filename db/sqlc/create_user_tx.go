@@ -17,6 +17,7 @@ var (
 	ErrEmailVerificationCooldown     = errors.New("wait before requesting another verification email")
 	ErrEmailVerificationJobMismatch  = errors.New("verification token does not match the email job")
 	ErrEmailVerificationAddressStale = errors.New("verification token is for an old email address")
+	ErrEmailAddressUndeliverable     = errors.New("change the undeliverable email address before requesting another verification email")
 	ErrRegistrationDisabled          = errors.New("registration is disabled")
 )
 

@@ -12,13 +12,14 @@ func TestEmailVerificationToken(t *testing.T) {
 	maker, err := NewEmailVerificationMaker("12345678901234567890123456789012")
 	require.NoError(t, err)
 
-	value, err := maker.Create(
+	value, expiresAt, err := maker.Create(
 		"favour",
 		"favour@example.com",
 		"ceeb4e49-0b44-4944-9034-a12cbc32aaad",
 		time.Minute,
 	)
 	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(time.Minute), expiresAt, time.Second)
 
 	payload, err := maker.Verify(value)
 	require.NoError(t, err)
@@ -32,9 +33,15 @@ func TestEmailVerificationTokenRejectsExpiredAndAccessTokens(t *testing.T) {
 	maker, err := NewEmailVerificationMaker(secret)
 	require.NoError(t, err)
 
-	expired, err := maker.Create("favour", "favour@example.com", "job-id", -time.Minute)
+	expired, expiresAt, err := maker.Create(
+		"favour",
+		"favour@example.com",
+		"job-id",
+		-time.Minute,
+	)
 	require.Error(t, err)
 	require.Empty(t, expired)
+	require.True(t, expiresAt.IsZero())
 
 	accessMaker, err := NewJWTMaker(secret)
 	require.NoError(t, err)

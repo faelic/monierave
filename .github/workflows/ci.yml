@@ -66,6 +66,9 @@ jobs:
       PUBLIC_API_URL: "http://localhost:8080"
       EMAIL_VERIFICATION_DURATION: "24h"
       ENFORCE_EMAIL_VERIFICATION: "true"
+      PASSWORD_BREACH_CHECK_URL: "https://api.pwnedpasswords.com/range"
+      PASSWORD_BREACH_CHECK_TIMEOUT: "2s"
+      PASSWORD_BREACH_CACHE_TTL: "24h"
       LOG_LEVEL: "info"
 
     steps:

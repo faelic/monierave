@@ -122,6 +122,11 @@ func runAPI(config util.Config) error {
 	server, err := api.NewServer(
 		config,
 		store,
+		api.WithPasswordBreachChecker(api.NewHIBPPasswordBreachChecker(
+			config.PasswordBreachCheckURL,
+			config.PasswordBreachTimeout,
+			config.PasswordBreachCacheTTL,
+		)),
 		api.WithOperationalDependencies(
 			pool.Ping,
 			func(ctx context.Context) error {
@@ -142,6 +147,7 @@ func runAPI(config util.Config) error {
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 << 10,
 	}
 	serverErr := make(chan error, 1)
 	go func() {
