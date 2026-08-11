@@ -54,8 +54,9 @@ func (ns NullCurrency) Value() (driver.Value, error) {
 }
 
 type Account struct {
-	ID        int64              `json:"id"`
-	Owner     string             `json:"owner"`
+	ID    int64  `json:"id"`
+	Owner string `json:"owner"`
+	// Current posted balance derived from posted ledger activity. Holds and card authorizations are not modeled.
 	Balance   int64              `json:"balance"`
 	Currency  string             `json:"currency"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -65,6 +66,8 @@ type Account struct {
 	Status    string             `json:"status"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	ClosedAt  pgtype.Timestamptz `json:"closed_at"`
+	// Customer-facing routing identifier. It is not an authentication secret.
+	AccountNumber string `json:"account_number"`
 }
 
 type AccountOpeningTransaction struct {
@@ -158,6 +161,10 @@ type EmailJob struct {
 	BounceType      pgtype.Text        `json:"bounce_type"`
 	BounceSubtype   pgtype.Text        `json:"bounce_subtype"`
 	BounceMessage   pgtype.Text        `json:"bounce_message"`
+	// SHA-256 hash of the opaque email-verification token. Raw tokens are never persisted.
+	VerificationTokenHash []byte `json:"verification_token_hash"`
+	// Server-side expiration for the opaque email-verification token.
+	VerificationTokenExpiresAt pgtype.Timestamptz `json:"verification_token_expires_at"`
 }
 
 // Short-lived deduplication records for safely retrying money-moving requests.

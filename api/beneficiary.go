@@ -17,16 +17,16 @@ import (
 type beneficiaryResponse struct {
 	ID                       string    `json:"id"`
 	Nickname                 string    `json:"nickname"`
-	DestinationAccountID     string    `json:"destination_account_id"`
+	DestinationAccountNumber string    `json:"destination_account_number"`
 	Currency                 string    `json:"currency"`
-	DestinationAccountStatus string    `json:"destination_account_status"`
+	CanReceive               bool      `json:"can_receive"`
 	CreatedAt                time.Time `json:"created_at"`
 	UpdatedAt                time.Time `json:"updated_at"`
 }
 
 type createBeneficiaryRequest struct {
-	DestinationAccountID string `json:"destination_account_id" binding:"required"`
-	Nickname             string `json:"nickname" binding:"required,max=50"`
+	DestinationAccountNumber string `json:"destination_account_number" binding:"required"`
+	Nickname                 string `json:"nickname" binding:"required,max=50"`
 }
 
 type updateBeneficiaryRequest struct {
@@ -48,9 +48,9 @@ func (server *Server) createBeneficiary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	destinationPublicID, err := parsePublicID(req.DestinationAccountID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidAccountID))
+	destinationAccountNumber := strings.TrimSpace(req.DestinationAccountNumber)
+	if !accountNumberPattern.MatchString(destinationAccountNumber) {
+		writeRecipientNotFound(ctx)
 		return
 	}
 
@@ -58,14 +58,14 @@ func (server *Server) createBeneficiary(ctx *gin.Context) {
 	result, err := server.store.CreateBeneficiaryTx(
 		ctx,
 		db.CreateBeneficiaryTxParams{
-			Owner:                      authPayload.Username,
-			DestinationAccountPublicID: destinationPublicID,
-			Nickname:                   nickname,
+			Owner:                    authPayload.Username,
+			DestinationAccountNumber: destinationAccountNumber,
+			Nickname:                 nickname,
 		},
 	)
 	switch {
 	case errors.Is(err, db.ErrAccountNotFound):
-		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrAccountNotFound))
+		writeRecipientNotFound(ctx)
 		return
 	case errors.Is(err, db.ErrAccountClosed):
 		ctx.JSON(
@@ -87,9 +87,9 @@ func (server *Server) createBeneficiary(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, beneficiaryResponse{
 		ID:                       publicUUIDString(result.Beneficiary.ID),
 		Nickname:                 result.Beneficiary.Nickname,
-		DestinationAccountID:     publicUUIDString(result.DestinationAccount.PublicID),
+		DestinationAccountNumber: maskAccountNumber(result.DestinationAccount.AccountNumber),
 		Currency:                 result.DestinationAccount.Currency,
-		DestinationAccountStatus: result.DestinationAccount.Status,
+		CanReceive:               canAccountReceive(result.DestinationAccount.Status),
 		CreatedAt:                result.Beneficiary.CreatedAt.Time,
 		UpdatedAt:                result.Beneficiary.UpdatedAt.Time,
 	})
@@ -195,7 +195,7 @@ func beneficiaryResponseFromList(
 	return newBeneficiaryResponse(
 		row.ID,
 		row.Nickname,
-		row.DestinationAccountPublicID,
+		row.DestinationAccountNumber,
 		row.Currency,
 		row.DestinationAccountStatus,
 		row.CreatedAt,
@@ -209,7 +209,7 @@ func beneficiaryResponseFromUpdate(
 	return newBeneficiaryResponse(
 		row.ID,
 		row.Nickname,
-		row.DestinationAccountPublicID,
+		row.DestinationAccountNumber,
 		row.Currency,
 		row.DestinationAccountStatus,
 		row.CreatedAt,
@@ -220,7 +220,7 @@ func beneficiaryResponseFromUpdate(
 func newBeneficiaryResponse(
 	id pgtype.UUID,
 	nickname string,
-	destinationAccountID pgtype.UUID,
+	destinationAccountNumber string,
 	currency string,
 	status string,
 	createdAt pgtype.Timestamptz,
@@ -229,12 +229,17 @@ func newBeneficiaryResponse(
 	return beneficiaryResponse{
 		ID:                       publicUUIDString(id),
 		Nickname:                 nickname,
-		DestinationAccountID:     publicUUIDString(destinationAccountID),
+		DestinationAccountNumber: maskAccountNumber(destinationAccountNumber),
 		Currency:                 currency,
-		DestinationAccountStatus: status,
+		CanReceive:               canAccountReceive(status),
 		CreatedAt:                createdAt.Time,
 		UpdatedAt:                updatedAt.Time,
 	}
+}
+
+func canAccountReceive(status string) bool {
+	return status == db.FinancialAccountStatusActive ||
+		status == db.FinancialAccountStatusFrozen
 }
 
 func bindBeneficiaryID(ctx *gin.Context) (pgtype.UUID, bool) {

@@ -92,6 +92,9 @@ func TestTransferSuccessAndRejectionsCreateFinancialAudit(t *testing.T) {
 	)
 	require.NoError(t, err)
 	requireAuditEvent(t, logs, "transfer_rejected_insufficient_funds")
+	for _, entry := range logs {
+		require.NotContains(t, string(entry.Metadata), to.AccountNumber)
+	}
 
 	limit := idempotentTransferTestParams(
 		from,
@@ -152,7 +155,7 @@ func TestRecordLoginFailureCreatesSecurityAudit(t *testing.T) {
 func createAccountWithCurrency(t *testing.T, currency string) Account {
 	t.Helper()
 	user := createRandomUser(t)
-	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
+	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountTxParams{
 		Owner:    user.Username,
 		Currency: currency,
 	})

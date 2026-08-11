@@ -14,7 +14,7 @@ func TestTransferTxPerTransferLimit(t *testing.T) {
 
 	_, err := testStore.TransferTx(context.Background(), TransferTxParams{
 		FromAccountPublicID: fromAccount.PublicID,
-		ToAccountPublicID:   toAccount.PublicID,
+		ToAccountNumber:     toAccount.AccountNumber,
 		Amount:              USDPerTransferLimit + 1,
 		Currency:            "USD",
 		Username:            fromAccount.Owner,
@@ -31,7 +31,7 @@ func TestTransferTxDailyLimitBoundary(t *testing.T) {
 	for _, amount := range []int64{1_000_000, 1_000_000, 500_000} {
 		_, err := testStore.TransferTx(context.Background(), TransferTxParams{
 			FromAccountPublicID: fromAccount.PublicID,
-			ToAccountPublicID:   toAccount.PublicID,
+			ToAccountNumber:     toAccount.AccountNumber,
 			Amount:              amount,
 			Currency:            "USD",
 			Username:            fromAccount.Owner,
@@ -54,7 +54,7 @@ func TestTransferTxDailyLimitBoundary(t *testing.T) {
 
 	_, err = testStore.TransferTx(context.Background(), TransferTxParams{
 		FromAccountPublicID: fromAccount.PublicID,
-		ToAccountPublicID:   toAccount.PublicID,
+		ToAccountNumber:     toAccount.AccountNumber,
 		Amount:              1,
 		Currency:            "USD",
 		Username:            fromAccount.Owner,
@@ -74,7 +74,7 @@ func TestConcurrentTransfersCannotExceedDailyLimit(t *testing.T) {
 			defer wg.Done()
 			_, err := testStore.TransferTx(context.Background(), TransferTxParams{
 				FromAccountPublicID: fromAccount.PublicID,
-				ToAccountPublicID:   toAccount.PublicID,
+				ToAccountNumber:     toAccount.AccountNumber,
 				Amount:              1_000_000,
 				Currency:            "USD",
 				Username:            fromAccount.Owner,
@@ -112,7 +112,7 @@ func TestTransferLimitsSupportEUR(t *testing.T) {
 	fromAccount, toAccount := createLimitTestAccounts(t, "EUR", 1_500_000)
 	_, err := testStore.TransferTx(context.Background(), TransferTxParams{
 		FromAccountPublicID: fromAccount.PublicID,
-		ToAccountPublicID:   toAccount.PublicID,
+		ToAccountNumber:     toAccount.AccountNumber,
 		Amount:              EURPerTransferLimit,
 		Currency:            "EUR",
 		Username:            fromAccount.Owner,
@@ -129,7 +129,7 @@ func createLimitTestAccounts(
 	fromUser := createRandomUser(t)
 	fromAccount, err := testStore.CreateAccountTx(
 		context.Background(),
-		CreateAccountParams{Owner: fromUser.Username, Currency: currency},
+		CreateAccountTxParams{Owner: fromUser.Username, Currency: currency},
 	)
 	require.NoError(t, err)
 	deposit, err := testStore.DepositTx(context.Background(), DepositTxParams{
@@ -142,7 +142,7 @@ func createLimitTestAccounts(
 	toUser := createRandomUser(t)
 	toAccount, err := testStore.CreateAccountTx(
 		context.Background(),
-		CreateAccountParams{Owner: toUser.Username, Currency: currency},
+		CreateAccountTxParams{Owner: toUser.Username, Currency: currency},
 	)
 	require.NoError(t, err)
 	return deposit.Account, toAccount

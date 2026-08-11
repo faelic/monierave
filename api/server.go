@@ -87,15 +87,17 @@ func (server *Server) setupRouter() {
 		ctx.JSON(200, gin.H{"message": "Monierave API is running"})
 	})
 	router.GET("/livez", server.live)
-	router.GET("/readyz", server.ready)
-	router.GET("/metrics", gin.WrapH(server.metricsHandler()))
+	router.GET("/readyz", server.requireOperationsToken(), server.ready)
+	router.GET("/metrics", server.requireOperationsToken(), gin.WrapH(server.metricsHandler()))
 	router.POST(
 		"/users",
+		server.requireTrustedBrowserOrigin(),
 		server.rateLimitMiddleware("signup", 5, time.Hour, clientIPRateLimitKey),
 		server.CreateUser,
 	)
 	router.POST(
 		"/users/login",
+		server.requireTrustedBrowserOrigin(),
 		server.rateLimitMiddleware("login", 5, time.Minute, clientIPRateLimitKey),
 		server.loginUser,
 	)
@@ -114,6 +116,7 @@ func (server *Server) setupRouter() {
 		server.store,
 		server.config.DeviceCookieName,
 	))
+	authRoutes.GET("/users/me", server.getCurrentUser)
 	authRoutes.PATCH("/users/me", server.updateUser)
 	authRoutes.GET("/users/me/email-status", server.getUserEmailStatus)
 	authRoutes.POST(
@@ -143,6 +146,16 @@ func (server *Server) setupRouter() {
 	}
 	financialRoutes := router.Group("/").Use(financialMiddleware...)
 	financialRoutes.POST("/accounts", server.createAccount)
+	financialRoutes.POST(
+		"/accounts/resolve",
+		server.rateLimitMiddleware(
+			"recipient_resolve",
+			20,
+			time.Minute,
+			authenticatedRateLimitKey,
+		),
+		server.resolveRecipient,
+	)
 	financialRoutes.GET("/accounts/:public_id", server.getAccount)
 	financialRoutes.GET("/accounts", server.listAccount)
 	financialRoutes.GET("/accounts/:public_id/transactions", server.listAccountTransactions)

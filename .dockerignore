@@ -17,3 +17,9 @@ coverage.out
 main
 monierave
 tmp
+frontend/.next
+frontend/coverage
+frontend/node_modules
+frontend/playwright-report
+frontend/storybook-static
+frontend/test-results

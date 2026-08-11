@@ -124,7 +124,10 @@ func TestResendMailerSendsIdempotentFinancialNotification(t *testing.T) {
 	require.Equal(t, "financial-notification/"+jobID, sender.options.IdempotencyKey)
 	require.Contains(t, sender.params.Subject, "Transaction posted")
 	require.Contains(t, sender.params.Html, "TXN-SAFE-REFERENCE")
-	require.Contains(t, sender.params.Html, "5000 USD")
+	require.Contains(t, sender.params.Html, "USD 50.00")
+	require.Contains(t, sender.params.Text, "Amount: USD 50.00")
+	require.NotContains(t, sender.params.Html, "minor units")
+	require.NotContains(t, sender.params.Text, "minor units")
 	require.Contains(t, sender.params.Html, "outgoing")
 	require.Contains(t, sender.params.Html, "&lt;Favour&gt;")
 	require.NotContains(t, sender.params.Html, "password")
@@ -133,6 +136,13 @@ func TestResendMailerSendsIdempotentFinancialNotification(t *testing.T) {
 	require.Equal(t, jobID, sender.params.Tags[1].Value)
 	require.Equal(t, eventID, sender.params.Tags[2].Value)
 	require.Equal(t, correlationID, sender.params.Tags[3].Value)
+}
+
+func TestFormatFinancialAmount(t *testing.T) {
+	require.Equal(t, "USD 50.00", formatFinancialAmount(5_000, "USD"))
+	require.Equal(t, "EUR 12,345.67", formatFinancialAmount(1_234_567, "EUR"))
+	require.Equal(t, "-USD 0.01", formatFinancialAmount(-1, "USD"))
+	require.Empty(t, formatFinancialAmount(5_000, ""))
 }
 
 func TestResendMailerRejectsUnsupportedFinancialEvent(t *testing.T) {

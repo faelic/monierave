@@ -1,6 +1,9 @@
 package api
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
@@ -53,6 +56,20 @@ func newUserResponse(user db.User) userResponse {
 	}
 }
 
+func (server *Server) getCurrentUser(ctx *gin.Context) {
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	user, err := server.store.GetUser(ctx, authPayload.Username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrUnauthorized))
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
+		return
+	}
+	ctx.JSON(http.StatusOK, newUserResponse(user))
+}
+
 func (server *Server) CreateUser(ctx *gin.Context) {
 	var req createUserRequest
 	var pgErr *pgconn.PgError
@@ -81,7 +98,7 @@ func (server *Server) CreateUser(ctx *gin.Context) {
 	if err != nil {
 		log.Ctx(ctx.Request.Context()).Error().
 			Err(err).
-			Str("username", arg.Username).
+			Str("user_key", server.privateSecurityValue("username", arg.Username)[:16]).
 			Msg("failed to hash user password")
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
@@ -105,7 +122,7 @@ func (server *Server) CreateUser(ctx *gin.Context) {
 		}
 		log.Ctx(ctx.Request.Context()).Error().
 			Err(err).
-			Str("username", arg.Username).
+			Str("user_key", server.privateSecurityValue("username", arg.Username)[:16]).
 			Msg("failed to create user")
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
@@ -122,7 +139,6 @@ type loginUserRequest struct {
 }
 
 type loginUserResponse struct {
-	SessionID            pgtype.UUID  `json:"session_id"`
 	AccessToken          string       `json:"access_token"`
 	AccessTokenExpiresAt time.Time    `json:"access_token_expires_at"`
 	User                 userResponse `json:"user"`
@@ -203,7 +219,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 		return
 	}
 
-	session, err := server.store.CreateExclusiveSessionTx(ctx, db.CreateSessionParams{
+	_, err = server.store.CreateExclusiveSessionTx(ctx, db.CreateSessionParams{
 		ID: pgtype.UUID{
 			Bytes: sessionUUID,
 			Valid: true,
@@ -215,8 +231,8 @@ func (server *Server) loginUser(ctx *gin.Context) {
 			Valid: true,
 		},
 		DeviceTokenHash: token.Hash(deviceSecret),
-		UserAgent:       boundedString(ctx.Request.UserAgent(), 512),
-		ClientIp:        ctx.ClientIP(),
+		UserAgent:       server.privateSecurityValue("user-agent", boundedString(ctx.Request.UserAgent(), 512)),
+		ClientIp:        server.privateSecurityValue("client-ip", ctx.ClientIP()),
 		ExpiresAt: pgtype.Timestamptz{
 			Time:  refreshPayload.ExpiresAt.Time,
 			Valid: true,
@@ -225,7 +241,7 @@ func (server *Server) loginUser(ctx *gin.Context) {
 	if err != nil {
 		log.Ctx(ctx.Request.Context()).Error().
 			Err(err).
-			Str("username", normalizedUsername).
+			Str("user_key", server.privateSecurityValue("username", normalizedUsername)[:16]).
 			Msg("failed to create session")
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
 		return
@@ -234,7 +250,6 @@ func (server *Server) loginUser(ctx *gin.Context) {
 	server.setRefreshCookie(ctx, refreshToken, refreshPayload.ExpiresAt.Time)
 	server.setDeviceCookie(ctx, deviceSecret, refreshPayload.ExpiresAt.Time)
 	rsp := loginUserResponse{
-		SessionID:            session.ID,
 		AccessToken:          accessToken,
 		AccessTokenExpiresAt: accessPayload.ExpiresAt.Time,
 		User:                 newUserResponse(user),
@@ -250,14 +265,22 @@ func (server *Server) recordLoginFailure(
 ) {
 	if err := server.store.RecordLoginFailure(ctx, db.LoginFailureAuditParams{
 		Username:  username,
-		ClientIP:  ctx.ClientIP(),
-		UserAgent: boundedString(ctx.Request.UserAgent(), 512),
+		ClientIP:  server.privateSecurityValue("client-ip", ctx.ClientIP()),
+		UserAgent: server.privateSecurityValue("user-agent", boundedString(ctx.Request.UserAgent(), 512)),
 		Reason:    reason,
 	}); err != nil {
 		log.Ctx(ctx.Request.Context()).Error().
 			Err(err).
 			Msg("failed to record login failure audit")
 	}
+}
+
+func (server *Server) privateSecurityValue(label, value string) string {
+	mac := hmac.New(sha256.New, []byte(server.config.SecretKey))
+	_, _ = mac.Write([]byte(label))
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write([]byte(value))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 type updateUserRequest struct {
@@ -284,6 +307,31 @@ func (server *Server) updateUser(ctx *gin.Context) {
 	}
 
 	authPayLoad := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	currentUser, err := server.store.GetUser(ctx, authPayLoad.Username)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrUserNotFound))
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
+		return
+	}
+	normalizedEmail := currentUser.Email
+	emailChanged := false
+	if req.Email != nil {
+		normalizedEmail = strings.ToLower(strings.TrimSpace(*req.Email))
+		emailChanged = !strings.EqualFold(normalizedEmail, currentUser.Email)
+	}
+	if (req.Password != nil || emailChanged) && req.CurrentPassword == nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrCurrentPasswordRequired))
+		return
+	}
+	if req.Password != nil || emailChanged {
+		if err := util.CheckPassword(*req.CurrentPassword, currentUser.HashedPassword); err != nil {
+			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
+			return
+		}
+	}
 
 	arg := db.UpdateUserTxParams{
 		UpdateUserParams: db.UpdateUserParams{
@@ -292,23 +340,6 @@ func (server *Server) updateUser(ctx *gin.Context) {
 	}
 
 	if req.Password != nil {
-		if req.CurrentPassword == nil {
-			ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrCurrentPasswordRequired))
-			return
-		}
-		currentUser, err := server.store.GetUser(ctx, authPayLoad.Username)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrUserNotFound))
-				return
-			}
-			ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
-			return
-		}
-		if err := util.CheckPassword(*req.CurrentPassword, currentUser.HashedPassword); err != nil {
-			ctx.JSON(http.StatusUnauthorized, errorResponse(ctx, ErrInvalidCredentials))
-			return
-		}
 		if !server.acceptNewPassword(ctx, *req.Password) {
 			return
 		}
@@ -323,6 +354,8 @@ func (server *Server) updateUser(ctx *gin.Context) {
 			Valid:  true,
 		}
 		arg.RevokeSessions = true
+		arg.SessionRevocationReason = "password_changed"
+		arg.SessionAuditEvent = "sessions_revoked_password_change"
 	}
 
 	if req.FullName != nil {
@@ -334,8 +367,13 @@ func (server *Server) updateUser(ctx *gin.Context) {
 
 	if req.Email != nil {
 		arg.UpdateUserParams.Email = pgtype.Text{
-			String: strings.ToLower(strings.TrimSpace(*req.Email)),
+			String: normalizedEmail,
 			Valid:  true,
+		}
+		if emailChanged {
+			arg.RevokeSessions = true
+			arg.SessionRevocationReason = "email_changed"
+			arg.SessionAuditEvent = "sessions_revoked_email_change"
 		}
 	}
 
@@ -454,7 +492,7 @@ func (server *Server) verifyUserEmail(ctx *gin.Context) {
 		return
 	}
 
-	payload, err := server.emailVerificationMaker.Verify(req.Token)
+	job, _, err := server.verificationJobForToken(ctx, req.Token)
 	if err != nil {
 		if errors.Is(err, token.ErrExpiredToken) {
 			verificationErrorPage(ctx, http.StatusGone, ErrExpiredToken)
@@ -463,8 +501,7 @@ func (server *Server) verifyUserEmail(ctx *gin.Context) {
 		verificationErrorPage(ctx, http.StatusBadRequest, ErrInvalidToken)
 		return
 	}
-
-	if _, err := uuid.Parse(payload.JobID); err != nil {
+	if !job.VerificationTokenExpiresAt.Valid {
 		verificationErrorPage(ctx, http.StatusBadRequest, ErrInvalidToken)
 		return
 	}
@@ -479,11 +516,8 @@ func (server *Server) verifyUserEmail(ctx *gin.Context) {
 }
 
 func (server *Server) confirmUserEmail(ctx *gin.Context) {
-	if !server.originAllowed(ctx) {
-		server.writeVerificationError(ctx, http.StatusForbidden, ErrForbidden)
-		return
-	}
-
+	// The opaque token authorizes this cookie-free action. Email clients and
+	// tunnel interstitials may submit the confirmation with an opaque origin.
 	var req verifyEmailRequest
 	var err error
 	if ctx.ContentType() == "application/json" {
@@ -496,7 +530,7 @@ func (server *Server) confirmUserEmail(ctx *gin.Context) {
 		return
 	}
 
-	payload, err := server.emailVerificationMaker.Verify(req.Token)
+	job, tokenHash, err := server.verificationJobForToken(ctx, req.Token)
 	if err != nil {
 		if errors.Is(err, token.ErrExpiredToken) {
 			server.writeVerificationError(ctx, http.StatusGone, ErrExpiredToken)
@@ -506,21 +540,19 @@ func (server *Server) confirmUserEmail(ctx *gin.Context) {
 		return
 	}
 
-	jobID, err := uuid.Parse(payload.JobID)
-	if err != nil {
-		server.writeVerificationError(ctx, http.StatusBadRequest, ErrInvalidToken)
-		return
-	}
 	user, err := server.store.VerifyUserEmailTx(ctx, db.VerifyUserEmailTxParams{
-		Username: payload.Username,
-		Email:    payload.Email,
-		JobID:    pgtype.UUID{Bytes: jobID, Valid: true},
+		Username:  job.Username,
+		Email:     job.Recipient,
+		JobID:     job.ID,
+		TokenHash: tokenHash,
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, db.ErrEmailVerificationAddressStale),
 			errors.Is(err, db.ErrEmailVerificationJobMismatch):
 			server.writeVerificationError(ctx, http.StatusConflict, ErrInvalidToken)
+		case errors.Is(err, db.ErrEmailVerificationTokenExpired):
+			server.writeVerificationError(ctx, http.StatusGone, ErrExpiredToken)
 		case errors.Is(err, db.ErrEmailAddressUndeliverable):
 			server.writeVerificationError(
 				ctx,
@@ -555,6 +587,28 @@ func (server *Server) confirmUserEmail(ctx *gin.Context) {
 		"",
 		false,
 	)
+}
+
+func (server *Server) verificationJobForToken(
+	ctx *gin.Context,
+	value string,
+) (db.EmailJob, []byte, error) {
+	tokenHash, err := server.emailVerificationMaker.Hash(value)
+	if err != nil {
+		return db.EmailJob{}, nil, token.ErrInvalidToken
+	}
+	job, err := server.store.GetEmailJobByVerificationTokenHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return db.EmailJob{}, nil, token.ErrInvalidToken
+		}
+		return db.EmailJob{}, nil, err
+	}
+	if !job.VerificationTokenExpiresAt.Valid ||
+		!time.Now().Before(job.VerificationTokenExpiresAt.Time) {
+		return db.EmailJob{}, nil, token.ErrExpiredToken
+	}
+	return job, tokenHash, nil
 }
 
 func (server *Server) writeVerificationError(

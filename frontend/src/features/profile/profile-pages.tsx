@@ -57,6 +57,7 @@ export function EditProfilePage() {
   const router = useRouter();
   const [fullName, setFullName] = useState(user?.full_name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
+  const [emailCurrentPassword, setEmailCurrentPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
@@ -77,9 +78,19 @@ export function EditProfilePage() {
     setError(undefined);
     try {
       const changedEmail = address.data !== user?.email;
-      await updateUser({ email: address.data, full_name: name.data });
+      if (changedEmail && !emailCurrentPassword) {
+        setError("Enter your current password to change your email address.");
+        return;
+      }
+      await updateUser({
+        email: address.data,
+        full_name: name.data,
+        ...(changedEmail
+          ? { current_password: emailCurrentPassword }
+          : undefined),
+      });
       if (changedEmail) {
-        router.replace("/verification-needed");
+        router.replace("/signup/check-email");
       } else {
         setNotice("Profile updated.");
       }
@@ -107,9 +118,7 @@ export function EditProfilePage() {
         current_password: currentPassword,
         password: nextPassword.data,
       });
-      setCurrentPassword("");
-      setPassword("");
-      setNotice("Password updated.");
+      router.replace("/login");
     } catch (cause) {
       setError(authErrorMessage(cause, "signup"));
     } finally {
@@ -162,6 +171,22 @@ export function EditProfilePage() {
               value={email}
             />
           </Field>
+          {email.trim().toLowerCase() !== user?.email ? (
+            <Field
+              hint="For your security, changing your email signs you out on every device."
+              label="Current password"
+              name="profile-current-password"
+            >
+              <PasswordInput
+                autoComplete="current-password"
+                id="profile-current-password"
+                onChange={(event) =>
+                  setEmailCurrentPassword(event.target.value)
+                }
+                value={emailCurrentPassword}
+              />
+            </Field>
+          ) : null}
           <Button
             className="sm:justify-self-start"
             loading={savingProfile}

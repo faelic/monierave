@@ -46,20 +46,14 @@ export function SignupForm() {
   }
 
   return (
-    <div className="auth-form-enter">
-      <p className="text-evergreen-700 text-sm font-bold tracking-[0.16em] uppercase">
-        Start with clarity
-      </p>
-      <h1 className="mt-3 font-serif text-4xl leading-tight font-semibold tracking-[-0.035em] sm:text-5xl">
-        Create your Monierave profile.
-      </h1>
-      <p className="text-ink-600 mt-4 text-base leading-7">
-        Registration takes a minute. You’ll verify your email before banking
-        features become available.
+    <div className="auth-form auth-form-enter">
+      <h1 className="auth-form-heading">Create your Monierave account</h1>
+      <p className="auth-form-switch mt-3 text-base">
+        Already registered? <Link href="/login">Sign in.</Link>
       </p>
 
       <form
-        className="mt-8 grid gap-5"
+        className="auth-signup-form mt-8 grid gap-5"
         noValidate
         onSubmit={handleSubmit(onSubmit)}
       >
@@ -77,12 +71,12 @@ export function SignupForm() {
             })}
             aria-invalid={Boolean(errors.full_name)}
             id="full_name"
+            placeholder="Enter your full name"
             {...register("full_name")}
           />
         </Field>
         <Field
           error={errors.username?.message}
-          hint="3–32 letters and numbers."
           label="Username"
           name="username"
         >
@@ -91,11 +85,11 @@ export function SignupForm() {
             autoComplete="username"
             aria-describedby={fieldDescriptionIDs({
               error: errors.username?.message,
-              hint: "3–32 letters and numbers.",
               name: "username",
             })}
             aria-invalid={Boolean(errors.username)}
             id="username"
+            placeholder="Choose a username"
             {...register("username")}
           />
         </Field>
@@ -110,13 +104,14 @@ export function SignupForm() {
             aria-invalid={Boolean(errors.email)}
             id="email"
             inputMode="email"
+            placeholder="you@example.com"
             type="email"
             {...register("email")}
           />
         </Field>
         <Field
           error={errors.password?.message}
-          hint="Use 8–72 bytes. Known breached passwords are rejected."
+          hint="At least 8 characters."
           label="Password"
           name="password"
         >
@@ -124,25 +119,23 @@ export function SignupForm() {
             autoComplete="new-password"
             aria-describedby={fieldDescriptionIDs({
               error: errors.password?.message,
-              hint: "Use 8–72 bytes. Known breached passwords are rejected.",
+              hint: "At least 8 characters.",
               name: "password",
             })}
             aria-invalid={Boolean(errors.password)}
             id="password"
+            placeholder="Create a secure password"
             {...register("password")}
           />
         </Field>
-        <Button className="mt-1 w-full" loading={isSubmitting} type="submit">
-          Create registration
+        <Button
+          className="auth-submit mt-1 w-full"
+          loading={isSubmitting}
+          type="submit"
+        >
+          Create profile
         </Button>
       </form>
-
-      <p className="text-ink-600 mt-6 text-center text-sm">
-        Already registered?{" "}
-        <Link className="text-evergreen-800 font-semibold" href="/login">
-          Sign in
-        </Link>
-      </p>
     </div>
   );
 }

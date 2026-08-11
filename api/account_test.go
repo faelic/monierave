@@ -29,7 +29,7 @@ func TestCreateAccountAPI(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := mockdb.NewMockStore(ctrl)
 	store.EXPECT().
-		CreateAccountTx(gomock.Any(), db.CreateAccountParams{
+		CreateAccountTx(gomock.Any(), db.CreateAccountTxParams{
 			Owner:    account.Owner,
 			Currency: account.Currency,
 		}).
@@ -76,6 +76,195 @@ func TestCreateAccountRejectsClientSuppliedBalance(t *testing.T) {
 	server.router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
+}
+
+func TestCreateAccountRejectsClientSuppliedAccountNumber(t *testing.T) {
+	store := mockdb.NewMockStore(gomock.NewController(t))
+	server := newTestServer(t, store)
+	body := bytes.NewBufferString(`{"currency":"USD","account_number":"4839201756"}`)
+	request := httptest.NewRequest(http.MethodPost, "/accounts", body)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		util.RandomOwner(),
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+}
+
+func TestResolveRecipientAPI(t *testing.T) {
+	accountNumber := "4839201756"
+	resolved := db.ResolveReceivableAccountRow{
+		AccountNumber: accountNumber,
+		AccountName:   "Favour Útútú",
+		Currency:      "USD",
+		Status:        db.FinancialAccountStatusFrozen,
+	}
+
+	testCases := []struct {
+		name          string
+		requestNumber string
+		result        db.ResolveReceivableAccountRow
+		storeError    error
+		statusCode    int
+	}{
+		{
+			name:          "FrozenRecipientCanReceive",
+			requestNumber: accountNumber,
+			result:        resolved,
+			statusCode:    http.StatusOK,
+		},
+		{
+			name:          "MissingRecipient",
+			requestNumber: accountNumber,
+			storeError:    pgx.ErrNoRows,
+			statusCode:    http.StatusNotFound,
+		},
+		{
+			name:          "MalformedRecipient",
+			requestNumber: "not-an-account",
+			statusCode:    http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := mockdb.NewMockStore(gomock.NewController(t))
+			if accountNumberPattern.MatchString(tc.requestNumber) {
+				store.EXPECT().
+					ResolveReceivableAccount(gomock.Any(), tc.requestNumber).
+					Return(tc.result, tc.storeError)
+			}
+			server := newTestServer(t, store)
+			body, err := json.Marshal(resolveRecipientRequest{
+				AccountNumber: tc.requestNumber,
+			})
+			require.NoError(t, err)
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/accounts/resolve",
+				bytes.NewReader(body),
+			)
+			addAuthorization(
+				t,
+				request,
+				server.tokenMaker,
+				authorizationTypeBearer,
+				util.RandomOwner(),
+				time.Minute,
+			)
+			recorder := httptest.NewRecorder()
+
+			server.router.ServeHTTP(recorder, request)
+
+			require.Equal(t, tc.statusCode, recorder.Code)
+			if tc.statusCode == http.StatusOK {
+				var response recipientResolutionResponse
+				require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+				require.Equal(t, "******1756", response.AccountNumber)
+				require.Equal(t, "F***** Ú****", response.AccountName)
+				require.Equal(t, "USD", response.Currency)
+				require.True(t, response.CanReceive)
+				require.NotContains(t, recorder.Body.String(), accountNumber)
+				require.NotContains(t, recorder.Body.String(), `"balance"`)
+				require.NotContains(t, recorder.Body.String(), `"email"`)
+				require.NotContains(t, recorder.Body.String(), `"username"`)
+				require.NotContains(t, recorder.Body.String(), `"id"`)
+			} else {
+				var response map[string]any
+				require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+				require.Equal(t, "recipient_not_found", response["code"])
+			}
+		})
+	}
+}
+
+func TestRecipientMasking(t *testing.T) {
+	require.Equal(t, "******1756", maskAccountNumber("4839201756"))
+	require.Equal(t, "F*****", maskName("Favour"))
+	require.Equal(t, "F***** U****", maskName("  Favour\tUtutu  "))
+	require.Equal(t, "李* É*****", maskName("李雷 Élodie"))
+	require.Equal(t, "A", maskName("A"))
+}
+
+func TestResolveRecipientRateLimit(t *testing.T) {
+	limiter := &stubRateLimiter{retryAfter: time.Minute}
+	server := newOperationalTestServer(t, limiter, nil, nil)
+	username := util.RandomOwner()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/accounts/resolve",
+		strings.NewReader(`{"account_number":"4839201756"}`),
+	)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		username,
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Equal(t, "recipient_resolve:"+username, limiter.key)
+	require.Equal(t, int64(20), limiter.limit)
+	require.Equal(t, time.Minute, limiter.window)
+}
+
+func TestResolveRecipientRequiresVerifiedUser(t *testing.T) {
+	username := util.RandomOwner()
+	store := mockdb.NewMockStore(gomock.NewController(t))
+	store.EXPECT().
+		GetUser(gomock.Any(), username).
+		Return(db.User{
+			Username:      username,
+			AccountStatus: db.AccountStatusPending,
+			RegistrationExpiresAt: pgtype.Timestamptz{
+				Time:  time.Now().Add(time.Hour),
+				Valid: true,
+			},
+		}, nil)
+	config := util.Config{
+		SecretKey:                util.RandomString(32),
+		AccessTokenDuration:      time.Minute,
+		RefreshTokenDuration:     time.Minute,
+		DeviceCookieName:         "monierave_device",
+		EnforceEmailVerification: true,
+	}
+	server, err := NewServer(config, testSessionStore{Store: store})
+	require.NoError(t, err)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/accounts/resolve",
+		strings.NewReader(`{"account_number":"4839201756"}`),
+	)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		username,
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Contains(
+		t,
+		recorder.Body.String(),
+		"email_verification_is_required_for_financial_features",
+	)
 }
 
 func TestGetAccountAPIUsesOwnedPublicID(t *testing.T) {
@@ -236,14 +425,15 @@ func randomAccount() db.Account {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	publicID := uuid.New()
 	return db.Account{
-		ID:        int64(rand.IntN(1000) + 1),
-		PublicID:  pgtype.UUID{Bytes: publicID, Valid: true},
-		Owner:     util.RandomOwner(),
-		Balance:   util.RandomMoney(),
-		Currency:  util.RandomCurrency(),
-		Status:    db.FinancialAccountStatusActive,
-		CreatedAt: timestamp(now),
-		UpdatedAt: timestamp(now),
+		ID:            int64(rand.IntN(1000) + 1),
+		PublicID:      pgtype.UUID{Bytes: publicID, Valid: true},
+		AccountNumber: fmt.Sprintf("%010d", rand.Int64N(10_000_000_000)),
+		Owner:         util.RandomOwner(),
+		Balance:       util.RandomMoney(),
+		Currency:      util.RandomCurrency(),
+		Status:        db.FinancialAccountStatusActive,
+		CreatedAt:     timestamp(now),
+		UpdatedAt:     timestamp(now),
 	}
 }
 
@@ -260,6 +450,7 @@ func requireAccountResponse(t *testing.T, body *bytes.Buffer, account db.Account
 	var response accountResponse
 	require.NoError(t, json.Unmarshal(body.Bytes(), &response))
 	require.Equal(t, publicUUID(account.PublicID), response.ID)
+	require.Equal(t, account.AccountNumber, response.AccountNumber)
 	require.Equal(t, account.Balance, response.Balance)
 	require.Equal(t, account.Currency, response.Currency)
 	require.Equal(t, account.Status, response.Status)

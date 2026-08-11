@@ -34,7 +34,6 @@ describe("auth API session handling", () => {
         HttpResponse.json({
           access_token: "login-token",
           access_token_expires_at: "2099-01-01T00:00:00Z",
-          session_id: "private-session-id",
           user,
         }),
       ),
@@ -85,7 +84,6 @@ describe("auth API session handling", () => {
         HttpResponse.json({
           access_token: "old-token",
           access_token_expires_at: "2099-01-01T00:00:00Z",
-          session_id: "private-session-id",
           user,
         }),
       ),
@@ -125,7 +123,6 @@ describe("auth API session handling", () => {
         HttpResponse.json({
           access_token: "login-token",
           access_token_expires_at: "2099-01-01T00:00:00Z",
-          session_id: "private-session-id",
           user,
         }),
       ),
@@ -157,7 +154,6 @@ describe("auth API session handling", () => {
         HttpResponse.json({
           access_token: "old-token",
           access_token_expires_at: "2099-01-01T00:00:00Z",
-          session_id: "private-session-id",
           user,
         }),
       ),

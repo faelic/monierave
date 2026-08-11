@@ -1,0 +1,672 @@
+.section {
+  --journey-accent: var(--marketing-accent);
+  --journey-line: rgb(236 239 242 / 28%);
+  position: relative;
+  scroll-margin-top: 5rem;
+  overflow: hidden;
+  border-top: 1px solid var(--marketing-border);
+  color: var(--marketing-text-primary);
+  background:
+    radial-gradient(
+      ellipse 44% 54% at 51% 42%,
+      rgb(255 255 255 / 2%),
+      transparent 72%
+    ),
+    var(--marketing-canvas);
+}
+
+.section::before {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 2.4%) 50%,
+    transparent
+  );
+  pointer-events: none;
+  content: "";
+}
+
+.inner {
+  position: relative;
+  width: min(100%, 90rem);
+  margin-inline: auto;
+  padding: clamp(5rem, 9vw, 8rem) clamp(1.25rem, 5vw, 4.625rem);
+}
+
+.headingBlock {
+  max-width: 46rem;
+}
+
+.eyebrow {
+  margin: 0;
+  color: rgb(200 183 125 / 78%);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.heading {
+  max-width: 13ch;
+  margin: 1rem 0 0;
+  font-family: var(--font-editorial);
+  font-size: clamp(2.75rem, 5vw, 4.75rem);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+}
+
+.heading span {
+  display: inline;
+  color: rgb(246 247 248 / 72%);
+}
+
+.introduction {
+  max-width: 38rem;
+  margin: 1.5rem 0 0;
+  color: var(--marketing-text-secondary);
+  font-size: clamp(1rem, 1.4vw, 1.125rem);
+  line-height: 1.6;
+}
+
+.stepsWrap {
+  position: relative;
+  margin: clamp(4rem, 7vw, 6.5rem) 0 0;
+}
+
+.steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+}
+
+.progressTrack {
+  position: absolute;
+  z-index: 0;
+  top: 4rem;
+  right: 12%;
+  left: 12%;
+  height: 1px;
+  overflow: hidden;
+  background: rgb(236 239 242 / 14%);
+}
+
+.progressSignal {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--journey-accent) 12%,
+    rgb(236 239 242 / 58%) 82%,
+    transparent
+  );
+}
+
+[data-journey-active="true"] .progressSignal {
+  animation: journey-progress 1.65s 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.step {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: 0 clamp(1.25rem, 3.2vw, 3rem);
+  opacity: 0;
+}
+
+.step:first-of-type {
+  padding-left: 0;
+}
+
+.step:last-of-type {
+  padding-right: 0;
+}
+
+.step + .step {
+  border-left: 1px solid rgb(236 239 242 / 12%);
+}
+
+[data-journey-active="true"] .step {
+  animation: step-enter 700ms calc(120ms + var(--step-index) * 140ms)
+    cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.motionFrame {
+  position: relative;
+  display: grid;
+  width: 8rem;
+  height: 8rem;
+  place-items: center;
+  margin-inline: auto;
+  border: 1px solid rgb(236 239 242 / 10%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgb(200 183 125 / 7%), transparent 68%),
+    rgb(255 255 255 / 1.5%);
+  box-shadow: 0 1.75rem 4rem rgb(0 0 0 / 22%);
+}
+
+.motionFrame::after {
+  position: absolute;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--journey-accent);
+  box-shadow: 0 0 1rem rgb(200 183 125 / 38%);
+  content: "";
+}
+
+.motionSvg {
+  width: 6.5rem;
+  height: 6.5rem;
+  overflow: visible;
+  fill: none;
+  stroke: rgb(236 239 242 / 68%);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+}
+
+.stepCopy {
+  margin-top: 2rem;
+}
+
+.stepNumber {
+  margin: 0;
+  color: var(--marketing-text-muted);
+  font-family: var(--font-hero-monospace);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+.stepTitle {
+  margin: 1rem 0 0;
+  color: #f6f7f8;
+  font-size: clamp(1.25rem, 1.75vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.stepDescription {
+  max-width: 24rem;
+  margin: 0.75rem 0 0;
+  color: var(--marketing-text-secondary);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.accountCorners,
+.accountFrame,
+.accountIdentity,
+.accountScan,
+.scannerRings,
+.scannerSweep,
+.scannerCore,
+.verificationCheck,
+.transferAccounts,
+.transferRoute,
+.transferReturn,
+.transferCheck {
+  vector-effect: non-scaling-stroke;
+}
+
+.accountCorners {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+}
+
+.accountFrame,
+.accountIdentity,
+.verificationCheck,
+.transferRoute,
+.transferReturn,
+.transferCheck {
+  stroke-dasharray: 240;
+  stroke-dashoffset: 240;
+}
+
+.accountNode,
+.scannerSweep circle,
+.transferValue {
+  fill: var(--journey-accent);
+  stroke: none;
+}
+
+.accountNode {
+  offset-path: path("M 93 29 H 27 V 91 H 93 V 29");
+  offset-distance: 0%;
+  opacity: 0;
+  filter: drop-shadow(0 0 5px rgb(200 183 125 / 44%));
+}
+
+[data-journey-active="true"] .accountCorners {
+  animation: account-assemble 780ms 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+[data-journey-active="true"] .accountFrame,
+[data-journey-active="true"] .accountIdentity {
+  animation: line-draw 900ms 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+[data-journey-active="true"] .accountNode {
+  animation: account-node-travel 5.8s 1.15s linear infinite;
+}
+
+.accountScan {
+  stroke: var(--journey-accent);
+  stroke-width: 1;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px rgb(200 183 125 / 36%));
+}
+
+[data-journey-active="true"] .accountScan {
+  animation: account-scan 4.6s 1.05s ease-in-out infinite;
+}
+
+.scannerRings {
+  transform-origin: 60px 60px;
+  opacity: 0;
+}
+
+.scannerSweep {
+  transform-origin: 60px 60px;
+  opacity: 0;
+}
+
+.scannerCore {
+  stroke: rgb(200 183 125 / 22%);
+}
+
+.verificationCheck {
+  stroke: var(--journey-accent);
+  stroke-width: 1.8;
+}
+
+[data-journey-active="true"] .scannerRings {
+  animation: scanner-rings-live 5.6s 310ms ease-in-out infinite;
+}
+
+[data-journey-active="true"] .scannerSweep {
+  animation: scanner-rotate 6.4s 520ms linear infinite;
+}
+
+[data-journey-active="true"] .verificationCheck {
+  animation:
+    line-draw 560ms 1.05s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    verified-breathe 6s 1.8s ease-in-out infinite;
+}
+
+.transferAccounts {
+  opacity: 0;
+}
+
+.transferRoute,
+.transferReturn {
+  stroke: rgb(236 239 242 / 34%);
+}
+
+.transferValue {
+  offset-path: path("M 42 63 C 53 34 68 34 78 63");
+  opacity: 0;
+  filter: drop-shadow(0 0 5px rgb(200 183 125 / 44%));
+}
+
+.transferCheck {
+  stroke: var(--journey-accent);
+  stroke-width: 1.7;
+}
+
+[data-journey-active="true"] .transferAccounts {
+  animation: scanner-reveal 650ms 520ms ease-out forwards;
+}
+
+[data-journey-active="true"] .transferRoute,
+[data-journey-active="true"] .transferReturn {
+  animation: line-draw 800ms 640ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+[data-journey-active="true"] .transferValue {
+  animation: transfer-travel 5.8s 1.2s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+[data-journey-active="true"] .transferCheck {
+  animation: line-draw 450ms 1.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes journey-progress {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes step-enter {
+  from {
+    transform: translateY(1.5rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes account-assemble {
+  from {
+    transform: scale(1.28) rotate(-8deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes account-scan {
+  0%,
+  12%,
+  100% {
+    transform: translateY(-0.5rem);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.9;
+  }
+
+  68% {
+    transform: translateY(2rem);
+    opacity: 0.9;
+  }
+
+  78% {
+    transform: translateY(2rem);
+    opacity: 0;
+  }
+}
+
+@keyframes account-node-travel {
+  0%,
+  10% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+
+  18%,
+  78% {
+    opacity: 1;
+  }
+
+  88%,
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes line-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes scanner-reveal {
+  from {
+    transform: scale(0.88);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes scanner-rotate {
+  from {
+    transform: rotate(0deg);
+    opacity: 0.88;
+  }
+
+  to {
+    transform: rotate(360deg);
+    opacity: 0.88;
+  }
+}
+
+@keyframes scanner-rings-live {
+  0% {
+    transform: scale(0.88);
+    opacity: 0;
+  }
+
+  14%,
+  82% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  48% {
+    transform: scale(1.035);
+    opacity: 0.72;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 0.92;
+  }
+}
+
+@keyframes node-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes verified-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes transfer-travel {
+  0%,
+  12% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  52% {
+    offset-distance: 100%;
+    opacity: 1;
+  }
+
+  58%,
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .inner {
+    padding-block: 5rem;
+  }
+
+  .heading {
+    max-width: 11ch;
+  }
+
+  .steps {
+    gap: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .progressTrack {
+    top: 4rem;
+    bottom: 4rem;
+    left: 4rem;
+    width: 1px;
+    height: auto;
+  }
+
+  .progressSignal {
+    width: 100%;
+    height: 100%;
+    transform: scaleY(0);
+    transform-origin: top;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      var(--journey-accent) 12%,
+      rgb(236 239 242 / 58%) 82%,
+      transparent
+    );
+  }
+
+  [data-journey-active="true"] .progressSignal {
+    animation-name: journey-progress-mobile;
+  }
+
+  .step,
+  .step:first-of-type,
+  .step:last-of-type {
+    display: grid;
+    min-height: 14rem;
+    align-items: center;
+    padding: 2rem 0;
+    grid-template-columns: 8rem minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+
+  .step + .step {
+    border-top: 1px solid rgb(236 239 242 / 10%);
+    border-left: 0;
+  }
+
+  .motionFrame {
+    margin: 0;
+  }
+
+  .stepCopy {
+    margin-top: 0;
+  }
+}
+
+@keyframes journey-progress-mobile {
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@media (max-width: 30rem) {
+  .step,
+  .step:first-of-type,
+  .step:last-of-type {
+    min-height: 13rem;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .motionFrame {
+    width: 6.5rem;
+    height: 6.5rem;
+  }
+
+  .motionSvg {
+    width: 5.25rem;
+    height: 5.25rem;
+  }
+
+  .progressTrack {
+    left: 3.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step,
+  .accountCorners,
+  .scannerRings,
+  .scannerSweep,
+  .transferAccounts {
+    transform: none;
+    opacity: 1;
+    animation: none !important;
+  }
+
+  .progressSignal {
+    transform: scaleX(1);
+    animation: none !important;
+  }
+
+  .accountFrame,
+  .accountIdentity,
+  .verificationCheck,
+  .transferRoute,
+  .transferReturn,
+  .transferCheck {
+    stroke-dashoffset: 0;
+    animation: none !important;
+  }
+
+  .accountScan {
+    opacity: 0;
+    animation: none !important;
+  }
+
+  .accountNode {
+    offset-distance: 0%;
+    opacity: 1;
+    animation: none !important;
+  }
+
+  .transferValue {
+    offset-distance: 58%;
+    opacity: 1;
+    animation: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .section {
+    forced-color-adjust: none;
+    color: CanvasText;
+    background: Canvas;
+  }
+
+  .motionSvg,
+  .verificationCheck,
+  .transferCheck {
+    stroke: CanvasText;
+  }
+
+  .accountNode,
+  .scannerSweep circle,
+  .transferValue {
+    fill: CanvasText;
+  }
+}

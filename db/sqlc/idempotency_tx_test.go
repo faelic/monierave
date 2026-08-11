@@ -206,7 +206,7 @@ func idempotentTransferTestParams(
 	return IdempotentTransferTxParams{
 		TransferTxParams: TransferTxParams{
 			FromAccountPublicID: fromAccount.PublicID,
-			ToAccountPublicID:   toAccount.PublicID,
+			ToAccountNumber:     toAccount.AccountNumber,
 			Amount:              amount,
 			Currency:            fromAccount.Currency,
 			Username:            fromAccount.Owner,

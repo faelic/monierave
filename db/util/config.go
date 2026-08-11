@@ -13,6 +13,7 @@ import (
 )
 
 type Config struct {
+	Environment               string        `mapstructure:"APP_ENV"`
 	DBSource                  string        `mapstructure:"DB_SOURCE"`
 	DBTestSource              string        `mapstructure:"DB_TEST_SOURCE"`
 	ServerAddress             string        `mapstructure:"SERVER_ADDRESS"`
@@ -41,12 +42,14 @@ type Config struct {
 	PasswordBreachCheckURL    string        `mapstructure:"PASSWORD_BREACH_CHECK_URL"`
 	PasswordBreachTimeout     time.Duration `mapstructure:"PASSWORD_BREACH_CHECK_TIMEOUT"`
 	PasswordBreachCacheTTL    time.Duration `mapstructure:"PASSWORD_BREACH_CACHE_TTL"`
+	OperationsToken           string        `mapstructure:"OPERATIONS_TOKEN"`
 }
 
 func LoadConfig(path string) (config Config, err error) {
 	viper.SetConfigFile(filepath.Join(path, "app.env"))
 	viper.AutomaticEnv()
 
+	_ = viper.BindEnv("APP_ENV")
 	_ = viper.BindEnv("DB_SOURCE")
 	_ = viper.BindEnv("DB_TEST_SOURCE")
 	_ = viper.BindEnv("SERVER_ADDRESS")
@@ -75,7 +78,9 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("PASSWORD_BREACH_CHECK_URL")
 	_ = viper.BindEnv("PASSWORD_BREACH_CHECK_TIMEOUT")
 	_ = viper.BindEnv("PASSWORD_BREACH_CACHE_TTL")
+	_ = viper.BindEnv("OPERATIONS_TOKEN")
 
+	viper.SetDefault("APP_ENV", "development")
 	viper.SetDefault("MAILER_PROVIDER", "log")
 	viper.SetDefault("REFRESH_COOKIE_NAME", "monierave_refresh")
 	viper.SetDefault("DEVICE_COOKIE_NAME", "monierave_device")
@@ -121,6 +126,9 @@ func ValidateAPIConfig(config Config) error {
 	}
 	if config.SecretKey == "" {
 		return fmt.Errorf("SECRET_KEY is required")
+	}
+	if len(config.SecretKey) < 32 {
+		return fmt.Errorf("SECRET_KEY must contain at least 32 characters")
 	}
 	if config.AccessTokenDuration <= 0 {
 		return fmt.Errorf("ACCESS_TOKEN_DURATION must be greater than 0")
@@ -170,6 +178,51 @@ func ValidateAPIConfig(config Config) error {
 	if config.PasswordBreachCacheTTL <= 0 {
 		return fmt.Errorf("PASSWORD_BREACH_CACHE_TTL must be greater than 0")
 	}
+	if strings.EqualFold(strings.TrimSpace(config.Environment), "production") &&
+		len(strings.TrimSpace(config.ResendWebhookSecret)) < 32 {
+		return fmt.Errorf("RESEND_WEBHOOK_SECRET must contain at least 32 characters in production")
+	}
+	if err := validateProductionSecurity(config); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateProductionSecurity(config Config) error {
+	if !strings.EqualFold(strings.TrimSpace(config.Environment), "production") {
+		return nil
+	}
+	if !config.RefreshCookieSecure {
+		return fmt.Errorf("REFRESH_COOKIE_SECURE must be true in production")
+	}
+	if !config.EnforceEmailVerification {
+		return fmt.Errorf("ENFORCE_EMAIL_VERIFICATION must be true in production")
+	}
+	if len(config.OperationsToken) < 32 {
+		return fmt.Errorf("OPERATIONS_TOKEN must contain at least 32 characters in production")
+	}
+	if strings.TrimSpace(config.AllowedOrigins) == "" {
+		return fmt.Errorf("ALLOWED_ORIGINS must contain at least one HTTPS origin in production")
+	}
+	for _, origin := range strings.Split(config.AllowedOrigins, ",") {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Scheme != "https" {
+			return fmt.Errorf("ALLOWED_ORIGINS must use HTTPS in production")
+		}
+	}
+	databaseURL, err := url.Parse(config.DBSource)
+	if err != nil {
+		return fmt.Errorf("DB_SOURCE must be a valid URL in production")
+	}
+	switch strings.ToLower(databaseURL.Query().Get("sslmode")) {
+	case "require", "verify-ca", "verify-full":
+	default:
+		return fmt.Errorf("DB_SOURCE must require TLS in production")
+	}
 	return nil
 }
 
@@ -189,7 +242,7 @@ func ValidateRelayConfig(config Config) error {
 	if config.RelayClaimLease <= 0 {
 		return fmt.Errorf("RELAY_CLAIM_LEASE must be greater than 0")
 	}
-	return nil
+	return validateProductionSecurity(config)
 }
 
 func ValidateWorkerConfig(config Config) error {
@@ -220,6 +273,15 @@ func ValidateWorkerConfig(config Config) error {
 	if config.PublicAPIURL == "" {
 		return fmt.Errorf("PUBLIC_API_URL is required")
 	}
+	if strings.EqualFold(config.Environment, "production") {
+		publicURL, err := url.Parse(config.PublicAPIURL)
+		if err != nil || publicURL.Scheme != "https" {
+			return fmt.Errorf("PUBLIC_API_URL must use HTTPS in production")
+		}
+		if config.MailerProvider != "resend" {
+			return fmt.Errorf("MAILER_PROVIDER must be resend in production")
+		}
+	}
 	publicURL, err := url.Parse(config.PublicAPIURL)
 	if err != nil || publicURL.Host == "" ||
 		(publicURL.Scheme != "http" && publicURL.Scheme != "https") {
@@ -228,5 +290,5 @@ func ValidateWorkerConfig(config Config) error {
 	if config.EmailVerificationDuration <= 0 {
 		return fmt.Errorf("EMAIL_VERIFICATION_DURATION must be greater than 0")
 	}
-	return nil
+	return validateProductionSecurity(config)
 }

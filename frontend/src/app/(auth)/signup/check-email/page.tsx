@@ -10,12 +10,12 @@ export const metadata: Metadata = {
 
 export default function CheckEmailPage() {
   return (
-    <section className="auth-form-enter text-center">
+    <section className="auth-form auth-form-enter text-center">
       <div className="bg-jade-100 text-evergreen-800 mx-auto grid size-16 place-items-center rounded-full">
         <MailCheck aria-hidden="true" className="size-8" />
       </div>
       <p className="text-evergreen-700 mt-6 text-sm font-bold tracking-[0.16em] uppercase">
-        Registration created
+        Verification required
       </p>
       <h1 className="mt-3 font-serif text-4xl leading-tight font-semibold tracking-[-0.035em]">
         Check your email.
@@ -28,7 +28,7 @@ export default function CheckEmailPage() {
         Verification confirms your address, but it does not sign you in. After
         confirming, return here and sign in with your username and password.
       </div>
-      <Button asChild className="mt-7 w-full">
+      <Button asChild className="auth-submit mt-7 w-full">
         <Link href="/login">Continue to sign in</Link>
       </Button>
       <Link

@@ -100,8 +100,9 @@ func TestReconcileAccountScopeIgnoresUnrelatedDrift(t *testing.T) {
 func TestReconcileDetectsMissingCustomerLedgerAccount(t *testing.T) {
 	user := createRandomUser(t)
 	account, err := testQueries.CreateAccount(context.Background(), CreateAccountParams{
-		Owner:    user.Username,
-		Currency: util.RandomCurrency(),
+		Owner:         user.Username,
+		Currency:      util.RandomCurrency(),
+		AccountNumber: "9999999999",
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {

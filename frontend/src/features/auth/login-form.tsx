@@ -65,23 +65,21 @@ export function LoginForm() {
   }
 
   return (
-    <div className="auth-form-enter">
-      <p className="text-evergreen-700 text-sm font-bold tracking-[0.16em] uppercase">
-        Welcome back
+    <div className="auth-form auth-form-enter">
+      <h1 className="auth-form-heading">Welcome back</h1>
+      <p className="auth-form-switch mt-3 text-base">
+        New to Monierave? <Link href="/signup">Create an account.</Link>
       </p>
-      <h1 className="mt-3 font-serif text-4xl leading-tight font-semibold tracking-[-0.035em] sm:text-5xl">
-        Sign in securely.
-      </h1>
-      <p className="text-ink-600 mt-4 text-base leading-7">
-        A successful sign-in ends older sessions and starts a fresh session for
-        this device.
+      <p className="sr-only">
+        Access your accounts, recent activity, and secure transfer tools from
+        one place.
       </p>
 
       {status === "unavailable" ? (
-        <div className="border-warning-700 mt-6 rounded-sm border-l-4 bg-[#fff8e8] px-4 py-3 text-sm">
+        <div className="border-warning-700 mt-6 rounded-sm border-l-4 bg-[#2a2113] px-4 py-3 text-sm text-white/80">
           We could not check your existing session. You can still sign in, or{" "}
           <button
-            className="text-evergreen-800 min-h-11 font-semibold underline"
+            className="min-h-11 font-semibold text-white underline"
             onClick={() => void restore()}
             type="button"
           >
@@ -111,6 +109,7 @@ export function LoginForm() {
             })}
             aria-invalid={Boolean(errors.username)}
             id="username"
+            placeholder="Enter your username"
             {...register("username")}
           />
         </Field>
@@ -127,19 +126,21 @@ export function LoginForm() {
             })}
             aria-invalid={Boolean(errors.password)}
             id="password"
+            placeholder="Enter your password"
             {...register("password")}
           />
         </Field>
-        <Button className="mt-1 w-full" loading={isSubmitting} type="submit">
+        <Button
+          className="auth-submit mt-1 w-full"
+          loading={isSubmitting}
+          type="submit"
+        >
           Sign in
         </Button>
       </form>
 
-      <p className="text-ink-600 mt-6 text-center text-sm">
-        New to Monierave?{" "}
-        <Link className="text-evergreen-800 font-semibold" href="/signup">
-          Create a registration
-        </Link>
+      <p className="auth-form-note mt-6 text-sm">
+        Protected by Monierave&apos;s single-device session controls.
       </p>
     </div>
   );
@@ -147,18 +148,22 @@ export function LoginForm() {
 
 function destinationFor(user: User, returnTo: string | null) {
   if (user.account_status !== "active" || !user.email_verified_at) {
-    return "/verification-needed";
+    return "/app";
   }
   return returnTo ?? "/app";
 }
 
 function SessionCheck() {
   return (
-    <div aria-live="polite" className="grid gap-5" role="status">
-      <div className="bg-paper-100 h-4 w-28 animate-pulse rounded motion-reduce:animate-none" />
-      <div className="bg-paper-100 h-14 w-4/5 animate-pulse rounded motion-reduce:animate-none" />
-      <div className="bg-paper-100 h-5 w-full animate-pulse rounded motion-reduce:animate-none" />
-      <p className="text-ink-600 text-sm">Checking your secure session…</p>
+    <div
+      aria-live="polite"
+      className="grid gap-5 text-center text-white/60"
+      role="status"
+    >
+      <div className="mx-auto h-4 w-28 animate-pulse rounded bg-white/8 motion-reduce:animate-none" />
+      <div className="mx-auto h-14 w-4/5 animate-pulse rounded bg-white/8 motion-reduce:animate-none" />
+      <div className="h-5 w-full animate-pulse rounded bg-white/8 motion-reduce:animate-none" />
+      <p className="text-sm">Checking your secure session…</p>
     </div>
   );
 }

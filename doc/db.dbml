@@ -40,8 +40,9 @@ Table users as U {
 Table accounts as A {
   id bigserial [pk]
   public_id uuid [not null, unique, default: `gen_random_uuid()`, note: 'Stable, non-sequential account identifier exposed through public APIs.']
+  account_number varchar(10) [not null, unique, note: 'Customer-facing routing identifier. It is not an authentication secret.']
   owner varchar [not null, ref: > U.username]
-  balance bigint [not null, default: 0]
+  balance bigint [not null, default: 0, note: 'Current posted balance derived from posted ledger activity. Holds and card authorizations are not modeled.']
   currency varchar [not null]
   status varchar [not null, default: 'active', note: 'Frozen accounts may receive funds but cannot send; closed accounts cannot transact.']
   created_at timestamptz [not null, default: `now()`]
@@ -55,6 +56,7 @@ Table accounts as A {
   }
 
   checks {
+    `account_number ~ '^[0-9]{10}$'`
     `balance >= 0`
     `status IN ('active', 'frozen', 'closed')`
     `(status = 'closed' AND closed_at IS NOT NULL AND balance = 0) OR (status <> 'closed' AND closed_at IS NULL)`
@@ -230,12 +232,15 @@ Table email_jobs {
   bounce_type varchar
   bounce_subtype varchar
   bounce_message text
+  verification_token_hash bytea [note: 'SHA-256 hash of the opaque verification token. The raw token is never stored.']
+  verification_token_expires_at timestamptz
 
   indexes {
     (status, created_at) [name: 'email_jobs_status_created_at_idx']
     username [name: 'email_jobs_username_idx']
     parent_job_id [name: 'email_jobs_parent_job_id_idx', note: 'Partial index where parent_job_id IS NOT NULL.']
     provider_message_id [unique, name: 'email_jobs_provider_message_id_idx', note: 'Partial unique index where provider_message_id IS NOT NULL.']
+    verification_token_hash [unique, name: 'email_jobs_verification_token_hash_idx', note: 'Partial unique index where verification_token_hash IS NOT NULL.']
   }
 
   checks {
@@ -243,6 +248,8 @@ Table email_jobs {
     `attempt_count >= 0`
     `max_attempts > 0`
     `delivery_status IN ('pending', 'accepted', 'delivered', 'delayed', 'bounced', 'failed', 'suppressed', 'complained')`
+    `(verification_token_hash IS NULL) = (verification_token_expires_at IS NULL)`
+    `verification_token_hash IS NULL OR octet_length(verification_token_hash) = 32`
   }
 
   Note: 'Durable email work items. Dead-letter jobs remain here with status dead_letter and may be replayed using parent_job_id.'

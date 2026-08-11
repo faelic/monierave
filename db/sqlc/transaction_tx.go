@@ -35,6 +35,7 @@ const (
 
 var (
 	ErrInsufficientBalance        = errors.New("insufficient balance")
+	ErrRecipientNotFound          = errors.New("recipient not found")
 	ErrIdempotencyConflict        = errors.New("idempotency key was already used with a different request")
 	ErrInvalidIdempotencyKey      = errors.New("invalid idempotency key")
 	ErrPerTransferLimitExceeded   = errors.New("per-transfer limit exceeded")
@@ -43,7 +44,7 @@ var (
 
 type TransferTxParams struct {
 	FromAccountPublicID pgtype.UUID `json:"from_account_id"`
-	ToAccountPublicID   pgtype.UUID `json:"to_account_id"`
+	ToAccountNumber     string      `json:"-"`
 	Amount              int64       `json:"amount"`
 	Currency            string      `json:"currency"`
 	Username            string      `json:"username"`
@@ -216,7 +217,7 @@ func transferWithQueries(
 		ctx,
 		q,
 		arg.FromAccountPublicID,
-		arg.ToAccountPublicID,
+		arg.ToAccountNumber,
 	)
 	if err != nil {
 		return result, err
@@ -377,7 +378,6 @@ func (store *SQLStore) auditTransferFailure(
 				"amount":          arg.Amount,
 				"currency":        arg.Currency,
 				"from_account_id": uuidStringOrEmpty(arg.FromAccountPublicID),
-				"to_account_id":   uuidStringOrEmpty(arg.ToAccountPublicID),
 			},
 		}); err != nil {
 			return err
@@ -687,7 +687,7 @@ func loadAndLockTransferAccounts(
 	ctx context.Context,
 	q *Queries,
 	fromPublicID pgtype.UUID,
-	toPublicID pgtype.UUID,
+	toAccountNumber string,
 ) (Account, Account, error) {
 	fromAccount, err := q.GetAccountByPublicID(ctx, fromPublicID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -696,9 +696,9 @@ func loadAndLockTransferAccounts(
 	if err != nil {
 		return Account{}, Account{}, err
 	}
-	toAccount, err := q.GetAccountByPublicID(ctx, toPublicID)
+	toAccount, err := q.GetAccountByAccountNumber(ctx, toAccountNumber)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Account{}, Account{}, ErrAccountNotFound
+		return Account{}, Account{}, ErrRecipientNotFound
 	}
 	if err != nil {
 		return Account{}, Account{}, err

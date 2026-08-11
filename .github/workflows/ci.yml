@@ -45,10 +45,12 @@ jobs:
           --health-retries=5
 
     env:
+      APP_ENV: "test"
       DB_SOURCE: "postgresql://monierave:monierave@localhost:5432/monierave_test?sslmode=disable"
       DB_TEST_SOURCE: "postgresql://monierave:monierave@localhost:5432/monierave_test?sslmode=disable"
       SERVER_ADDRESS: "0.0.0.0:8080"
       SECRET_KEY: "12345678901234567890123456789012"
+      OPERATIONS_TOKEN: "operations-test-token-123456789012"
       ACCESS_TOKEN_DURATION: "15m"
       REFRESH_TOKEN_DURATION: "24h"
       REFRESH_COOKIE_NAME: "monierave_refresh"
@@ -78,7 +80,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Install database and generation tools
@@ -89,6 +91,9 @@ jobs:
 
       - name: Verify module dependencies
         run: go mod verify
+
+      - name: Check Go vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
       - name: Check formatting
         run: make format-check
@@ -120,3 +125,56 @@ jobs:
 
       - name: Build production image
         run: docker build --tag monierave:ci .
+
+  frontend:
+    name: Validate and build frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_PUBLIC_API_URL: "http://localhost:8080"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.16.0"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: "frontend/pnpm-lock.yaml"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check frontend formatting
+        run: pnpm format:check
+
+      - name: Lint frontend
+        run: pnpm lint
+
+      - name: Check frontend types
+        run: pnpm typecheck
+
+      - name: Run frontend unit tests
+        run: pnpm test
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build Storybook
+        run: pnpm build:storybook
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run frontend browser tests
+        run: pnpm test:e2e

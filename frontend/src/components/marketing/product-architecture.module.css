@@ -1,0 +1,460 @@
+.section {
+  --architecture-accent: var(--marketing-accent);
+  position: relative;
+  scroll-margin-top: 5rem;
+  min-height: 160svh;
+  border-top: 1px solid var(--marketing-border);
+  color: var(--marketing-text-primary);
+  background:
+    radial-gradient(
+      ellipse 40% 50% at 78% 48%,
+      rgb(255 255 255 / 2%),
+      transparent 72%
+    ),
+    var(--marketing-canvas);
+}
+
+.stickyFrame {
+  position: sticky;
+  top: 5rem;
+  display: flex;
+  min-height: calc(100svh - 5rem);
+  align-items: center;
+  overflow: hidden;
+}
+
+.inner {
+  display: grid;
+  width: min(100%, 90rem);
+  margin-inline: auto;
+  padding: 2rem clamp(1.25rem, 5vw, 4.625rem);
+  grid-template-columns: minmax(0, 0.82fr) minmax(34rem, 1.18fr);
+  gap: clamp(3rem, 7vw, 7rem);
+}
+
+.copyColumn {
+  align-self: center;
+}
+
+.eyebrow {
+  margin: 0;
+  color: rgb(200 183 125 / 78%);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.heading {
+  max-width: 9ch;
+  margin: 1rem 0 0;
+  font-family: var(--font-editorial);
+  font-size: clamp(3rem, 5.2vw, 4.8rem);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 0.98;
+}
+
+.introduction {
+  max-width: 33rem;
+  margin: 1.5rem 0 0;
+  color: var(--marketing-text-secondary);
+  font-size: clamp(1rem, 1.35vw, 1.125rem);
+  line-height: 1.62;
+}
+
+.architectureSummary {
+  display: grid;
+  max-width: 31rem;
+  margin-top: 2.5rem;
+  border-top: 1px solid rgb(236 239 242 / 12%);
+}
+
+.architectureSummary > div {
+  display: grid;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid rgb(236 239 242 / 10%);
+  grid-template-columns: 2rem 1fr;
+  color: var(--marketing-text-muted);
+  transition: color 420ms ease;
+}
+
+.architectureSummary > div[data-summary-active="true"] {
+  color: rgb(246 247 248 / 72%);
+}
+
+.architectureSummary span {
+  color: rgb(200 183 125 / 62%);
+  font-family: var(--font-hero-monospace);
+  font-size: 0.7rem;
+}
+
+.architectureSummary p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.stageProgress {
+  width: min(100%, 31rem);
+  height: 1px;
+  margin-top: 1.25rem;
+  overflow: hidden;
+  background: rgb(236 239 242 / 10%);
+}
+
+.stageProgress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(var(--architecture-progress));
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--architecture-accent), transparent);
+  transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.diagram {
+  position: relative;
+  display: flex;
+  max-width: 42rem;
+  flex-direction: column;
+  justify-self: end;
+}
+
+.node {
+  position: relative;
+  display: grid;
+  min-height: 4.25rem;
+  align-items: center;
+  padding: 0.75rem 2.75rem 0.75rem 0.875rem;
+  border: 1px solid rgb(236 239 242 / 10%);
+  border-radius: 0.75rem;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  gap: 0.75rem;
+  color: var(--marketing-text-muted);
+  background: color-mix(
+    in srgb,
+    var(--marketing-surface-raised) 72%,
+    transparent
+  );
+  transition:
+    color 480ms ease,
+    border-color 480ms ease,
+    background-color 480ms ease,
+    box-shadow 480ms ease,
+    transform 480ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.node[data-node-active="true"] {
+  color: rgb(246 247 248 / 68%);
+  border-color: rgb(236 239 242 / 14%);
+  background: rgb(255 255 255 / 2.5%);
+}
+
+.node[data-node-current="true"] {
+  transform: translateY(-2px);
+  border-color: rgb(200 183 125 / 48%);
+  background: rgb(200 183 125 / 8%);
+  box-shadow:
+    0 0 0 1px rgb(200 183 125 / 5%),
+    0 1.5rem 4rem rgb(0 0 0 / 28%),
+    0 0 2rem rgb(200 183 125 / 6%);
+}
+
+.nodeIcon {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border: 1px solid currentcolor;
+  border-radius: 0.55rem;
+  opacity: 0.72;
+}
+
+.nodeIcon svg {
+  width: 1.8rem;
+  height: 1.8rem;
+  overflow: visible;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+}
+
+.nodeCopy h3 {
+  margin: 0;
+  color: currentcolor;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.nodeCopy p {
+  margin: 0.2rem 0 0;
+  color: currentcolor;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  opacity: 1;
+}
+
+.statusLight {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.28;
+  transition:
+    opacity 480ms ease,
+    box-shadow 480ms ease;
+}
+
+.node[data-node-current="true"] .statusLight {
+  background: var(--architecture-accent);
+  opacity: 1;
+  box-shadow: 0 0 0.8rem rgb(200 183 125 / 54%);
+}
+
+.compactNode {
+  width: min(100%, 19rem);
+  align-self: center;
+}
+
+.dashboardNode,
+.activityNode,
+.securityNode {
+  width: min(100%, 32rem);
+  align-self: center;
+}
+
+.connector {
+  position: relative;
+  display: block;
+  width: 1px;
+  height: 1.1rem;
+  align-self: center;
+  overflow: hidden;
+  background: rgb(236 239 242 / 12%);
+}
+
+.connector span {
+  position: absolute;
+  inset: 0;
+  transform: scaleY(0);
+  transform-origin: top;
+  background: var(--architecture-accent);
+  transition: transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.connector[data-connector-active="true"] span {
+  transform: scaleY(1);
+}
+
+.workspacePool {
+  position: relative;
+  padding: 1.8rem 0.75rem 0.75rem;
+  border: 1px solid rgb(236 239 242 / 10%);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--marketing-surface) 72%, transparent);
+}
+
+.poolLabel {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.75rem;
+  margin: 0;
+  color: var(--marketing-text-muted);
+  font-family: var(--font-hero-monospace);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.capabilityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.beneficiaryNode {
+  grid-column: 1 / -1;
+}
+
+.activityNode {
+  border-color: rgb(236 239 242 / 14%);
+}
+
+.securityNode[data-node-active="true"] {
+  border-color: color-mix(in srgb, var(--marketing-success) 34%, transparent);
+  background: color-mix(in srgb, var(--marketing-success) 6%, transparent);
+}
+
+.accessGate,
+.trustRing {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.node[data-node-current="true"] .accessGate {
+  animation: key-settle 1.8s ease-in-out infinite;
+}
+
+.node[data-node-current="true"] .trustRing {
+  animation: trust-ring 2.4s ease-in-out infinite;
+}
+
+.transferDot {
+  offset-path: path("M 12 20 C 17 10 23 10 28 20");
+  fill: var(--architecture-accent);
+  stroke: none;
+  opacity: 0;
+}
+
+.node[data-node-current="true"] .transferDot {
+  animation: architecture-transfer 2.8s ease-in-out infinite;
+}
+
+@keyframes key-settle {
+  0%,
+  100% {
+    transform: translateY(-1px);
+  }
+
+  50% {
+    transform: translateY(1px);
+  }
+}
+
+@keyframes trust-ring {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes architecture-transfer {
+  0%,
+  14% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+
+  24%,
+  72% {
+    opacity: 1;
+  }
+
+  82%,
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+@media (max-width: 63.999rem) {
+  .inner {
+    grid-template-columns: minmax(0, 0.72fr) minmax(30rem, 1.28fr);
+    gap: 2rem;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .section {
+    min-height: auto;
+  }
+
+  .stickyFrame {
+    position: relative;
+    top: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .inner {
+    grid-template-columns: 1fr;
+    gap: 4rem;
+    padding-block: 5rem;
+  }
+
+  .heading {
+    max-width: 10ch;
+    font-size: clamp(2.8rem, 13vw, 4rem);
+  }
+
+  .architectureSummary,
+  .stageProgress {
+    display: none;
+  }
+
+  .diagram {
+    width: 100%;
+    max-width: none;
+    justify-self: stretch;
+  }
+
+  .compactNode,
+  .dashboardNode,
+  .activityNode,
+  .securityNode {
+    width: 100%;
+  }
+
+  .capabilityGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .beneficiaryNode {
+    grid-column: auto;
+  }
+
+  .node {
+    color: rgb(246 247 248 / 76%);
+    border-color: rgb(236 239 242 / 14%);
+    background: rgb(255 255 255 / 2.5%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node,
+  .connector span,
+  .stageProgress span,
+  .accessGate,
+  .trustRing,
+  .transferDot {
+    transform: none;
+    transition: none;
+    animation: none !important;
+  }
+
+  .transferDot {
+    offset-distance: 62%;
+    opacity: 1;
+  }
+}
+
+@media (forced-colors: active) {
+  .section {
+    forced-color-adjust: none;
+    color: CanvasText;
+    background: Canvas;
+  }
+
+  .node,
+  .workspacePool {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+
+  .nodeIcon svg {
+    stroke: CanvasText;
+  }
+}

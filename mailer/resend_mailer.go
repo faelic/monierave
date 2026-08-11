@@ -64,8 +64,7 @@ type financialTemplateData struct {
 	Title         string
 	Summary       string
 	Reference     string
-	Amount        int64
-	Currency      string
+	Amount        string
 	Direction     string
 	OccurredAt    string
 	AccountStatus string
@@ -122,7 +121,7 @@ var financialHTMLTemplate = template.Must(template.New("financial-email").Parse(
       <p style="margin:0 0 24px;font-size:16px;line-height:1.7;">Hello {{.Username}}, {{.Summary}}</p>
       <table role="presentation" style="width:100%;border-collapse:collapse;font:14px/1.6 Arial,sans-serif;">
         {{if .Reference}}<tr><td style="padding:8px 0;color:#5d655f;">Reference</td><td style="padding:8px 0;text-align:right;font-weight:700;">{{.Reference}}</td></tr>{{end}}
-        {{if .Currency}}<tr><td style="padding:8px 0;color:#5d655f;">Amount</td><td style="padding:8px 0;text-align:right;font-weight:700;">{{.Amount}} {{.Currency}} (minor units)</td></tr>{{end}}
+        {{if .Amount}}<tr><td style="padding:8px 0;color:#5d655f;">Amount</td><td style="padding:8px 0;text-align:right;font-weight:700;">{{.Amount}}</td></tr>{{end}}
         {{if .Direction}}<tr><td style="padding:8px 0;color:#5d655f;">Direction</td><td style="padding:8px 0;text-align:right;">{{.Direction}}</td></tr>{{end}}
         {{if .AccountStatus}}<tr><td style="padding:8px 0;color:#5d655f;">Account status</td><td style="padding:8px 0;text-align:right;">{{.AccountStatus}}</td></tr>{{end}}
         <tr><td style="padding:8px 0;color:#5d655f;">Time</td><td style="padding:8px 0;text-align:right;">{{.OccurredAt}}</td></tr>
@@ -138,7 +137,7 @@ var financialTextTemplate = texttemplate.Must(texttemplate.New("financial-email"
 
 Hello {{.Username}}, {{.Summary}}
 {{if .Reference}}Reference: {{.Reference}}
-{{end}}{{if .Currency}}Amount: {{.Amount}} {{.Currency}} (minor units)
+{{end}}{{if .Amount}}Amount: {{.Amount}}
 {{end}}{{if .Direction}}Direction: {{.Direction}}
 {{end}}{{if .AccountStatus}}Account status: {{.AccountStatus}}
 {{end}}Time: {{.OccurredAt}}
@@ -274,8 +273,7 @@ func (mailer *ResendMailer) SendFinancialNotification(
 		Title:         title,
 		Summary:       summary,
 		Reference:     payload.Reference,
-		Amount:        payload.Amount,
-		Currency:      payload.Currency,
+		Amount:        formatFinancialAmount(payload.Amount, payload.Currency),
 		Direction:     payload.Direction,
 		OccurredAt:    payload.OccurredAt.UTC().Format(time.RFC3339),
 		AccountStatus: payload.AccountStatus,
@@ -323,6 +321,33 @@ func (mailer *ResendMailer) SendFinancialNotification(
 		return "", errors.New("Resend accepted email without returning a message ID")
 	}
 	return response.Id, nil
+}
+
+func formatFinancialAmount(amount int64, currency string) string {
+	if currency == "" {
+		return ""
+	}
+	negative := amount < 0
+	var magnitude uint64
+	if negative {
+		magnitude = uint64(-(amount + 1)) + 1
+	} else {
+		magnitude = uint64(amount)
+	}
+	major := formatGroupedInteger(magnitude / 100)
+	formatted := fmt.Sprintf("%s %s.%02d", currency, major, magnitude%100)
+	if negative {
+		return "-" + formatted
+	}
+	return formatted
+}
+
+func formatGroupedInteger(value uint64) string {
+	digits := fmt.Sprintf("%d", value)
+	for position := len(digits) - 3; position > 0; position -= 3 {
+		digits = digits[:position] + "," + digits[position:]
+	}
+	return digits
 }
 
 func financialEventCopy(eventType string) (string, string, error) {

@@ -1,9 +1,15 @@
 import { forwardRef } from "react";
 
+import { cn } from "@/lib/utils/cn";
+
 export const FormErrorSummary = forwardRef<
   HTMLDivElement,
-  { message?: string | undefined }
->(function FormErrorSummary({ message }, ref) {
+  {
+    className?: string | undefined;
+    message?: string | undefined;
+    tone?: "error" | "success" | undefined;
+  }
+>(function FormErrorSummary({ className, message, tone = "error" }, ref) {
   if (!message) {
     return null;
   }
@@ -11,8 +17,16 @@ export const FormErrorSummary = forwardRef<
   return (
     <div
       ref={ref}
-      className="border-danger-700 text-danger-700 rounded-sm border-l-4 bg-[#fff5f3] px-4 py-3 text-sm font-medium"
-      role="alert"
+      className={cn(
+        "rounded-sm border-l-4 px-4 py-3 text-sm font-medium",
+        tone === "success"
+          ? "border-evergreen-700 text-evergreen-800 bg-[#eef8f1]"
+          : "border-danger-700 text-danger-700 bg-[#fff5f3]",
+        className,
+      )}
+      data-form-summary
+      data-tone={tone}
+      role={tone === "error" ? "alert" : "status"}
       tabIndex={-1}
     >
       {message}

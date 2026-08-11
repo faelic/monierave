@@ -18,7 +18,7 @@ SET
   updated_at = now()
 WHERE id = $2
   AND balance + $1 >= 0
-RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number
 `
 
 type AddAccountBalanceInternalParams struct {
@@ -39,6 +39,7 @@ func (q *Queries) AddAccountBalanceInternal(ctx context.Context, arg AddAccountB
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
@@ -52,7 +53,7 @@ SET
 WHERE id = $1
   AND balance = 0
   AND status <> 'closed'
-RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number
 `
 
 func (q *Queries) CloseAccount(ctx context.Context, id int64) (Account, error) {
@@ -68,6 +69,7 @@ func (q *Queries) CloseAccount(ctx context.Context, id int64) (Account, error) {
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
@@ -76,20 +78,22 @@ const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (
   owner,
   balance,
-  currency
+  currency,
+  account_number
 ) VALUES (
-  $1, 0, $2
+  $1, 0, $2, $3
 )
-RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number
 `
 
 type CreateAccountParams struct {
-	Owner    string `json:"owner"`
-	Currency string `json:"currency"`
+	Owner         string `json:"owner"`
+	Currency      string `json:"currency"`
+	AccountNumber string `json:"account_number"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
-	row := q.db.QueryRow(ctx, createAccount, arg.Owner, arg.Currency)
+	row := q.db.QueryRow(ctx, createAccount, arg.Owner, arg.Currency, arg.AccountNumber)
 	var i Account
 	err := row.Scan(
 		&i.ID,
@@ -101,12 +105,13 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number FROM accounts
 WHERE id = $1 LIMIT 1
 `
 
@@ -123,12 +128,36 @@ func (q *Queries) GetAccount(ctx context.Context, id int64) (Account, error) {
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
+	)
+	return i, err
+}
+
+const getAccountByAccountNumber = `-- name: GetAccountByAccountNumber :one
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number FROM accounts
+WHERE account_number = $1 LIMIT 1
+`
+
+func (q *Queries) GetAccountByAccountNumber(ctx context.Context, accountNumber string) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccountByAccountNumber, accountNumber)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Owner,
+		&i.Balance,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.PublicID,
+		&i.Status,
+		&i.UpdatedAt,
+		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
 
 const getAccountByPublicID = `-- name: GetAccountByPublicID :one
-SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number FROM accounts
 WHERE public_id = $1 LIMIT 1
 `
 
@@ -145,12 +174,13 @@ func (q *Queries) GetAccountByPublicID(ctx context.Context, publicID pgtype.UUID
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
 
 const getAccountByPublicIDForUpdate = `-- name: GetAccountByPublicIDForUpdate :one
-SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number FROM accounts
 WHERE public_id = $1 LIMIT 1
 FOR NO KEY UPDATE
 `
@@ -168,12 +198,13 @@ func (q *Queries) GetAccountByPublicIDForUpdate(ctx context.Context, publicID pg
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
 
 const getAccountForUpdate = `-- name: GetAccountForUpdate :one
-SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number FROM accounts
 WHERE id = $1 LIMIT 1
 FOR NO KEY UPDATE
 `
@@ -191,12 +222,13 @@ func (q *Queries) GetAccountForUpdate(ctx context.Context, id int64) (Account, e
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
 
 const getOwnedAccountByPublicID = `-- name: GetOwnedAccountByPublicID :one
-SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number FROM accounts
 WHERE public_id = $1
   AND owner = $2
 LIMIT 1
@@ -220,12 +252,13 @@ func (q *Queries) GetOwnedAccountByPublicID(ctx context.Context, arg GetOwnedAcc
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }
 
 const listAccount = `-- name: ListAccount :many
-SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at FROM accounts
+SELECT id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number FROM accounts
 WHERE owner = $1
 ORDER BY created_at, id
 LIMIT $2
@@ -257,6 +290,7 @@ func (q *Queries) ListAccount(ctx context.Context, arg ListAccountParams) ([]Acc
 			&i.Status,
 			&i.UpdatedAt,
 			&i.ClosedAt,
+			&i.AccountNumber,
 		); err != nil {
 			return nil, err
 		}
@@ -268,6 +302,39 @@ func (q *Queries) ListAccount(ctx context.Context, arg ListAccountParams) ([]Acc
 	return items, nil
 }
 
+const resolveReceivableAccount = `-- name: ResolveReceivableAccount :one
+SELECT
+  account.account_number,
+  owner.full_name AS account_name,
+  account.currency,
+  account.status
+FROM accounts AS account
+JOIN users AS owner
+  ON owner.username = account.owner
+WHERE account.account_number = $1
+  AND account.status IN ('active', 'frozen')
+LIMIT 1
+`
+
+type ResolveReceivableAccountRow struct {
+	AccountNumber string `json:"account_number"`
+	AccountName   string `json:"account_name"`
+	Currency      string `json:"currency"`
+	Status        string `json:"status"`
+}
+
+func (q *Queries) ResolveReceivableAccount(ctx context.Context, accountNumber string) (ResolveReceivableAccountRow, error) {
+	row := q.db.QueryRow(ctx, resolveReceivableAccount, accountNumber)
+	var i ResolveReceivableAccountRow
+	err := row.Scan(
+		&i.AccountNumber,
+		&i.AccountName,
+		&i.Currency,
+		&i.Status,
+	)
+	return i, err
+}
+
 const setAccountStatus = `-- name: SetAccountStatus :one
 UPDATE accounts
 SET
@@ -276,7 +343,7 @@ SET
   updated_at = now()
 WHERE id = $1
   AND $2 IN ('active', 'frozen')
-RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at
+RETURNING id, owner, balance, currency, created_at, public_id, status, updated_at, closed_at, account_number
 `
 
 type SetAccountStatusParams struct {
@@ -297,6 +364,7 @@ func (q *Queries) SetAccountStatus(ctx context.Context, arg SetAccountStatusPara
 		&i.Status,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.AccountNumber,
 	)
 	return i, err
 }

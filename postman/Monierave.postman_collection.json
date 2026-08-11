@@ -1,0 +1,108 @@
+{
+  "info": {
+    "_postman_id": "22aa3412-a7ac-4b37-97d8-76af6d46f877",
+    "name": "Monierave",
+    "description": "Phase 0 backend contracts for current-user restoration, account-number recipient resolution, beneficiaries, and zero-fee internal transfers.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "sender_account_id",
+      "value": ""
+    },
+    {
+      "key": "recipient_account_number",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Current user",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/users/me",
+        "description": "Returns the authenticated user's safe profile even while the registration is pending or disabled."
+      }
+    },
+    {
+      "name": "Resolve recipient",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"account_number\": \"{{recipient_account_number}}\"\n}"
+        },
+        "url": "{{base_url}}/accounts/resolve",
+        "description": "Returns only masked recipient details. Requires a verified account and is limited to 20 requests per minute."
+      }
+    },
+    {
+      "name": "Create beneficiary",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"destination_account_number\": \"{{recipient_account_number}}\",\n  \"nickname\": \"Primary recipient\"\n}"
+        },
+        "url": "{{base_url}}/beneficiaries"
+      }
+    },
+    {
+      "name": "Create internal transfer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "X-Correlation-ID",
+            "value": "{{$guid}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"from_account_id\": \"{{sender_account_id}}\",\n  \"to_account_number\": \"{{recipient_account_number}}\",\n  \"amount\": 5000,\n  \"currency\": \"USD\",\n  \"narration\": \"Lunch\"\n}"
+        },
+        "url": "{{base_url}}/transfers",
+        "description": "Creates a zero-fee internal Monierave transfer. Successful responses always include fee: 0."
+      }
+    }
+  ]
+}

@@ -7,7 +7,9 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
     <>
       <SkipLink />
       <MarketingHeader />
-      <main id="main-content">{children}</main>
+      <main className="bg-[var(--marketing-canvas)]" id="main-content">
+        {children}
+      </main>
       <MarketingFooter />
     </>
   );

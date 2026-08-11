@@ -51,7 +51,14 @@ func (distributor *RedisTaskDistributor) DistributeTaskSendEmail(
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
-	log.Info().Str("type", task.Type()).Bytes("payload", task.Payload()).Str("queue", info.Queue).Int("max_retry", info.MaxRetry).Msg("enqueued send verify email task")
+	log.Info().
+		Str("type", task.Type()).
+		Str("job_id", payload.JobID).
+		Str("event_id", payload.EventID).
+		Str("correlation_id", payload.CorrelationID).
+		Str("queue", info.Queue).
+		Int("max_retry", info.MaxRetry).
+		Msg("enqueued email task")
 	return nil
 }
 
@@ -166,7 +173,7 @@ func (processor *RedisTaskProcessor) sendEmailJob(
 ) (string, error) {
 	switch job.JobType {
 	case "", db.EmailJobTypeVerifyEmail:
-		emailPayload, err := processor.verificationEmailPayload(job, jobID)
+		emailPayload, err := processor.verificationEmailPayload(ctx, job, jobID)
 		if err != nil {
 			return "", mailer.NewPermanentError(fmt.Errorf(
 				"create verification email link: %w",
@@ -198,6 +205,7 @@ func (processor *RedisTaskProcessor) sendEmailJob(
 }
 
 func (processor *RedisTaskProcessor) verificationEmailPayload(
+	ctx context.Context,
 	job db.EmailJob,
 	jobID string,
 ) ([]byte, error) {
@@ -205,14 +213,26 @@ func (processor *RedisTaskProcessor) verificationEmailPayload(
 		return job.Payload, nil
 	}
 
-	value, expiresAt, err := processor.emailVerificationMaker.Create(
-		job.Username,
-		job.Recipient,
-		jobID,
-		processor.emailVerificationDuration,
-	)
+	value, err := processor.emailVerificationMaker.Create(jobID)
 	if err != nil {
 		return nil, err
+	}
+	tokenHash, err := processor.emailVerificationMaker.Hash(value)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt := job.CreatedAt.Time.Add(processor.emailVerificationDuration)
+	if _, err := processor.store.SetEmailJobVerificationToken(
+		ctx,
+		db.SetEmailJobVerificationTokenParams{
+			ID:                    job.ID,
+			VerificationTokenHash: tokenHash,
+			VerificationTokenExpiresAt: pgtype.Timestamptz{
+				Time: expiresAt, Valid: true,
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("persist verification token hash: %w", err)
 	}
 
 	var payload map[string]any

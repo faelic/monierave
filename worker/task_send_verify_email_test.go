@@ -78,6 +78,7 @@ func TestProcessTaskSendVerifyEmailSuccess(t *testing.T) {
 		Status:       "queued",
 		AttemptCount: 0,
 		MaxAttempts:  10,
+		CreatedAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	}
 	started := job
 	started.Status = "processing"
@@ -213,6 +214,7 @@ func TestProcessTaskSendVerifyEmailAddsSignedVerificationURL(t *testing.T) {
 		Status:       db.EmailJobStatusQueued,
 		AttemptCount: 0,
 		MaxAttempts:  10,
+		CreatedAt:    pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	}
 	started := job
 	started.Status = db.EmailJobStatusProcessing
@@ -220,6 +222,13 @@ func TestProcessTaskSendVerifyEmailAddsSignedVerificationURL(t *testing.T) {
 
 	store.EXPECT().GetEmailJob(gomock.Any(), pgUUID(id)).Return(job, nil)
 	store.EXPECT().StartEmailJobAttempt(gomock.Any(), pgUUID(id)).Return(started, nil)
+	var storedToken db.SetEmailJobVerificationTokenParams
+	store.EXPECT().SetEmailJobVerificationToken(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, arg db.SetEmailJobVerificationTokenParams) (db.EmailJob, error) {
+			storedToken = arg
+			return started, nil
+		},
+	)
 	store.EXPECT().MarkEmailJobSent(gomock.Any(), gomock.Any()).Return(started, nil)
 
 	err = processor.ProcessTaskSendVerifyEmail(context.Background(), newEmailTask(t, id))
@@ -237,11 +246,11 @@ func TestProcessTaskSendVerifyEmailAddsSignedVerificationURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://api.example.com/users/verify-email", parsedURL.Scheme+"://"+parsedURL.Host+parsedURL.Path)
 
-	verificationPayload, err := verificationMaker.Verify(parsedURL.Query().Get("token"))
+	verificationHash, err := verificationMaker.Hash(parsedURL.Query().Get("token"))
 	require.NoError(t, err)
-	require.Equal(t, job.Username, verificationPayload.Username)
-	require.Equal(t, job.Recipient, verificationPayload.Email)
-	require.Equal(t, id.String(), verificationPayload.JobID)
+	require.Equal(t, job.ID, storedToken.ID)
+	require.Equal(t, verificationHash, storedToken.VerificationTokenHash)
+	require.WithinDuration(t, expiresAt, storedToken.VerificationTokenExpiresAt.Time, time.Second)
 }
 
 func TestProcessTaskSendVerifyEmailAlreadySent(t *testing.T) {

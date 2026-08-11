@@ -89,8 +89,10 @@ func displayFieldName(field string) string {
 		return "id"
 	case "from_account_id":
 		return "from account id"
-	case "to_account_id":
-		return "to account id"
+	case "to_account_number":
+		return "to account number"
+	case "destination_account_number":
+		return "destination account number"
 	default:
 		return strings.ReplaceAll(field, "_", " ")
 	}

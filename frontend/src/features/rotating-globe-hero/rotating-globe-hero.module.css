@@ -1,0 +1,461 @@
+.candidate {
+  --celestial-accent: #e3cd42;
+  --celestial-announcement: rgb(227 205 66 / 10%);
+  --celestial-body: #dee2e6;
+  --celestial-globe: #eceff2;
+  --celestial-heading: #fafcfe;
+  --celestial-hero: #2b2e32;
+  --celestial-navigation: #14161a;
+  min-height: 100svh;
+  color: var(--celestial-heading);
+  background: var(--celestial-hero);
+  font-family: "DM Sans", sans-serif;
+}
+
+.productionBody {
+  --celestial-accent: var(--marketing-accent);
+  --celestial-body: #dee2e6;
+  --celestial-globe: #eceff2;
+  --celestial-heading: #fafcfe;
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  color: var(--celestial-heading);
+  font-family: "DM Sans", sans-serif;
+}
+
+.navigation {
+  display: flex;
+  height: 80px;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: 48px;
+  background: var(--celestial-navigation);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--celestial-heading);
+  font-size: 18px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.brandMark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 2px solid currentcolor;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.desktopNavigation,
+.navigationActions {
+  display: flex;
+  align-items: center;
+}
+
+.desktopNavigation {
+  margin-left: auto;
+  gap: 34px;
+}
+
+.navigationActions {
+  margin-left: 34px;
+  gap: 18px;
+}
+
+.navigationLink,
+.signInLink {
+  color: rgb(250 252 254 / 70%);
+  font-size: 15px;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.navigationLink:hover,
+.signInLink:hover {
+  color: var(--celestial-heading);
+}
+
+.createAccountLink {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 24px;
+  border-radius: 999px;
+  color: #111317;
+  background: var(--celestial-heading);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mobileMenuTrigger {
+  display: none;
+}
+
+.announcement {
+  display: flex;
+  min-height: 54.4px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  color: var(--celestial-heading);
+  background: var(--celestial-announcement);
+  font-size: 16px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.heroBody {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  padding: clamp(3.5rem, 8vh, 6rem) 48px 3rem;
+  background: transparent;
+}
+
+.heroInner {
+  display: flex;
+  width: 100%;
+  max-width: 1344px;
+  align-items: center;
+  justify-content: space-between;
+  margin-inline: auto;
+}
+
+.heroCopy {
+  width: min(600px, 100%);
+  padding-top: 0;
+}
+
+.headline {
+  margin: 0;
+  color: var(--celestial-heading);
+  font-family: "Libre Baskerville", serif;
+  font-size: 55px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.19;
+}
+
+.headlineLine {
+  display: block;
+}
+
+.headlineAccent {
+  color: var(--celestial-accent);
+}
+
+.supportingCopy {
+  max-width: 600px;
+  margin: 24px 0 0;
+  color: var(--celestial-body);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.primaryAction {
+  display: inline-flex;
+  width: 202px;
+  min-height: 47px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 0;
+  border-radius: 999px;
+  color: #111317;
+  background: var(--celestial-heading);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease;
+}
+
+.secondaryAction {
+  display: inline-flex;
+  min-height: 47px;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 24px;
+  border: 1px solid rgb(250 252 254 / 32%);
+  border-radius: 999px;
+  color: rgb(250 252 254 / 78%);
+  background: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.primaryAction:hover,
+.createAccountLink:hover {
+  background: #ffffff;
+}
+
+.primaryAction:hover {
+  transform: translateY(-1px);
+}
+
+.secondaryAction:hover {
+  transform: translateY(-1px);
+  border-color: rgb(250 252 254 / 48%);
+  color: var(--celestial-heading);
+}
+
+.globeFrame {
+  width: 30%;
+  max-width: 403.2px;
+  flex: 0 0 auto;
+  transform: translate(clamp(-4.5rem, -5vw, -2rem), 1rem);
+  filter: drop-shadow(0 0 2.75rem rgb(200 183 125 / 10%));
+}
+
+.globe {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.globeStroke,
+.globeThinStroke {
+  fill: none;
+  stroke: var(--celestial-globe);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.globeStroke {
+  stroke-width: 1.25px;
+}
+
+.globeThinStroke {
+  stroke-width: 0.7px;
+  opacity: 0.62;
+}
+
+.globeFill {
+  fill: var(--celestial-globe);
+}
+
+.poleFill {
+  fill: var(--marketing-accent-highlight);
+}
+
+.sphere {
+  transform-origin: 100px 100px;
+  animation: celestial-spin var(--globe-duration, 28s) linear infinite;
+}
+
+.poleStar {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: celestial-twinkle var(--pole-duration, 2.6s) ease-in-out infinite;
+}
+
+.mobileDialogOverlay {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  background: rgb(0 0 0 / 48%);
+  backdrop-filter: blur(3px);
+}
+
+.mobileDialog {
+  position: fixed;
+  z-index: 70;
+  inset-block: 0;
+  right: 0;
+  width: min(24rem, 90vw);
+  padding: 20px;
+  color: var(--celestial-heading);
+  background: var(--celestial-navigation);
+  box-shadow: -24px 0 64px rgb(0 0 0 / 34%);
+}
+
+.mobileDialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mobileDialogTitle {
+  margin: 0;
+  font-family: "Libre Baskerville", serif;
+  font-size: 22px;
+}
+
+.mobileClose,
+.mobileMenuTrigger {
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(250 252 254 / 20%);
+  border-radius: 8px;
+  color: var(--celestial-heading);
+  background: rgb(255 255 255 / 5%);
+}
+
+.mobileClose {
+  display: inline-flex;
+}
+
+.mobileNavigation {
+  display: grid;
+  margin-top: 28px;
+}
+
+.mobileNavigationLink {
+  padding: 16px 0;
+  border-bottom: 1px solid rgb(250 252 254 / 12%);
+  color: var(--celestial-heading);
+  font-size: 20px;
+  text-decoration: none;
+}
+
+.mobileActions {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.mobileActions .createAccountLink,
+.mobileActions .signInLink {
+  min-height: 48px;
+  justify-content: center;
+  text-align: center;
+}
+
+@keyframes celestial-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes celestial-twinkle {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(0.72);
+    opacity: 0.4;
+  }
+}
+
+@media (max-width: 63.999rem) {
+  .productionBody {
+    height: auto;
+    min-height: auto;
+  }
+
+  .navigation {
+    height: 64px;
+    padding-inline: 16px;
+  }
+
+  .desktopNavigation,
+  .navigationActions {
+    display: none;
+  }
+
+  .mobileMenuTrigger {
+    display: inline-flex;
+  }
+
+  .heroBody {
+    min-height: inherit;
+    padding: 40px 16px;
+  }
+
+  .heroInner {
+    flex-direction: column;
+  }
+
+  .globeFrame {
+    width: 30%;
+    max-width: none;
+    order: -1;
+    margin-bottom: 24px;
+    transform: none;
+  }
+
+  .heroCopy {
+    width: min(600px, 100%);
+    padding-top: 0;
+  }
+
+  .headline {
+    font-size: 40px;
+    line-height: 1.19;
+  }
+
+  .supportingCopy {
+    margin-top: 24px;
+    font-size: 18px;
+    line-height: 1.4;
+  }
+}
+
+@media (max-width: 30rem) {
+  .announcement {
+    padding-inline: 8px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sphere,
+  .poleStar {
+    transform: none;
+    animation: none;
+  }
+
+  .primaryAction,
+  .secondaryAction,
+  .navigationLink,
+  .signInLink {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .candidate {
+    forced-color-adjust: none;
+  }
+
+  .navigationLink,
+  .signInLink,
+  .brand,
+  .headline,
+  .supportingCopy,
+  .announcement {
+    color: CanvasText;
+  }
+
+  .globeStroke,
+  .globeThinStroke {
+    stroke: CanvasText;
+  }
+
+  .globeFill {
+    fill: CanvasText;
+  }
+}

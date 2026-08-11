@@ -29,7 +29,7 @@ export const passwordSchema = z
   .min(8, "Password must contain at least 8 characters.")
   .refine(
     (value) => encoder.encode(value).byteLength <= 72,
-    "Password must contain no more than 72 bytes.",
+    "This password is too long. Use fewer characters.",
   );
 
 export const signupSchema = z.object({
@@ -46,6 +46,7 @@ export const loginSchema = z.object({
 
 export const emailUpdateSchema = z.object({
   email: emailSchema,
+  current_password: z.string().min(1, "Enter your current password."),
 });
 
 export type SignupValues = z.input<typeof signupSchema>;

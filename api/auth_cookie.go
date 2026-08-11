@@ -99,7 +99,13 @@ func (server *Server) originAllowed(ctx *gin.Context) bool {
 	}
 
 	parsed, err := url.Parse(origin)
-	return err == nil && strings.EqualFold(parsed.Host, ctx.Request.Host)
+	if err != nil || parsed.Host == "" || ctx.Request.Host == "" {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, ctx.Request.Host)
 }
 
 func refreshCookieSameSite(value string) http.SameSite {
@@ -117,13 +123,9 @@ func (server *Server) corsMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		origin := ctx.GetHeader("Origin")
 		if origin != "" {
-			if !server.originAllowed(ctx) {
-				ctx.AbortWithStatusJSON(
-					http.StatusForbidden,
-					errorResponse(ctx, ErrForbidden),
-				)
-				return
-			}
+			ctx.Header("Vary", "Origin")
+		}
+		if origin != "" && server.originAllowed(ctx) {
 			ctx.Header("Access-Control-Allow-Origin", origin)
 			ctx.Header("Access-Control-Allow-Credentials", "true")
 			ctx.Header(
@@ -135,10 +137,31 @@ func (server *Server) corsMiddleware() gin.HandlerFunc {
 				"Idempotency-Replayed, X-Request-ID, X-Correlation-ID",
 			)
 			ctx.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
-			ctx.Header("Vary", "Origin")
 		}
 		if ctx.Request.Method == http.MethodOptions {
+			if origin == "" || !server.originAllowed(ctx) {
+				ctx.AbortWithStatusJSON(
+					http.StatusForbidden,
+					errorResponse(ctx, ErrForbidden),
+				)
+				return
+			}
 			ctx.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		ctx.Next()
+	}
+}
+
+// requireTrustedBrowserOrigin rejects cross-origin browser mutations while
+// preserving requests from non-browser API clients, which do not send Origin.
+func (server *Server) requireTrustedBrowserOrigin() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !server.originAllowed(ctx) {
+			ctx.AbortWithStatusJSON(
+				http.StatusForbidden,
+				errorResponse(ctx, ErrForbidden),
+			)
 			return
 		}
 		ctx.Next()

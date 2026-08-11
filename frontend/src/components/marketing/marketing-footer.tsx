@@ -1,10 +1,16 @@
+"use client";
+
 import Link from "next/link";
 
 import { BrandMark } from "@/components/marketing/brand-mark";
+import { marketingAccountActions } from "@/components/marketing/marketing-account-actions";
+import { useAuth } from "@/features/auth/auth-provider";
 
 export function MarketingFooter() {
+  const { status, user } = useAuth();
+  const accountActions = marketingAccountActions(status, user);
   return (
-    <footer className="bg-evergreen-900 text-white">
+    <footer className="bg-[var(--marketing-canvas)] text-white">
       <div className="mx-auto grid max-w-[90rem] gap-10 px-5 py-12 sm:px-8 md:grid-cols-[1.4fr_1fr] md:py-16 xl:px-12">
         <div>
           <BrandMark className="[&_svg]:text-jade-500 [&_span]:text-white" />
@@ -23,8 +29,8 @@ export function MarketingFooter() {
                 </Link>
               </li>
               <li>
-                <Link className="hover:text-white" href="/security">
-                  Security
+                <Link className="hover:text-white" href="/#how-it-works">
+                  How it works
                 </Link>
               </li>
             </ul>
@@ -32,16 +38,34 @@ export function MarketingFooter() {
           <div>
             <p className="font-semibold text-white">Account</p>
             <ul className="mt-4 grid gap-3 text-white/70">
-              <li>
-                <a className="hover:text-white" href="/login">
-                  Sign in
-                </a>
-              </li>
-              <li>
-                <a className="hover:text-white" href="/signup">
-                  Create account
-                </a>
-              </li>
+              {accountActions.loading ? (
+                <li className="h-5 w-20 animate-pulse rounded bg-white/8 motion-reduce:animate-none">
+                  <span className="sr-only">Restoring account session</span>
+                </li>
+              ) : (
+                <>
+                  {accountActions.secondary ? (
+                    <li>
+                      <Link
+                        className="hover:text-white"
+                        href={accountActions.secondary.href}
+                      >
+                        {accountActions.secondary.label}
+                      </Link>
+                    </li>
+                  ) : null}
+                  {accountActions.primary ? (
+                    <li>
+                      <Link
+                        className="hover:text-white"
+                        href={accountActions.primary.href}
+                      >
+                        {accountActions.primary.label}
+                      </Link>
+                    </li>
+                  ) : null}
+                </>
+              )}
             </ul>
           </div>
         </div>

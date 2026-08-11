@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   Clock3,
   LogOut,
   MailWarning,
@@ -16,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { FormErrorSummary } from "@/components/auth/form-error-summary";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { Field, fieldDescriptionIDs } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -31,17 +33,26 @@ import {
 } from "@/features/auth/auth-schemas";
 import { queryKeys } from "@/lib/query/query-keys";
 
+import styles from "./verification-needed.module.css";
+
+type VerificationNotice = {
+  message: string;
+  tone: "error" | "success";
+};
+
 export function VerificationNeeded() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { logout, status, updateUser, user } = useAuth();
-  const [notice, setNotice] = useState<string>();
+  const { logout, refreshUser, status, updateUser, user } = useAuth();
+  const [notice, setNotice] = useState<VerificationNotice>();
   const summaryRef = useRef<HTMLDivElement>(null);
+  const verificationHandled = useRef(false);
 
   const emailStatus = useQuery({
     enabled: status === "authenticated",
     queryFn: getEmailStatus,
     queryKey: queryKeys.emailStatus,
+    refetchInterval: (query) => (query.state.data?.verified_at ? false : 5_000),
     retry: 1,
   });
 
@@ -49,19 +60,26 @@ export function VerificationNeeded() {
     formState: { errors, isSubmitting },
     handleSubmit,
     register,
-    reset,
   } = useForm<EmailUpdateValues>({
     resolver: zodResolver(emailUpdateSchema),
-    values: { email: user?.email ?? "" },
+    values: { current_password: "", email: user?.email ?? "" },
   });
 
   const resend = useMutation({
     mutationFn: requestVerificationEmail,
     onError: (error) => {
-      setNotice(authErrorMessage(error, "resend"));
+      setNotice({
+        message:
+          authErrorMessage(error, "resend") ??
+          "We could not resend the verification email. Please try again.",
+        tone: "error",
+      });
     },
     onSuccess: async () => {
-      setNotice("A fresh verification email is on its way.");
+      setNotice({
+        message: "A fresh verification email is on its way.",
+        tone: "success",
+      });
       await queryClient.invalidateQueries({ queryKey: queryKeys.emailStatus });
     },
   });
@@ -85,18 +103,44 @@ export function VerificationNeeded() {
     }
   }, [notice]);
 
+  useEffect(() => {
+    if (
+      !emailStatus.data?.verified_at ||
+      verificationHandled.current ||
+      status !== "authenticated"
+    ) {
+      return;
+    }
+
+    verificationHandled.current = true;
+    void refreshUser()
+      .then(() => router.replace("/app" as Route))
+      .catch(() => {
+        verificationHandled.current = false;
+        setNotice({
+          message:
+            "Your email is verified. Refresh the page to continue into Monierave.",
+          tone: "success",
+        });
+      });
+  }, [emailStatus.data?.verified_at, refreshUser, router, status]);
+
   async function onEmailUpdate(values: EmailUpdateValues) {
     setNotice(undefined);
     try {
       const parsed = emailUpdateSchema.parse(values);
-      const updatedUser = await updateUser({ email: parsed.email });
-      reset({ email: updatedUser.email });
-      setNotice(
-        "Email updated. We queued a new verification message for this address.",
-      );
-      await queryClient.invalidateQueries({ queryKey: queryKeys.emailStatus });
+      await updateUser({
+        current_password: parsed.current_password,
+        email: parsed.email,
+      });
+      router.replace("/signup/check-email" as Route);
     } catch (error) {
-      setNotice(authErrorMessage(error, "update-email"));
+      setNotice({
+        message:
+          authErrorMessage(error, "update-email") ??
+          "We could not update the email address. Please try again.",
+        tone: "error",
+      });
     }
   }
 
@@ -114,7 +158,7 @@ export function VerificationNeeded() {
 
   if (status === "unavailable") {
     return (
-      <section>
+      <section className="auth-form">
         <h1 className="font-serif text-4xl font-semibold">
           We could not restore your session.
         </h1>
@@ -138,33 +182,31 @@ export function VerificationNeeded() {
     currentStatus?.account_status === "disabled";
 
   return (
-    <section className="auth-form-enter">
-      <div
-        className={`grid size-14 place-items-center rounded-full ${
-          disabled
-            ? "text-warning-700 bg-[#fff0dd]"
-            : "bg-jade-100 text-evergreen-800"
-        }`}
-      >
-        {disabled ? (
-          <AlertTriangle aria-hidden="true" className="size-7" />
-        ) : (
-          <MailWarning aria-hidden="true" className="size-7" />
-        )}
+    <section className={`auth-form auth-form-enter ${styles.page}`}>
+      <div className={styles.intro}>
+        <div
+          className={`${styles.icon} ${disabled ? styles.iconAttention : ""}`}
+        >
+          {disabled ? (
+            <AlertTriangle aria-hidden="true" className="size-6" />
+          ) : (
+            <MailWarning aria-hidden="true" className="size-6" />
+          )}
+        </div>
+        <p className={styles.eyebrow}>
+          {disabled ? "Registration needs attention" : "One step remains"}
+        </p>
+        <h1 className={styles.title}>
+          {disabled ? "Update your email to recover." : "Verify your email."}
+        </h1>
+        <p className={styles.description}>
+          {disabled
+            ? "The registration grace period ended before verification. Entering a valid email starts a new recovery period and sends a fresh link."
+            : "Your profile is saved. Confirm your email to unlock accounts, beneficiaries, and transfers."}
+        </p>
       </div>
-      <p className="text-evergreen-700 mt-6 text-sm font-bold tracking-[0.16em] uppercase">
-        {disabled ? "Registration needs attention" : "One step remains"}
-      </p>
-      <h1 className="mt-3 font-serif text-4xl leading-tight font-semibold tracking-[-0.035em]">
-        {disabled ? "Update your email to recover." : "Verify your email."}
-      </h1>
-      <p className="text-ink-600 mt-4 leading-7">
-        {disabled
-          ? "The registration grace period ended before verification. Entering a valid email starts a new recovery period and sends a fresh link."
-          : "Your profile is saved, but financial features stay unavailable until your email address is confirmed."}
-      </p>
 
-      <div className="border-line-200 bg-paper-50 mt-7 grid gap-4 rounded-md border p-5">
+      <div className={styles.statusPanel}>
         <StatusRow
           icon={<Clock3 aria-hidden="true" className="size-5" />}
           label="Each verification link"
@@ -189,22 +231,29 @@ export function VerificationNeeded() {
       </div>
 
       {currentStatus?.latest_job ? (
-        <p className="text-ink-600 mt-3 text-sm">
-          Latest email status:{" "}
-          <strong className="text-ink-950 capitalize">
+        <p className={styles.delivery}>
+          <span>Latest verification email</span>
+          <strong className={styles.deliveryBadge}>
             {humanize(currentStatus.latest_job.delivery_status)}
           </strong>
         </p>
       ) : null}
 
-      <FormErrorSummary message={notice} ref={summaryRef} />
+      <FormErrorSummary
+        className={styles.notice}
+        message={notice?.message}
+        ref={summaryRef}
+        tone={notice?.tone}
+      />
 
       {emailStatus.isError ? (
-        <div className="border-warning-700 mt-6 rounded-sm border-l-4 bg-[#fff8e8] px-4 py-3 text-sm">
-          We could not load the latest delivery status. You can retry without
-          changing your registration.
+        <div className={styles.warning} role="alert">
+          <span>
+            We could not refresh the delivery status. Your registration is
+            unchanged.
+          </span>
           <Button
-            className="mt-3"
+            className={styles.retryButton}
             onClick={() => void emailStatus.refetch()}
             size="compact"
             variant="secondary"
@@ -214,8 +263,9 @@ export function VerificationNeeded() {
         </div>
       ) : null}
 
-      <div className="mt-7 grid gap-3 sm:grid-cols-2">
+      <div className={styles.actions}>
         <Button
+          className={styles.primaryAction}
           loading={resend.isPending}
           onClick={() => {
             setNotice(undefined);
@@ -224,73 +274,93 @@ export function VerificationNeeded() {
         >
           Resend verification
         </Button>
-        <Button onClick={() => void onLogout()} variant="secondary">
+        <Button
+          className={styles.secondaryAction}
+          onClick={() => void onLogout()}
+          variant="secondary"
+        >
           <LogOut aria-hidden="true" className="size-4" />
           Sign out
         </Button>
       </div>
 
-      <div className="border-line-200 mt-8 border-t pt-7">
-        <h2 className="font-serif text-2xl font-semibold">
-          Need to use a different email?
-        </h2>
-        <p className="text-ink-600 mt-2 text-sm leading-6">
-          Updating the address resets its delivery status and automatically
-          queues a new verification message.
-        </p>
-        <form
-          className="mt-5 grid gap-4"
-          noValidate
-          onSubmit={handleSubmit(onEmailUpdate)}
-        >
-          <Field
-            error={errors.email?.message}
-            label="Email address"
-            name="recovery_email"
+      <details className={styles.recovery} open={disabled || undefined}>
+        <summary className={styles.recoverySummary}>
+          <span className={styles.summaryText}>
+            Use a different email
+            <span className={styles.summaryHint}>
+              Update the address and send a fresh link
+            </span>
+          </span>
+          <ChevronDown aria-hidden="true" className={styles.chevron} />
+        </summary>
+        <div className={styles.recoveryBody}>
+          <p className={styles.recoveryCopy}>
+            Changing your email resets its delivery status and starts a new
+            verification attempt.
+          </p>
+          <form
+            className={styles.recoveryForm}
+            noValidate
+            onSubmit={handleSubmit(onEmailUpdate)}
           >
-            <Input
-              autoCapitalize="none"
-              autoComplete="email"
-              aria-describedby={fieldDescriptionIDs({
-                error: errors.email?.message,
-                name: "recovery_email",
-              })}
-              aria-invalid={Boolean(errors.email)}
-              id="recovery_email"
-              inputMode="email"
-              type="email"
-              {...register("email")}
-            />
-          </Field>
-          <Button
-            className="sm:justify-self-start"
-            loading={isSubmitting}
-            type="submit"
-            variant="secondary"
-          >
-            Update email
-          </Button>
-        </form>
-      </div>
+            <Field
+              error={errors.email?.message}
+              label="Email address"
+              name="recovery_email"
+            >
+              <Input
+                autoCapitalize="none"
+                autoComplete="email"
+                aria-describedby={fieldDescriptionIDs({
+                  error: errors.email?.message,
+                  name: "recovery_email",
+                })}
+                aria-invalid={Boolean(errors.email)}
+                id="recovery_email"
+                inputMode="email"
+                type="email"
+                {...register("email")}
+              />
+            </Field>
+            <Field
+              error={errors.current_password?.message}
+              hint="Changing your email signs you out on every device."
+              label="Current password"
+              name="recovery_current_password"
+            >
+              <PasswordInput
+                autoComplete="current-password"
+                aria-describedby={fieldDescriptionIDs({
+                  error: errors.current_password?.message,
+                  name: "recovery_current_password",
+                })}
+                aria-invalid={Boolean(errors.current_password)}
+                id="recovery_current_password"
+                {...register("current_password")}
+              />
+            </Field>
+            <Button
+              className={styles.updateButton}
+              loading={isSubmitting}
+              type="submit"
+              variant="secondary"
+            >
+              Update email
+            </Button>
+          </form>
+        </div>
+      </details>
 
       {currentStatus?.restricted_features?.length ? (
-        <div className="mt-8">
-          <h2 className="text-sm font-bold tracking-[0.12em] uppercase">
-            Unavailable until verified
-          </h2>
-          <ul className="text-ink-600 mt-3 grid gap-2 text-sm">
-            {currentStatus.restricted_features.map((feature) => (
-              <li className="flex gap-2" key={feature}>
-                <span aria-hidden="true">•</span>
-                {feature}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <p className={styles.restrictionNote}>
+          Until verification,{" "}
+          {formatFeatureList(currentStatus.restricted_features)}.
+        </p>
       ) : (
-        <p className="text-ink-600 mt-8 text-sm leading-6">
-          Creating accounts, transfers, beneficiaries, and other financial
-          actions remain unavailable until verification.
+        <p className={styles.restrictionNote}>
+          Accounts, transfers, and beneficiaries remain unavailable until
+          verification.
         </p>
       )}
     </section>
@@ -307,21 +377,36 @@ function StatusRow({
   value: string;
 }) {
   return (
-    <div className="grid grid-cols-[1.5rem_1fr] gap-x-3">
-      <span className="text-evergreen-700 mt-0.5">{icon}</span>
-      <span className="text-ink-600 text-xs font-semibold tracking-wide uppercase">
-        {label}
-      </span>
-      <strong className="col-start-2 mt-0.5 font-semibold break-words">
-        {value}
-      </strong>
+    <div className={styles.statusRow}>
+      <span className={styles.statusIcon}>{icon}</span>
+      <span className={styles.statusLabel}>{label}</span>
+      <strong className={styles.statusValue}>{value}</strong>
     </div>
   );
 }
 
+function formatFeatureList(features: string[]) {
+  const normalized = features.map((feature) =>
+    feature
+      .replace(/^Create and manage /i, "")
+      .replace(/^Send and receive /i, ""),
+  );
+  if (normalized.length === 1) {
+    return `${normalized[0]?.toLowerCase() ?? "financial features"} remain unavailable`;
+  }
+  if (normalized.length === 2) {
+    return `${normalized[0]?.toLowerCase()} and ${normalized[1]?.toLowerCase()} remain unavailable`;
+  }
+  const finalFeature = normalized.at(-1)?.toLowerCase();
+  return `${normalized
+    .slice(0, -1)
+    .map((feature) => feature.toLowerCase())
+    .join(", ")}, and ${finalFeature} remain unavailable`;
+}
+
 function VerificationSkeleton() {
   return (
-    <div aria-live="polite" className="grid gap-5" role="status">
+    <div aria-live="polite" className="auth-form grid gap-5" role="status">
       <div className="bg-paper-100 size-14 animate-pulse rounded-full motion-reduce:animate-none" />
       <div className="bg-paper-100 h-12 w-4/5 animate-pulse rounded motion-reduce:animate-none" />
       <div className="bg-paper-100 h-24 w-full animate-pulse rounded motion-reduce:animate-none" />

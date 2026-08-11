@@ -106,7 +106,6 @@ export type ApiErrorEnvelope = {
 };
 
 export type LoginResponse = {
-  session_id: string;
   access_token: string;
   access_token_expires_at: string;
   user: User;

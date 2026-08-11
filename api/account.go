@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	db "github.com/faelic/monierave/db/sqlc"
@@ -15,13 +17,14 @@ import (
 )
 
 type accountResponse struct {
-	ID        string     `json:"id"`
-	Balance   int64      `json:"balance"`
-	Currency  string     `json:"currency"`
-	Status    string     `json:"status"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ClosedAt  *time.Time `json:"closed_at"`
+	ID            string     `json:"id"`
+	AccountNumber string     `json:"account_number"`
+	Balance       int64      `json:"balance"`
+	Currency      string     `json:"currency"`
+	Status        string     `json:"status"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	ClosedAt      *time.Time `json:"closed_at"`
 }
 
 func newAccountResponse(account db.Account) accountResponse {
@@ -32,13 +35,14 @@ func newAccountResponse(account db.Account) accountResponse {
 	}
 
 	return accountResponse{
-		ID:        uuid.UUID(account.PublicID.Bytes).String(),
-		Balance:   account.Balance,
-		Currency:  account.Currency,
-		Status:    account.Status,
-		CreatedAt: account.CreatedAt.Time,
-		UpdatedAt: account.UpdatedAt.Time,
-		ClosedAt:  closedAt,
+		ID:            uuid.UUID(account.PublicID.Bytes).String(),
+		AccountNumber: account.AccountNumber,
+		Balance:       account.Balance,
+		Currency:      account.Currency,
+		Status:        account.Status,
+		CreatedAt:     account.CreatedAt.Time,
+		UpdatedAt:     account.UpdatedAt.Time,
+		ClosedAt:      closedAt,
 	}
 }
 
@@ -74,7 +78,7 @@ func (server *Server) createAccount(ctx *gin.Context) {
 	}
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-	account, err := server.store.CreateAccountTx(ctx, db.CreateAccountParams{
+	account, err := server.store.CreateAccountTx(ctx, db.CreateAccountTxParams{
 		Owner:    authPayload.Username,
 		Currency: req.Currency,
 	})
@@ -89,6 +93,74 @@ func (server *Server) createAccount(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, newAccountResponse(account))
+}
+
+var accountNumberPattern = regexp.MustCompile(`^[0-9]{10}$`)
+
+type resolveRecipientRequest struct {
+	AccountNumber string `json:"account_number" binding:"required"`
+}
+
+type recipientResolutionResponse struct {
+	AccountNumber string `json:"account_number"`
+	AccountName   string `json:"account_name"`
+	Currency      string `json:"currency"`
+	CanReceive    bool   `json:"can_receive"`
+}
+
+func (server *Server) resolveRecipient(ctx *gin.Context) {
+	var req resolveRecipientRequest
+	if err := bindJSON(ctx, &req); err != nil {
+		writeBindingError(ctx, err)
+		return
+	}
+	accountNumber := strings.TrimSpace(req.AccountNumber)
+	if !accountNumberPattern.MatchString(accountNumber) {
+		writeRecipientNotFound(ctx)
+		return
+	}
+
+	recipient, err := server.store.ResolveReceivableAccount(ctx, accountNumber)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeRecipientNotFound(ctx)
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, recipientResolutionResponse{
+		AccountNumber: maskAccountNumber(recipient.AccountNumber),
+		AccountName:   maskName(recipient.AccountName),
+		Currency:      recipient.Currency,
+		CanReceive:    true,
+	})
+}
+
+func writeRecipientNotFound(ctx *gin.Context) {
+	ctx.JSON(
+		http.StatusNotFound,
+		codedErrorResponse(ctx, "recipient_not_found", ErrRecipientNotFound),
+	)
+}
+
+func maskAccountNumber(accountNumber string) string {
+	if len(accountNumber) <= 4 {
+		return accountNumber
+	}
+	return strings.Repeat("*", len(accountNumber)-4) + accountNumber[len(accountNumber)-4:]
+}
+
+func maskName(name string) string {
+	segments := strings.Fields(name)
+	for index, segment := range segments {
+		characters := []rune(segment)
+		if len(characters) > 1 {
+			segments[index] = string(characters[0]) + strings.Repeat("*", len(characters)-1)
+		}
+	}
+	return strings.Join(segments, " ")
 }
 
 type accountURIRequest struct {
