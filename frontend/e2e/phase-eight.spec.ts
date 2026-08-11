@@ -71,16 +71,6 @@ test("signs out every session after consequence confirmation", async ({
   expect(logoutAllCount).toBe(1);
 });
 
-test("keeps support guidance publicly reachable", async ({ page }) => {
-  await page.goto("/help");
-  await expect(
-    page.getByRole("heading", {
-      name: "Clear answers, without exposing your financial information.",
-    }),
-  ).toBeVisible();
-  await expect(page.getByText(/never ask for your password/i)).toBeVisible();
-});
-
 async function mockAuthenticatedAPI(
   page: Page,
   extension: (route: Route) => Promise<boolean | void>,

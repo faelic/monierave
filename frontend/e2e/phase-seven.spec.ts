@@ -59,8 +59,9 @@ test("resolves, reviews, and posts an idempotent transfer", async ({
 
   await page.goto("/app/transfers/new");
   await page.getByLabel("Recipient account number").fill("9374028641");
-  await page.getByRole("button", { name: "Resolve" }).click();
-  await expect(page.getByText("A**** M*****")).toBeVisible();
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByText("A**** M*****").first()).toBeVisible();
+  await expect(page.getByText(/\*{6}8641/).first()).toBeVisible();
   await page.getByLabel("Amount (USD)").fill("10.50");
   await page.getByLabel("Narration").fill("Lunch");
   await page.getByRole("button", { name: "Continue to review" }).click();
@@ -73,6 +74,8 @@ test("resolves, reviews, and posts an idempotent transfer", async ({
   await expect(
     page.getByRole("heading", { name: "Transfer posted." }),
   ).toBeVisible();
+  await expect(page.getByText("A**** M*****")).toBeVisible();
+  await expect(page.getByText(/\*{6}8641/)).toBeVisible();
   expect(transferKey).toMatch(/^[0-9a-f-]{36}$/);
 });
 
@@ -97,9 +100,31 @@ test("creates an account without accepting client-generated identity fields", as
 
   await page.goto("/app/accounts/new");
   await page.getByText("EUR", { exact: true }).click();
-  await page.getByRole("button", { name: "Create EUR account" }).click();
+  await page.getByRole("button", { name: "Open EUR account" }).click();
   await expect(page).toHaveURL(new RegExp(`/app/accounts/${account.id}$`));
   expect(createBody).toEqual({ currency: "EUR" });
+});
+
+test("prevents opening a duplicate currency account and links to the existing account", async ({
+  page,
+}) => {
+  let createRequests = 0;
+  await mockBankingAPI(page, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/accounts" && route.request().method() === "POST") {
+      createRequests += 1;
+    }
+    return false;
+  });
+
+  await page.goto("/app/accounts/new");
+  await expect(page.getByText("Already open")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Already have a USD account" }),
+  ).toBeDisabled();
+  await page.getByRole("link", { name: "View USD account" }).click();
+  await expect(page).toHaveURL(new RegExp(`/app/accounts/${account.id}$`));
+  expect(createRequests).toBe(0);
 });
 
 async function mockBankingAPI(

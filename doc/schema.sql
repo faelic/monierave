@@ -30,6 +30,7 @@ CREATE TABLE "users" (
 CREATE TABLE "accounts" (
   "id" bigserial PRIMARY KEY,
   "public_id" uuid UNIQUE NOT NULL DEFAULT (gen_random_uuid()),
+  "account_number" varchar(10) UNIQUE NOT NULL,
   "owner" varchar NOT NULL,
   "balance" bigint NOT NULL DEFAULT 0,
   "currency" varchar NOT NULL,
@@ -37,6 +38,7 @@ CREATE TABLE "accounts" (
   "created_at" timestamptz NOT NULL DEFAULT (now()),
   "updated_at" timestamptz NOT NULL DEFAULT (now()),
   "closed_at" timestamptz,
+  CHECK (account_number ~ '^[0-9]{10}$'),
   CHECK (balance >= 0),
   CHECK (status IN ('active', 'frozen', 'closed')),
   CHECK ((status = 'closed' AND closed_at IS NOT NULL AND balance = 0) OR (status <> 'closed' AND closed_at IS NULL))
@@ -157,10 +159,14 @@ CREATE TABLE "email_jobs" (
   "bounce_type" varchar,
   "bounce_subtype" varchar,
   "bounce_message" text,
+  "verification_token_hash" bytea,
+  "verification_token_expires_at" timestamptz,
   CHECK (status IN ('pending', 'queued', 'processing', 'retrying', 'sent', 'dead_letter')),
   CHECK (attempt_count >= 0),
   CHECK (max_attempts > 0),
-  CHECK (delivery_status IN ('pending', 'accepted', 'delivered', 'delayed', 'bounced', 'failed', 'suppressed', 'complained'))
+  CHECK (delivery_status IN ('pending', 'accepted', 'delivered', 'delayed', 'bounced', 'failed', 'suppressed', 'complained')),
+  CHECK ((verification_token_hash IS NULL) = (verification_token_expires_at IS NULL)),
+  CHECK (verification_token_hash IS NULL OR octet_length(verification_token_hash) = 32)
 );
 
 CREATE TABLE "outbox_events" (
@@ -248,6 +254,9 @@ WHERE "parent_job_id" IS NOT NULL;
 CREATE UNIQUE INDEX "email_jobs_provider_message_id_idx" ON "email_jobs" ("provider_message_id")
 WHERE "provider_message_id" IS NOT NULL;
 
+CREATE UNIQUE INDEX "email_jobs_verification_token_hash_idx" ON "email_jobs" ("verification_token_hash")
+WHERE "verification_token_hash" IS NOT NULL;
+
 CREATE INDEX "outbox_events_claimable_idx" ON "outbox_events" ("available_at", "created_at")
 WHERE "status" IN ('pending', 'publishing');
 
@@ -302,6 +311,8 @@ COMMENT ON TABLE "email_jobs" IS 'Durable email work items. Dead-letter jobs rem
 COMMENT ON COLUMN "email_jobs"."status" IS 'Worker execution state. Sent means the email provider accepted the API request.';
 
 COMMENT ON COLUMN "email_jobs"."delivery_status" IS 'Recipient delivery state reported asynchronously by the email provider.';
+
+COMMENT ON COLUMN "email_jobs"."verification_token_hash" IS 'SHA-256 hash of the opaque verification token. The raw token is never stored.';
 
 COMMENT ON TABLE "outbox_events" IS 'Transactional outbox records committed in the same database transaction as application state.';
 

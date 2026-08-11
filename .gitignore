@@ -1,5 +1,35 @@
+# Operating-system and editor metadata
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs, local environment, and secrets
 *.log
-LICENSE
-.postman
-postman
+.env
+.env.*
+!.env.example
+!**/.env.example
 app.env
+
+# Local tool state
+.postman/
+postman/*
+!postman/Monierave.postman_collection.json
+/.pnpm-store/
+
+# Go build, coverage, profiling, and test output
+/bin/
+/dist/
+coverage.out
+*.coverprofile
+*.prof
+*.pprof
+*.test
+
+# Temporary files
+tmp/
+.tmp/
+*.tmp

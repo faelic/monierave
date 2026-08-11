@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sync"
 	"testing"
@@ -15,7 +16,7 @@ import (
 func createTransferTestAccount(t *testing.T) Account {
 	user := createRandomUser(t)
 
-	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
+	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountTxParams{
 		Owner:    user.Username,
 		Currency: "USD",
 	})
@@ -75,11 +76,13 @@ func TestCreateUserTxCreatesEmailJobAndOutboxEvent(t *testing.T) {
 
 func TestVerifyUserEmailTxActivatesMatchingCurrentAddress(t *testing.T) {
 	created := createUserWithEmailJob(t)
+	tokenHash := setEmailVerificationToken(t, created.EmailJob)
 
 	user, err := testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
-		Username: created.User.Username,
-		Email:    created.User.Email,
-		JobID:    created.EmailJob.ID,
+		Username:  created.User.Username,
+		Email:     created.User.Email,
+		JobID:     created.EmailJob.ID,
+		TokenHash: tokenHash,
 	})
 	require.NoError(t, err)
 	require.Equal(t, AccountStatusActive, user.AccountStatus)
@@ -98,9 +101,10 @@ func TestVerifyUserEmailTxActivatesMatchingCurrentAddress(t *testing.T) {
 	}
 
 	_, err = testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
-		Username: created.User.Username,
-		Email:    created.User.Email,
-		JobID:    created.EmailJob.ID,
+		Username:  created.User.Username,
+		Email:     created.User.Email,
+		JobID:     created.EmailJob.ID,
+		TokenHash: tokenHash,
 	})
 	require.NoError(t, err)
 	afterReplay, err := testQueries.ListAuditLogsByJob(
@@ -113,6 +117,7 @@ func TestVerifyUserEmailTxActivatesMatchingCurrentAddress(t *testing.T) {
 
 func TestVerifyUserEmailTxRejectsOldAddress(t *testing.T) {
 	created := createUserWithEmailJob(t)
+	tokenHash := setEmailVerificationToken(t, created.EmailJob)
 	_, err := testStore.UpdateUserTx(context.Background(), UpdateUserTxParams{
 		UpdateUserParams: UpdateUserParams{
 			Username: created.User.Username,
@@ -122,11 +127,55 @@ func TestVerifyUserEmailTxRejectsOldAddress(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
-		Username: created.User.Username,
-		Email:    created.User.Email,
-		JobID:    created.EmailJob.ID,
+		Username:  created.User.Username,
+		Email:     created.User.Email,
+		JobID:     created.EmailJob.ID,
+		TokenHash: tokenHash,
 	})
 	require.ErrorIs(t, err, ErrEmailVerificationAddressStale)
+}
+
+func TestVerifyUserEmailTxRejectsExpiredOrMismatchedToken(t *testing.T) {
+	created := createUserWithEmailJob(t)
+	tokenHash := setEmailVerificationToken(t, created.EmailJob)
+
+	_, err := testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
+		Username:  created.User.Username,
+		Email:     created.User.Email,
+		JobID:     created.EmailJob.ID,
+		TokenHash: []byte("different-token-hash-value-1234"),
+	})
+	require.ErrorIs(t, err, ErrEmailVerificationJobMismatch)
+
+	_, err = testDB.Exec(
+		context.Background(),
+		`UPDATE email_jobs SET verification_token_expires_at = now() - interval '1 second' WHERE id = $1`,
+		created.EmailJob.ID,
+	)
+	require.NoError(t, err)
+	_, err = testStore.VerifyUserEmailTx(context.Background(), VerifyUserEmailTxParams{
+		Username:  created.User.Username,
+		Email:     created.User.Email,
+		JobID:     created.EmailJob.ID,
+		TokenHash: tokenHash,
+	})
+	require.ErrorIs(t, err, ErrEmailVerificationTokenExpired)
+}
+
+func setEmailVerificationToken(t *testing.T, job EmailJob) []byte {
+	t.Helper()
+	digest := sha256.Sum256(job.ID.Bytes[:])
+	tokenHash := digest[:]
+	_, err := testQueries.SetEmailJobVerificationToken(
+		context.Background(),
+		SetEmailJobVerificationTokenParams{
+			ID:                         job.ID,
+			VerificationTokenHash:      tokenHash,
+			VerificationTokenExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		},
+	)
+	require.NoError(t, err)
+	return tokenHash
 }
 
 func TestRequestEmailVerificationTxCooldownAndDisabledRecovery(t *testing.T) {
@@ -632,7 +681,7 @@ func TestTransferTx(t *testing.T) {
 			ctx := context.Background()
 			result, err := testStore.TransferTx(ctx, TransferTxParams{
 				FromAccountPublicID: account1.PublicID,
-				ToAccountPublicID:   account2.PublicID,
+				ToAccountNumber:     account2.AccountNumber,
 				Amount:              amount,
 				Currency:            account1.Currency,
 				Username:            account1.Owner,
@@ -731,7 +780,7 @@ func TestTransferTxDeadlock(t *testing.T) {
 			ctx := context.Background()
 			_, err := testStore.TransferTx(ctx, TransferTxParams{
 				FromAccountPublicID: fromAccount.PublicID,
-				ToAccountPublicID:   toAccount.PublicID,
+				ToAccountNumber:     toAccount.AccountNumber,
 				Amount:              amount,
 				Currency:            fromAccount.Currency,
 				Username:            fromAccount.Owner,
@@ -770,7 +819,7 @@ func TestTransferTxInsufficientBalance(t *testing.T) {
 
 	result, err := testStore.TransferTx(context.Background(), TransferTxParams{
 		FromAccountPublicID: account1.PublicID,
-		ToAccountPublicID:   account2.PublicID,
+		ToAccountNumber:     account2.AccountNumber,
 		Amount:              amount,
 		Currency:            account1.Currency,
 		Username:            account1.Owner,
@@ -832,7 +881,7 @@ func TestTransferTxAccountLifecycle(t *testing.T) {
 
 			result, err := testStore.TransferTx(context.Background(), TransferTxParams{
 				FromAccountPublicID: fromAccount.PublicID,
-				ToAccountPublicID:   toAccount.PublicID,
+				ToAccountNumber:     toAccount.AccountNumber,
 				Amount:              10,
 				Currency:            fromAccount.Currency,
 				Username:            fromAccount.Owner,
@@ -876,7 +925,7 @@ func setTransferTestAccountStatus(t *testing.T, account Account, status string) 
 func TestCloseAccountTxSerializesWithIncomingTransfer(t *testing.T) {
 	fromAccount := createTransferTestAccount(t)
 	toUser := createRandomUser(t)
-	toAccount, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
+	toAccount, err := testStore.CreateAccountTx(context.Background(), CreateAccountTxParams{
 		Owner: toUser.Username, Currency: fromAccount.Currency,
 	})
 	require.NoError(t, err)
@@ -889,7 +938,7 @@ func TestCloseAccountTxSerializesWithIncomingTransfer(t *testing.T) {
 		<-start
 		_, err := testStore.TransferTx(context.Background(), TransferTxParams{
 			FromAccountPublicID: fromAccount.PublicID,
-			ToAccountPublicID:   toAccount.PublicID,
+			ToAccountNumber:     toAccount.AccountNumber,
 			Amount:              10,
 			Currency:            fromAccount.Currency,
 			Username:            fromAccount.Owner,

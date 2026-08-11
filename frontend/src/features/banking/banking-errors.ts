@@ -1,7 +1,8 @@
 import { isApiError } from "@/lib/api/api-error";
 
 const messages: Record<string, string> = {
-  account_already_exists: "You already have an account in this currency.",
+  account_already_exists:
+    "An account is already open in this currency. Choose another currency or view your existing account.",
   account_balance_not_zero:
     "This account must have a zero posted balance before it can be closed.",
   account_closed: "A closed account cannot complete this action.",

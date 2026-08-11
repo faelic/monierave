@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/auth-provider";
+import { canAccessApplicationPath } from "@/features/auth/user-access";
 
 export function ApplicationBoundary({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -25,17 +26,16 @@ export function ApplicationBoundary({ children }: { children: ReactNode }) {
     }
     if (
       status === "authenticated" &&
-      (user?.account_status !== "active" || !user.email_verified_at)
+      !canAccessApplicationPath(user, pathname)
     ) {
-      router.replace("/verification-needed");
+      router.replace("/app?access=verification-required" as Route);
     }
   }, [pathname, router, searchParams, status, user]);
 
   if (
     status === "restoring" ||
     status === "anonymous" ||
-    (status === "authenticated" &&
-      (user?.account_status !== "active" || !user.email_verified_at))
+    (status === "authenticated" && !canAccessApplicationPath(user, pathname))
   ) {
     return <ApplicationSkeleton />;
   }

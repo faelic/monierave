@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
+import "@fontsource/dm-sans/400.css";
+import "@fontsource/dm-sans/500.css";
+import "@fontsource/dm-sans/600.css";
+import "@fontsource-variable/inter";
+import "@fontsource/libre-baskerville/700.css";
 import "@fontsource-variable/fraunces";
 import "@fontsource-variable/manrope";
 import "@fontsource-variable/source-sans-3";
+import "@fontsource/space-mono/400.css";
 
 import { AppProviders } from "@/app/providers";
 
@@ -22,6 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head />
       <body>
         <AppProviders>{children}</AppProviders>
       </body>

@@ -2,9 +2,10 @@
 INSERT INTO accounts (
   owner,
   balance,
-  currency
+  currency,
+  account_number
 ) VALUES (
-  $1, 0, $2
+  $1, 0, $2, $3
 )
 RETURNING *;
 
@@ -15,6 +16,23 @@ WHERE id = $1 LIMIT 1;
 -- name: GetAccountByPublicID :one
 SELECT * FROM accounts
 WHERE public_id = $1 LIMIT 1;
+
+-- name: GetAccountByAccountNumber :one
+SELECT * FROM accounts
+WHERE account_number = $1 LIMIT 1;
+
+-- name: ResolveReceivableAccount :one
+SELECT
+  account.account_number,
+  owner.full_name AS account_name,
+  account.currency,
+  account.status
+FROM accounts AS account
+JOIN users AS owner
+  ON owner.username = account.owner
+WHERE account.account_number = $1
+  AND account.status IN ('active', 'frozen')
+LIMIT 1;
 
 -- name: GetOwnedAccountByPublicID :one
 SELECT * FROM accounts

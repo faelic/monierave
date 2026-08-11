@@ -6,14 +6,23 @@ import {
   ArrowUpRight,
   Eye,
   EyeOff,
+  LockKeyhole,
+  MailCheck,
+  Plus,
   RefreshCw,
+  Send,
+  ShieldCheck,
+  UserRound,
   WalletCards,
 } from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useAuth } from "@/features/auth/auth-provider";
+import { hasFinancialAccess } from "@/features/auth/user-access";
 import {
   listOwnedAccounts,
   listRecentAccountTransactions,
@@ -22,13 +31,22 @@ import {
   accountLabel,
   formatMinorAmount,
   formatTransactionAmount,
-  maskOwnedAccountNumber,
 } from "@/features/dashboard/financial-format";
 import { isApiError } from "@/lib/api/api-error";
 import type { Account, BankingTransaction } from "@/lib/api/contracts";
 import { queryKeys } from "@/lib/query/query-keys";
 
 export function DashboardOverview() {
+  const { user } = useAuth();
+
+  if (!hasFinancialAccess(user)) {
+    return <LimitedDashboardOverview />;
+  }
+
+  return <FinancialDashboardOverview />;
+}
+
+function FinancialDashboardOverview() {
   const { user } = useAuth();
   const [balancesVisible, setBalancesVisible] = useState(true);
   const accounts = useQuery({
@@ -76,6 +94,30 @@ export function DashboardOverview() {
         </Button>
       </header>
 
+      <section
+        aria-label="Quick actions"
+        className="mt-7 grid gap-3 sm:grid-cols-3"
+      >
+        <QuickAction
+          description="Review recipient and transfer details"
+          href="/app/transfers/new"
+          icon={Send}
+          label="Send money"
+        />
+        <QuickAction
+          description="Open a USD or EUR account"
+          href="/app/accounts/new"
+          icon={Plus}
+          label="Open account"
+        />
+        <QuickAction
+          description="See activity across every account"
+          href="/app/transactions"
+          icon={ArrowUpRight}
+          label="View activity"
+        />
+      </section>
+
       <section aria-labelledby="accounts-heading" className="mt-9">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="text-xl font-semibold" id="accounts-heading">
@@ -122,8 +164,7 @@ export function DashboardOverview() {
                 Recent activity
               </h2>
               <p className="text-ink-600 mt-1 text-sm">
-                {accountLabel(primaryAccount)} ·{" "}
-                {maskOwnedAccountNumber(primaryAccount.account_number)}
+                {accountLabel(primaryAccount)} · {primaryAccount.account_number}
               </p>
             </div>
             <p className="text-ink-600 text-sm">Latest five transactions</p>
@@ -160,6 +201,160 @@ export function DashboardOverview() {
   );
 }
 
+function LimitedDashboardOverview() {
+  const { user } = useAuth();
+  const disabled = user?.account_status === "disabled";
+  const expiresAt = user?.registration_expires_at
+    ? formatRegistrationDeadline(user.registration_expires_at)
+    : null;
+
+  return (
+    <div>
+      <header className="border-line-200 border-b pb-7">
+        <p className="text-ink-600 text-sm">
+          Welcome, {firstName(user?.full_name)}
+        </p>
+        <h1 className="mt-1 max-w-3xl text-4xl font-semibold tracking-[-0.035em] sm:text-5xl">
+          {disabled
+            ? "Recover your Monierave registration."
+            : "Verify your email to activate banking."}
+        </h1>
+        <p className="text-ink-600 mt-4 max-w-2xl leading-7">
+          Your secure session and profile are available. Financial information
+          and money movement stay locked until your email address is confirmed.
+        </p>
+      </header>
+
+      <section className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
+        <article className="border-line-200 rounded-md border bg-white p-6 sm:p-7">
+          <div className="flex items-start gap-4">
+            <span className="text-evergreen-800 grid size-11 shrink-0 place-items-center rounded-full bg-[var(--product-accent-soft)]">
+              <MailCheck aria-hidden="true" className="size-5" />
+            </span>
+            <div>
+              <p className="text-ink-600 text-xs font-bold tracking-[0.12em] uppercase">
+                Account activation
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold">
+                {disabled
+                  ? "Update your email to continue"
+                  : "One step remains"}
+              </h2>
+              <p className="text-ink-600 mt-2 leading-7">
+                {disabled
+                  ? "The registration window ended, but you can recover it by confirming a current email address."
+                  : "Use the verification message we sent to confirm that this email address belongs to you."}
+              </p>
+            </div>
+          </div>
+
+          <dl className="border-line-200 mt-6 grid gap-4 border-y py-5 sm:grid-cols-2">
+            <div>
+              <dt className="text-ink-600 text-xs font-bold tracking-[0.1em] uppercase">
+                Current address
+              </dt>
+              <dd className="mt-1 font-semibold break-all">{user?.email}</dd>
+            </div>
+            <div>
+              <dt className="text-ink-600 text-xs font-bold tracking-[0.1em] uppercase">
+                Registration status
+              </dt>
+              <dd className="mt-1 font-semibold capitalize">
+                {user?.account_status ?? "pending"}
+                {!disabled && expiresAt ? ` · until ${expiresAt}` : ""}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Button asChild>
+              <Link href="/verification-needed">Continue verification</Link>
+            </Button>
+            <Button asChild variant="secondary">
+              <Link href="/app/profile/edit">Review profile and email</Link>
+            </Button>
+          </div>
+        </article>
+
+        <aside className="border-line-200 rounded-md border bg-[var(--product-navigation)] p-6 text-white sm:p-7">
+          <LockKeyhole
+            aria-hidden="true"
+            className="size-6 text-[var(--product-accent)]"
+          />
+          <h2 className="mt-5 text-xl font-semibold">
+            Protected until verified
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-white/65">
+            These controls remain unavailable in both the interface and API.
+          </p>
+          <ul className="mt-5 grid gap-3 text-sm font-semibold text-white/85">
+            <li>Accounts and posted balances</li>
+            <li>Transfers and recipient lookup</li>
+            <li>Beneficiaries</li>
+            <li>Transactions and statements</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section aria-labelledby="available-heading" className="mt-10">
+        <h2 className="text-xl font-semibold" id="available-heading">
+          Available now
+        </h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <QuickAction
+            description="Review your identity details or change your email address"
+            href="/app/profile"
+            icon={UserRound}
+            label="Profile"
+          />
+          <QuickAction
+            description="Review your active session and securely sign out everywhere"
+            href="/app/security"
+            icon={ShieldCheck}
+            label="Session security"
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function formatRegistrationDeadline(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function QuickAction({
+  description,
+  href,
+  icon: Icon,
+  label,
+}: {
+  description: string;
+  href: Route;
+  icon: typeof Send;
+  label: string;
+}) {
+  return (
+    <Link
+      className="border-line-200 hover:border-evergreen-700 group flex min-h-20 items-center gap-3.5 rounded-md border bg-white p-3.5 no-underline transition-colors"
+      href={href}
+    >
+      <span className="text-evergreen-800 grid size-10 shrink-0 place-items-center rounded-full bg-[var(--product-accent-soft)]">
+        <Icon aria-hidden="true" className="size-4" />
+      </span>
+      <span>
+        <strong className="block">{label}</strong>
+        <span className="text-ink-600 mt-1 block text-sm leading-5">
+          {description}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 function AccountSummary({
   account,
   balancesVisible,
@@ -171,8 +366,8 @@ function AccountSummary({
 }) {
   return (
     <article
-      className={`border-line-200 flex min-h-56 flex-col rounded-md border bg-white p-5 ${
-        primary ? "border-t-evergreen-700 border-t-4" : ""
+      className={`border-line-200 flex min-h-44 flex-col rounded-md border bg-white p-4 ${
+        primary ? "border-t-2 border-t-[var(--product-accent)]" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -182,12 +377,12 @@ function AccountSummary({
             className="text-ink-600 mt-1 font-mono text-sm tracking-[0.08em]"
             data-financial-number
           >
-            {maskOwnedAccountNumber(account.account_number)}
+            {account.account_number}
           </p>
         </div>
         <AccountStatus status={account.status} />
       </div>
-      <div className="mt-auto pt-8">
+      <div className="mt-auto pt-6">
         <p className="text-ink-600 text-xs font-semibold tracking-[0.1em] uppercase">
           Current posted balance
         </p>
@@ -200,7 +395,7 @@ function AccountSummary({
                 )}`
               : "Current posted balance hidden"
           }
-          className="mt-2 text-3xl font-semibold tracking-[-0.025em]"
+          className="mt-2 text-2xl font-semibold tracking-[-0.025em]"
           data-financial-number
         >
           {balancesVisible
@@ -286,7 +481,7 @@ function AccountGridSkeleton() {
     >
       {[0, 1].map((item) => (
         <div
-          className="border-line-200 h-56 animate-pulse rounded-md border bg-white p-5 motion-reduce:animate-none"
+          className="border-line-200 h-44 animate-pulse rounded-md border bg-white p-4 motion-reduce:animate-none"
           key={item}
         >
           <div className="bg-paper-100 h-5 w-28 rounded" />

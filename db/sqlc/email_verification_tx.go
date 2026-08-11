@@ -14,9 +14,10 @@ import (
 const emailVerificationRequestCooldown = time.Minute
 
 type VerifyUserEmailTxParams struct {
-	Username string
-	Email    string
-	JobID    pgtype.UUID
+	Username  string
+	Email     string
+	JobID     pgtype.UUID
+	TokenHash []byte
 }
 
 func (store *SQLStore) VerifyUserEmailTx(
@@ -26,7 +27,7 @@ func (store *SQLStore) VerifyUserEmailTx(
 	var result User
 
 	err := store.execTx(ctx, func(q *Queries) error {
-		job, err := q.GetEmailJob(ctx, arg.JobID)
+		job, err := q.GetEmailJobForUpdate(ctx, arg.JobID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrEmailVerificationJobMismatch
@@ -34,6 +35,13 @@ func (store *SQLStore) VerifyUserEmailTx(
 			return err
 		}
 		if job.Username != arg.Username || !strings.EqualFold(job.Recipient, arg.Email) {
+			return ErrEmailVerificationJobMismatch
+		}
+		if !job.VerificationTokenExpiresAt.Valid ||
+			!time.Now().Before(job.VerificationTokenExpiresAt.Time) {
+			return ErrEmailVerificationTokenExpired
+		}
+		if !constantTimeHashEqual(job.VerificationTokenHash, arg.TokenHash) {
 			return ErrEmailVerificationJobMismatch
 		}
 

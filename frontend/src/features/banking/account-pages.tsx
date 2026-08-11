@@ -22,8 +22,8 @@ import {
   accountLabel,
   formatMinorAmount,
   formatTransactionAmount,
-  maskOwnedAccountNumber,
 } from "@/features/dashboard/financial-format";
+import { isApiError } from "@/lib/api/api-error";
 import type { Account, BankingTransaction } from "@/lib/api/contracts";
 import { queryKeys } from "@/lib/query/query-keys";
 
@@ -39,7 +39,7 @@ export function AccountsPage() {
           <Button asChild>
             <Link href={"/app/accounts/new" as Route}>
               <Plus aria-hidden="true" className="size-4" />
-              Create account
+              Open account
             </Link>
           </Button>
         }
@@ -62,13 +62,13 @@ export function AccountsPage() {
             className="text-evergreen-700 mx-auto size-8"
           />
           <h2 className="mt-4 text-xl font-semibold">
-            Create your first account.
+            Open your first currency account.
           </h2>
           <p className="text-ink-600 mt-2">
             New accounts begin active with a zero current posted balance.
           </p>
           <Button asChild className="mt-6">
-            <Link href={"/app/accounts/new" as Route}>Create account</Link>
+            <Link href={"/app/accounts/new" as Route}>Open account</Link>
           </Button>
         </div>
       ) : (
@@ -76,19 +76,19 @@ export function AccountsPage() {
           {accounts.data.map((account) => (
             <li key={account.id}>
               <Link
-                className="border-line-200 hover:border-evergreen-700 block min-h-52 rounded-md border bg-white p-5 no-underline"
+                className="border-line-200 hover:border-evergreen-700 block min-h-44 rounded-md border bg-white p-4 no-underline transition-colors"
                 href={`/app/accounts/${account.id}` as Route}
               >
                 <div className="flex justify-between gap-3">
                   <div>
                     <h2 className="font-semibold">{accountLabel(account)}</h2>
                     <p className="text-ink-600 mt-1 font-mono text-sm">
-                      {maskOwnedAccountNumber(account.account_number)}
+                      {account.account_number}
                     </p>
                   </div>
                   <LifecycleStatus status={account.status} />
                 </div>
-                <p className="text-ink-600 mt-14 text-xs font-semibold tracking-wider uppercase">
+                <p className="text-ink-600 mt-10 text-xs font-semibold tracking-wider uppercase">
                   Current posted balance
                 </p>
                 <p
@@ -109,11 +109,27 @@ export function AccountsPage() {
 export function CreateAccountPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const accounts = useQuery({
+    queryFn: listOwnedAccounts,
+    queryKey: queryKeys.accounts.all,
+  });
   const [currency, setCurrency] = useState<Account["currency"]>("USD");
   const [error, setError] = useState<string>();
+  const existingAccount = accounts.data?.find(
+    (account) => account.currency === currency,
+  );
   const create = useMutation({
     mutationFn: () => createFinancialAccount(currency),
-    onError: (cause) => setError(bankingErrorMessage(cause)),
+    onError: (cause) => {
+      if (isApiError(cause) && cause.code === "account_already_exists") {
+        setError(`You already have a ${currency} account.`);
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.accounts.all,
+        });
+        return;
+      }
+      setError(bankingErrorMessage(cause));
+    },
     onSuccess: async (account) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
       router.push(`/app/accounts/${account.id}` as Route);
@@ -122,7 +138,7 @@ export function CreateAccountPage() {
   return (
     <div className="max-w-xl">
       <BackLink href="/app/accounts" label="Accounts" />
-      <h1 className="mt-6 text-4xl font-semibold">Create account</h1>
+      <h1 className="mt-6 text-4xl font-semibold">Open a currency account</h1>
       <p className="text-ink-600 mt-3 leading-7">
         Choose a currency. Monierave generates the account number internally,
         and the account starts active with a zero current posted balance.
@@ -131,35 +147,61 @@ export function CreateAccountPage() {
       <fieldset className="mt-8">
         <legend className="font-semibold">Account currency</legend>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          {(["USD", "EUR"] as const).map((value) => (
-            <label
-              className={`border-line-300 flex min-h-16 cursor-pointer items-center gap-3 rounded-sm border bg-white px-4 ${
-                currency === value ? "border-evergreen-700 border-2" : ""
-              }`}
-              key={value}
-            >
-              <input
-                checked={currency === value}
-                name="currency"
-                onChange={() => setCurrency(value)}
-                type="radio"
-                value={value}
-              />
-              <strong>{value}</strong>
-            </label>
-          ))}
+          {(["USD", "EUR"] as const).map((value) => {
+            const ownedAccount = accounts.data?.find(
+              (account) => account.currency === value,
+            );
+            return (
+              <label
+                className={`border-line-300 flex min-h-16 items-center gap-3 rounded-sm border bg-white px-4 ${
+                  ownedAccount
+                    ? "cursor-not-allowed opacity-65"
+                    : "cursor-pointer"
+                } ${currency === value ? "border-evergreen-700 border-2" : ""}`}
+                key={value}
+              >
+                <input
+                  checked={currency === value}
+                  disabled={Boolean(ownedAccount)}
+                  name="currency"
+                  onChange={() => {
+                    setCurrency(value);
+                    setError(undefined);
+                  }}
+                  type="radio"
+                  value={value}
+                />
+                <span>
+                  <strong className="block">{value}</strong>
+                  <span className="text-ink-600 mt-1 block text-xs">
+                    {ownedAccount ? "Already open" : "Available"}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
         </div>
       </fieldset>
       <Button
         className="mt-8 w-full"
+        disabled={accounts.isPending || Boolean(existingAccount)}
         loading={create.isPending}
         onClick={() => {
           setError(undefined);
           create.mutate();
         }}
       >
-        Create {currency} account
+        {existingAccount
+          ? `Already have a ${currency} account`
+          : `Open ${currency} account`}
       </Button>
+      {existingAccount ? (
+        <Button asChild className="mt-3 w-full" variant="secondary">
+          <Link href={`/app/accounts/${existingAccount.id}` as Route}>
+            View {currency} account
+          </Link>
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -338,7 +380,7 @@ export function CloseAccountPage({ accountID }: { accountID: string }) {
       <dl className="border-line-200 mt-7 grid gap-4 border-y py-5">
         <div className="flex justify-between gap-4">
           <dt>Account</dt>
-          <dd>{maskOwnedAccountNumber(account.data.account_number)}</dd>
+          <dd>{account.data.account_number}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt>Current posted balance</dt>
@@ -371,7 +413,7 @@ export function TransactionDetailPage({ reference }: { reference: string }) {
   const value = transaction.data;
   return (
     <div className="max-w-2xl">
-      <BackLink href={`/app/accounts/${value.account_id}`} label="Account" />
+      <BackLink href="/app/transactions" label="Activity" />
       <div className="mt-7 flex items-center justify-between gap-4">
         <h1 className="text-4xl font-semibold">Transaction details</h1>
         <StatusBadge className="capitalize">{value.status}</StatusBadge>
@@ -380,7 +422,14 @@ export function TransactionDetailPage({ reference }: { reference: string }) {
         {formatTransactionAmount(value)}
       </p>
       <dl className="border-line-200 mt-8 grid gap-5 border-y py-6">
-        <Detail label="Recipient or source" value={value.counterparty} />
+        <Detail
+          label={
+            value.direction === "incoming"
+              ? "Source account"
+              : "Recipient account"
+          }
+          value={value.counterparty}
+        />
         <Detail label="Narration" value={value.narration || "None"} />
         <Detail label="Type" value={value.type.replaceAll("_", " ")} />
         <Detail label="Reference" value={value.reference} />

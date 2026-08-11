@@ -65,7 +65,7 @@ const listOwnedBeneficiaries = `-- name: ListOwnedBeneficiaries :many
 SELECT
   beneficiary.id,
   beneficiary.nickname,
-  account.public_id AS destination_account_public_id,
+  account.account_number AS destination_account_number,
   account.currency,
   account.status AS destination_account_status,
   beneficiary.created_at,
@@ -86,13 +86,13 @@ type ListOwnedBeneficiariesParams struct {
 }
 
 type ListOwnedBeneficiariesRow struct {
-	ID                         pgtype.UUID        `json:"id"`
-	Nickname                   string             `json:"nickname"`
-	DestinationAccountPublicID pgtype.UUID        `json:"destination_account_public_id"`
-	Currency                   string             `json:"currency"`
-	DestinationAccountStatus   string             `json:"destination_account_status"`
-	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	ID                       pgtype.UUID        `json:"id"`
+	Nickname                 string             `json:"nickname"`
+	DestinationAccountNumber string             `json:"destination_account_number"`
+	Currency                 string             `json:"currency"`
+	DestinationAccountStatus string             `json:"destination_account_status"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) ListOwnedBeneficiaries(ctx context.Context, arg ListOwnedBeneficiariesParams) ([]ListOwnedBeneficiariesRow, error) {
@@ -107,7 +107,7 @@ func (q *Queries) ListOwnedBeneficiaries(ctx context.Context, arg ListOwnedBenef
 		if err := rows.Scan(
 			&i.ID,
 			&i.Nickname,
-			&i.DestinationAccountPublicID,
+			&i.DestinationAccountNumber,
 			&i.Currency,
 			&i.DestinationAccountStatus,
 			&i.CreatedAt,
@@ -136,7 +136,7 @@ WITH updated AS (
 SELECT
   updated.id,
   updated.nickname,
-  account.public_id AS destination_account_public_id,
+  account.account_number AS destination_account_number,
   account.currency,
   account.status AS destination_account_status,
   updated.created_at,
@@ -153,13 +153,13 @@ type UpdateOwnedBeneficiaryNicknameParams struct {
 }
 
 type UpdateOwnedBeneficiaryNicknameRow struct {
-	ID                         pgtype.UUID        `json:"id"`
-	Nickname                   string             `json:"nickname"`
-	DestinationAccountPublicID pgtype.UUID        `json:"destination_account_public_id"`
-	Currency                   string             `json:"currency"`
-	DestinationAccountStatus   string             `json:"destination_account_status"`
-	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	ID                       pgtype.UUID        `json:"id"`
+	Nickname                 string             `json:"nickname"`
+	DestinationAccountNumber string             `json:"destination_account_number"`
+	Currency                 string             `json:"currency"`
+	DestinationAccountStatus string             `json:"destination_account_status"`
+	CreatedAt                pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) UpdateOwnedBeneficiaryNickname(ctx context.Context, arg UpdateOwnedBeneficiaryNicknameParams) (UpdateOwnedBeneficiaryNicknameRow, error) {
@@ -168,7 +168,7 @@ func (q *Queries) UpdateOwnedBeneficiaryNickname(ctx context.Context, arg Update
 	err := row.Scan(
 		&i.ID,
 		&i.Nickname,
-		&i.DestinationAccountPublicID,
+		&i.DestinationAccountNumber,
 		&i.Currency,
 		&i.DestinationAccountStatus,
 		&i.CreatedAt,

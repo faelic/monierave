@@ -61,6 +61,7 @@ func TestCreateTransferAPI(t *testing.T) {
 			errorCode:  "idempotency_conflict",
 		},
 		{name: "AccountNotFound", storeError: db.ErrAccountNotFound, statusCode: http.StatusNotFound, errorCode: "account_not_found"},
+		{name: "RecipientNotFound", storeError: db.ErrRecipientNotFound, statusCode: http.StatusNotFound, errorCode: "recipient_not_found"},
 		{name: "ForeignSource", storeError: db.ErrAccountNotOwned, statusCode: http.StatusNotFound, errorCode: "account_not_found"},
 		{name: "InsufficientBalance", storeError: db.ErrInsufficientBalance, statusCode: http.StatusBadRequest, errorCode: "insufficient_funds"},
 		{name: "CurrencyMismatch", storeError: db.ErrCurrencyMismatch, statusCode: http.StatusBadRequest, errorCode: "currency_mismatch"},
@@ -99,11 +100,11 @@ func TestCreateTransferAPI(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			body := map[string]any{
-				"from_account_id": publicUUID(fromAccount.PublicID),
-				"to_account_id":   publicUUID(toAccount.PublicID),
-				"amount":          amount,
-				"currency":        fromAccount.Currency,
-				"narration":       "Lunch repayment",
+				"from_account_id":   publicUUID(fromAccount.PublicID),
+				"to_account_number": toAccount.AccountNumber,
+				"amount":            amount,
+				"currency":          fromAccount.Currency,
+				"narration":         "Lunch repayment",
 			}
 			if tc.changeBody != nil {
 				tc.changeBody(body)
@@ -120,14 +121,14 @@ func TestCreateTransferAPI(t *testing.T) {
 			if callsStore {
 				requestHash, err := hashTransferRequest(
 					transferRequest{
-						FromAccountID: publicUUID(fromAccount.PublicID),
-						ToAccountID:   publicUUID(toAccount.PublicID),
-						Amount:        amount,
-						Currency:      fromAccount.Currency,
-						Narration:     "Lunch repayment",
+						FromAccountID:   publicUUID(fromAccount.PublicID),
+						ToAccountNumber: toAccount.AccountNumber,
+						Amount:          amount,
+						Currency:        fromAccount.Currency,
+						Narration:       "Lunch repayment",
 					},
 					fromAccount.PublicID,
-					toAccount.PublicID,
+					toAccount.AccountNumber,
 				)
 				require.NoError(t, err)
 				storeResult := result
@@ -139,7 +140,7 @@ func TestCreateTransferAPI(t *testing.T) {
 						arg db.IdempotentTransferTxParams,
 					) (db.TransferTxResult, error) {
 						require.Equal(t, fromAccount.PublicID, arg.FromAccountPublicID)
-						require.Equal(t, toAccount.PublicID, arg.ToAccountPublicID)
+						require.Equal(t, toAccount.AccountNumber, arg.ToAccountNumber)
 						require.Equal(t, amount, arg.Amount)
 						require.Equal(t, fromAccount.Currency, arg.Currency)
 						require.Equal(t, fromAccount.Owner, arg.Username)
@@ -169,11 +170,14 @@ func TestCreateTransferAPI(t *testing.T) {
 				var response transferResponse
 				require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
 				require.Equal(t, publicUUID(fromAccount.PublicID), response.FromAccount.ID)
-				require.Equal(t, publicUUID(toAccount.PublicID), response.ToAccount.ID)
+				require.Equal(t, maskAccountNumber(toAccount.AccountNumber), response.ToAccount.AccountNumber)
+				require.Zero(t, response.Fee)
 				require.Equal(t, amount, response.Transaction.Amount)
 				require.Equal(t, result.Transaction.Reference, response.Transaction.Reference)
 				require.Equal(t, db.BankingTransactionStatusPosted, response.Transaction.Status)
 				require.NotContains(t, recorder.Body.String(), `"owner"`)
+				require.NotContains(t, recorder.Body.String(), publicUUID(toAccount.PublicID))
+				require.NotContains(t, recorder.Body.String(), `"balance":`+strconv.FormatInt(toAccount.Balance, 10))
 				require.Equal(
 					t,
 					strconv.FormatBool(tc.replayed),

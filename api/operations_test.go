@@ -10,6 +10,7 @@ import (
 	"time"
 
 	mockdb "github.com/faelic/monierave/db/mock"
+	db "github.com/faelic/monierave/db/sqlc"
 	"github.com/faelic/monierave/db/util"
 	"github.com/faelic/monierave/observability"
 	"github.com/google/uuid"
@@ -160,6 +161,33 @@ func TestHealthEndpoints(t *testing.T) {
 		require.Contains(t, recorder.Body.String(), `"status":"not_ready"`)
 		require.Contains(t, recorder.Body.String(), `"postgres":"unavailable"`)
 	})
+}
+
+func TestOperationalEndpointsRequireConfiguredToken(t *testing.T) {
+	server := newOperationalTestServer(
+		t,
+		nil,
+		func(context.Context) error { return nil },
+		func(context.Context) error { return nil },
+	)
+	server.config.OperationsToken = "operations-test-token-123456789012"
+	mockStore := server.store.(testSessionStore).Store.(*mockdb.MockStore)
+	mockStore.EXPECT().
+		GetFinancialOperationalMetrics(gomock.Any()).
+		Return(db.GetFinancialOperationalMetricsRow{}, nil)
+
+	for _, path := range []string{"/readyz", "/metrics"} {
+		withoutToken := httptest.NewRequest(http.MethodGet, path, nil)
+		withoutTokenRecorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(withoutTokenRecorder, withoutToken)
+		require.Equal(t, http.StatusNotFound, withoutTokenRecorder.Code)
+
+		withToken := httptest.NewRequest(http.MethodGet, path, nil)
+		withToken.Header.Set("Authorization", "Bearer "+server.config.OperationsToken)
+		withTokenRecorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(withTokenRecorder, withToken)
+		require.Equal(t, http.StatusOK, withTokenRecorder.Code)
+	}
 }
 
 func TestLoginRateLimit(t *testing.T) {

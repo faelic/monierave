@@ -23,11 +23,6 @@ export function formatTransactionAmount(
   return `${prefix}${formatMinorAmount(amount, transaction.currency, locale)}`;
 }
 
-export function maskOwnedAccountNumber(accountNumber: string) {
-  const visible = accountNumber.slice(-4);
-  return `${"*".repeat(Math.max(0, accountNumber.length - 4))}${visible}`;
-}
-
 export function accountLabel(account: Pick<Account, "currency" | "status">) {
   const lifecycle = account.status === "closed" ? "Closed " : "";
   return `${lifecycle}${account.currency} account`;

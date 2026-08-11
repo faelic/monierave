@@ -312,6 +312,66 @@ func TestPasswordChangeRequiresCurrentPasswordAndRevokesSessions(t *testing.T) {
 	}
 }
 
+func TestEmailChangeRequiresCurrentPasswordAndRevokesSessions(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	currentPassword := util.RandomString(10)
+	user, err := randomUser(currentPassword)
+	require.NoError(t, err)
+
+	store.EXPECT().GetUser(gomock.Any(), user.Username).Return(user, nil)
+	store.EXPECT().
+		UpdateUserTx(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, arg db.UpdateUserTxParams) (db.UpdateUserTxResult, error) {
+			require.True(t, arg.RevokeSessions)
+			require.Equal(t, "email_changed", arg.SessionRevocationReason)
+			require.Equal(t, "sessions_revoked_email_change", arg.SessionAuditEvent)
+			require.Equal(t, "new-address@example.com", arg.Email.String)
+			updated := user
+			updated.Email = arg.Email.String
+			return db.UpdateUserTxResult{User: updated, EmailChanged: true}, nil
+		})
+
+	body, err := json.Marshal(gin.H{
+		"current_password": currentPassword,
+		"email":            "new-address@example.com",
+	})
+	require.NoError(t, err)
+	request := httptest.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	addAuthorization(t, request, server.tokenMaker, authorizationTypeBearer, user.Username, time.Minute)
+	recorder := httptest.NewRecorder()
+
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Len(t, recorder.Result().Cookies(), 2)
+	for _, cookie := range recorder.Result().Cookies() {
+		require.Less(t, cookie.MaxAge, 0)
+	}
+}
+
+func TestEmailChangeRejectsMissingCurrentPassword(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	server := newTestServer(t, store)
+	user, err := randomUser(util.RandomString(10))
+	require.NoError(t, err)
+	store.EXPECT().GetUser(gomock.Any(), user.Username).Return(user, nil)
+
+	body := bytes.NewBufferString(`{"email":"new-address@example.com"}`)
+	request := httptest.NewRequest(http.MethodPatch, "/users/me", body)
+	request.Header.Set("Content-Type", "application/json")
+	addAuthorization(t, request, server.tokenMaker, authorizationTypeBearer, user.Username, time.Minute)
+	recorder := httptest.NewRecorder()
+
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"code":"current_password_required"`)
+}
+
 func TestCredentialedCORSAllowsOnlyConfiguredOrigin(t *testing.T) {
 	server := newTestServer(t, nil)
 
@@ -337,4 +397,38 @@ func TestCredentialedCORSAllowsOnlyConfiguredOrigin(t *testing.T) {
 	server.router.ServeHTTP(blockedRecorder, blocked)
 	require.Equal(t, http.StatusForbidden, blockedRecorder.Code)
 	require.Empty(t, blockedRecorder.Header().Get("Access-Control-Allow-Origin"))
+}
+
+func TestCORSDoesNotBlockOrdinaryCrossOriginGET(t *testing.T) {
+	server := newTestServer(t, nil)
+
+	request := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	request.Header.Set("Origin", "https://mail.google.com")
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Empty(t, recorder.Header().Get("Access-Control-Allow-Origin"))
+}
+
+func TestTrustedBrowserOriginProtectsPublicMutations(t *testing.T) {
+	server := newTestServer(t, nil)
+
+	for _, origin := range []string{"https://attacker.example", "null"} {
+		request := httptest.NewRequest(http.MethodPost, "/users/login", nil)
+		request.Header.Set("Origin", origin)
+		recorder := httptest.NewRecorder()
+		server.router.ServeHTTP(recorder, request)
+
+		require.Equal(t, http.StatusForbidden, recorder.Code)
+		require.Empty(t, recorder.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/users/login", nil)
+	request.Host = "public.ngrok-free.dev"
+	request.Header.Set("Origin", "https://public.ngrok-free.dev")
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+
+	require.NotEqual(t, http.StatusForbidden, recorder.Code)
 }

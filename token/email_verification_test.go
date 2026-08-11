@@ -1,52 +1,48 @@
 package token
 
 import (
+	"bytes"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
-func TestEmailVerificationToken(t *testing.T) {
+func TestEmailVerificationTokenIsOpaqueAndDeterministicPerJob(t *testing.T) {
 	maker, err := NewEmailVerificationMaker("12345678901234567890123456789012")
 	require.NoError(t, err)
 
-	value, expiresAt, err := maker.Create(
-		"favour",
-		"favour@example.com",
-		"ceeb4e49-0b44-4944-9034-a12cbc32aaad",
-		time.Minute,
-	)
+	jobID := uuid.NewString()
+	value, err := maker.Create(jobID)
 	require.NoError(t, err)
-	require.WithinDuration(t, time.Now().Add(time.Minute), expiresAt, time.Second)
+	require.NotContains(t, value, jobID)
+	require.False(t, strings.Contains(value, "@"))
 
-	payload, err := maker.Verify(value)
+	repeated, err := maker.Create(jobID)
 	require.NoError(t, err)
-	require.Equal(t, "favour", payload.Username)
-	require.Equal(t, "favour@example.com", payload.Email)
-	require.Equal(t, "ceeb4e49-0b44-4944-9034-a12cbc32aaad", payload.JobID)
+	require.Equal(t, value, repeated)
+
+	other, err := maker.Create(uuid.NewString())
+	require.NoError(t, err)
+	require.NotEqual(t, value, other)
 }
 
-func TestEmailVerificationTokenRejectsExpiredAndAccessTokens(t *testing.T) {
-	secret := "12345678901234567890123456789012"
-	maker, err := NewEmailVerificationMaker(secret)
+func TestEmailVerificationTokenHashRejectsMalformedValues(t *testing.T) {
+	maker, err := NewEmailVerificationMaker("12345678901234567890123456789012")
 	require.NoError(t, err)
 
-	expired, expiresAt, err := maker.Create(
-		"favour",
-		"favour@example.com",
-		"job-id",
-		-time.Minute,
-	)
-	require.Error(t, err)
-	require.Empty(t, expired)
-	require.True(t, expiresAt.IsZero())
+	value, err := maker.Create(uuid.NewString())
+	require.NoError(t, err)
+	firstHash, err := maker.Hash(value)
+	require.NoError(t, err)
+	secondHash, err := maker.Hash(value)
+	require.NoError(t, err)
+	require.Len(t, firstHash, 32)
+	require.True(t, bytes.Equal(firstHash, secondHash))
 
-	accessMaker, err := NewJWTMaker(secret)
-	require.NoError(t, err)
-	accessToken, _, err := accessMaker.CreateAccessToken("favour", uuid.New(), time.Minute)
-	require.NoError(t, err)
-	_, err = maker.Verify(accessToken)
+	_, err = maker.Hash("not-a-token")
+	require.ErrorIs(t, err, ErrInvalidToken)
+	_, err = maker.Create("not-a-uuid")
 	require.ErrorIs(t, err, ErrInvalidToken)
 }

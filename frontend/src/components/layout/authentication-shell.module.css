@@ -1,0 +1,318 @@
+.shell {
+  --auth-canvas: #050608;
+  --auth-surface: rgb(255 255 255 / 7%);
+  --auth-surface-hover: rgb(255 255 255 / 9%);
+  --auth-border: rgb(255 255 255 / 11%);
+  --auth-border-hover: rgb(255 255 255 / 22%);
+  --auth-text: #f3f5f7;
+  --auth-muted: rgb(243 245 247 / 58%);
+  --auth-subtle: rgb(243 245 247 / 42%);
+  position: relative;
+  min-height: 100svh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--auth-canvas);
+  color: var(--auth-text);
+  isolation: isolate;
+}
+
+.atmosphere {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+.atmosphere::after {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      circle at 50% 48%,
+      transparent 0,
+      rgb(5 6 8 / 16%) 44%,
+      rgb(5 6 8 / 48%) 100%
+    ),
+    linear-gradient(
+      90deg,
+      rgb(5 6 8 / 18%),
+      transparent 28%,
+      transparent 72%,
+      rgb(5 6 8 / 14%)
+    );
+  content: "";
+}
+
+.homeLink {
+  position: fixed;
+  z-index: 2;
+  top: 1.75rem;
+  left: 2rem;
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--auth-muted);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.homeLink:hover {
+  color: var(--auth-text);
+}
+
+.main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-height: 100svh;
+  align-items: center;
+  justify-content: center;
+  padding: 6.5rem 1.25rem 4rem;
+}
+
+.content {
+  width: min(100%, 40rem);
+}
+
+.brand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+
+.brandLink {
+  display: grid;
+  width: 3.25rem;
+  min-height: 3.25rem;
+  place-items: center;
+  border: 1px solid var(--auth-border);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 2.5%);
+  color: var(--auth-text);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+  text-decoration: none;
+}
+
+.brandLink svg {
+  width: 1.85rem;
+  height: 1.85rem;
+}
+
+.shell :global(.auth-form) {
+  color: var(--auth-text);
+}
+
+.shell :global(.auth-form h1),
+.shell :global(.auth-form h2) {
+  color: var(--auth-text);
+}
+
+.shell :global(.auth-form .text-ink-600),
+.shell :global(.auth-form .text-ink-700),
+.shell :global(.auth-form .text-evergreen-700) {
+  color: var(--auth-muted);
+}
+
+.shell :global(.auth-form .text-ink-950),
+.shell :global(.auth-form .text-evergreen-800) {
+  color: var(--auth-text);
+}
+
+.shell :global(.auth-form .border-line-200),
+.shell :global(.auth-form .border-line-300) {
+  border-color: var(--auth-border);
+}
+
+.shell :global(.auth-form .bg-paper-50),
+.shell :global(.auth-form .bg-paper-100) {
+  background: var(--auth-surface);
+}
+
+.shell :global(.auth-form-heading) {
+  color: var(--auth-text);
+  font-family: var(--font-geometric);
+  font-size: clamp(2rem, 4vw, 2.5rem);
+  line-height: 1.12;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  text-align: center;
+}
+
+.shell :global(.auth-form-switch),
+.shell :global(.auth-form-note) {
+  color: var(--auth-muted);
+  text-align: center;
+}
+
+.shell :global(.auth-form-switch a),
+.shell :global(.auth-form-note a) {
+  color: var(--auth-text);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.shell :global(.auth-form-switch a:hover),
+.shell :global(.auth-form-note a:hover) {
+  text-decoration: underline;
+}
+
+.shell :global(.auth-form label) {
+  color: var(--auth-muted);
+  font-weight: 500;
+}
+
+.shell :global(.auth-form input) {
+  min-height: 3.5rem;
+  border-color: var(--auth-border);
+  border-radius: 0.8rem;
+  background: var(--auth-surface);
+  color: var(--auth-text);
+  padding-inline: 1rem;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 4%),
+    0 1rem 3rem rgb(0 0 0 / 8%);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.shell :global(.auth-form input:hover) {
+  border-color: var(--auth-border-hover);
+  background: var(--auth-surface-hover);
+}
+
+.shell :global(.auth-form input::placeholder) {
+  color: var(--auth-subtle);
+}
+
+.shell :global(.auth-form input[aria-invalid="true"]) {
+  border-color: var(--marketing-danger);
+}
+
+.shell :global(.auth-password-toggle) {
+  color: var(--auth-subtle);
+}
+
+.shell :global(.auth-password-toggle:hover) {
+  color: var(--auth-text);
+}
+
+.shell :global(.auth-submit) {
+  min-height: 3.5rem;
+  border-radius: 0.8rem;
+  background: var(--auth-text);
+  color: #101114;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 18%);
+}
+
+.shell :global(.auth-submit:hover) {
+  background: #fff;
+}
+
+.shell :global(.auth-form [id$="-hint"]) {
+  color: var(--auth-subtle);
+}
+
+.shell :global(.auth-form [role="alert"]) {
+  background: rgb(73 26 25 / 66%);
+  color: #f3b0ab;
+}
+
+@media (max-width: 47.999rem) {
+  .homeLink {
+    top: 1rem;
+    left: 1rem;
+  }
+
+  .main {
+    align-items: flex-start;
+    padding-top: 5.75rem;
+  }
+
+  .content {
+    width: min(100%, 34rem);
+  }
+
+  .brand {
+    margin-bottom: 1.5rem;
+  }
+
+  .atmosphere {
+    opacity: 0.72;
+  }
+}
+
+@media (min-width: 48rem) and (min-height: 44.001rem) {
+  .content:has(:global(.auth-signup-form)) {
+    transform: translateY(-2rem);
+  }
+}
+
+@media (min-width: 48rem) and (max-height: 44rem) {
+  .main {
+    align-items: flex-start;
+    padding-block: 3.25rem 1.25rem;
+  }
+
+  .content {
+    width: min(100%, 48rem);
+  }
+
+  .brand {
+    margin-bottom: 0.75rem;
+  }
+
+  .brandLink {
+    width: 2.75rem;
+    min-height: 2.75rem;
+    border-radius: 0.75rem;
+  }
+
+  .brandLink svg {
+    width: 1.55rem;
+    height: 1.55rem;
+  }
+
+  .shell :global(.auth-form-heading) {
+    font-size: 2rem;
+  }
+
+  .shell :global(.auth-form-switch) {
+    margin-top: 0.35rem;
+    font-size: 0.9375rem;
+  }
+
+  .shell :global(.auth-signup-form) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    margin-top: 1.25rem;
+  }
+
+  .shell :global(.auth-signup-form > div) {
+    gap: 0.375rem;
+  }
+
+  .shell :global(.auth-signup-form > [role="alert"]),
+  .shell :global(.auth-signup-form > button) {
+    grid-column: 1 / -1;
+  }
+
+  .shell :global(.auth-form input),
+  .shell :global(.auth-submit) {
+    min-height: 3rem;
+  }
+
+  .shell :global(.auth-form-note) {
+    margin-top: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .homeLink,
+  .shell :global(.auth-form input) {
+    transition: none;
+  }
+}

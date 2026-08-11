@@ -32,6 +32,22 @@ type AccessCredential = {
 
 let accessCredential: AccessCredential | null = null;
 let refreshInFlight: Promise<AccessCredential> | null = null;
+const refreshLockName = "monierave-refresh-token-rotation";
+const refreshLeaseKey = "monierave-refresh-token-lease";
+const refreshLeaseDurationMs = 30_000;
+const authChannel =
+  typeof window !== "undefined" && "BroadcastChannel" in window
+    ? new BroadcastChannel("monierave-auth")
+    : null;
+
+authChannel?.addEventListener("message", (event: MessageEvent) => {
+  if (event.data?.type === "credential") {
+    setAccessCredentialInternal(event.data.token, event.data.expiresAt, false);
+  } else if (event.data?.type === "logout") {
+    accessCredential = null;
+    notifySessionExpired();
+  }
+});
 
 export const sessionExpiredEvent = "monierave:session-expired";
 
@@ -51,15 +67,29 @@ export async function loginUser(input: LoginInput) {
   return response.user;
 }
 
-export function clearAccessCredential() {
+export function clearAccessCredential(broadcast = true) {
   accessCredential = null;
+  if (broadcast) {
+    authChannel?.postMessage({ type: "logout" });
+  }
 }
 
 export function setAccessCredential(token: string, expiresAt: string) {
+  setAccessCredentialInternal(token, expiresAt, true);
+}
+
+function setAccessCredentialInternal(
+  token: string,
+  expiresAt: string,
+  broadcast: boolean,
+) {
   accessCredential = {
     expiresAt: new Date(expiresAt).getTime(),
     token,
   };
+  if (broadcast) {
+    authChannel?.postMessage({ type: "credential", token, expiresAt });
+  }
 }
 
 function currentAccessToken() {
@@ -81,6 +111,116 @@ export async function renewAccessToken(force = false) {
     }
   }
 
+  return withCrossTabRefreshLock(force);
+}
+
+async function withCrossTabRefreshLock(force: boolean) {
+  const tokenBeforeLock = accessCredential?.token;
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(refreshLockName, async () => {
+      const current = currentAccessToken();
+      if (current && (!force || current !== tokenBeforeLock)) return current;
+      return performRefresh(force);
+    });
+  }
+  const storage = availableBrowserStorage();
+  if (storage) {
+    return withStorageRefreshLease(storage, tokenBeforeLock, force);
+  }
+  return performRefresh(force);
+}
+
+async function withStorageRefreshLease(
+  storage: Storage,
+  tokenBeforeLock: string | undefined,
+  force: boolean,
+) {
+  const owner = crypto.randomUUID();
+  const deadline = Date.now() + refreshLeaseDurationMs;
+
+  while (Date.now() < deadline) {
+    const lease = readRefreshLease(storage);
+    if (!lease || lease.expiresAt <= Date.now()) {
+      try {
+        storage.setItem(
+          refreshLeaseKey,
+          JSON.stringify({
+            expiresAt: Date.now() + refreshLeaseDurationMs,
+            owner,
+          }),
+        );
+      } catch {
+        return performRefresh(force);
+      }
+      await delay(25);
+      if (readRefreshLease(storage)?.owner === owner) {
+        try {
+          const current = currentAccessToken();
+          if (current && (!force || current !== tokenBeforeLock))
+            return current;
+          return await performRefresh(force);
+        } finally {
+          if (readRefreshLease(storage)?.owner === owner) {
+            storage.removeItem(refreshLeaseKey);
+          }
+        }
+      }
+    }
+    await delay(50);
+    const current = currentAccessToken();
+    if (current && (!force || current !== tokenBeforeLock)) return current;
+  }
+
+  throw new Error(
+    "Timed out coordinating session refresh across browser tabs.",
+  );
+}
+
+function availableBrowserStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const storage = window.localStorage;
+    return typeof storage?.setItem === "function" &&
+      typeof storage?.getItem === "function" &&
+      typeof storage?.removeItem === "function"
+      ? storage
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readRefreshLease(
+  storage: Storage,
+): { expiresAt: number; owner: string } | null {
+  try {
+    const value = storage.getItem(refreshLeaseKey);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as {
+      expiresAt?: unknown;
+      owner?: unknown;
+    };
+    if (
+      typeof parsed.expiresAt !== "number" ||
+      typeof parsed.owner !== "string"
+    ) {
+      return null;
+    }
+    return { expiresAt: parsed.expiresAt, owner: parsed.owner };
+  } catch {
+    return null;
+  }
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function performRefresh(force = false) {
+  if (!force) {
+    const current = currentAccessToken();
+    if (current) return current;
+  }
   if (!refreshInFlight) {
     refreshInFlight = apiRequest<RenewAccessResponse>("/tokens/renew_access", {
       method: "POST",

@@ -6,15 +6,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var ErrBeneficiaryAlreadyExists = errors.New("beneficiary already exists")
 
 type CreateBeneficiaryTxParams struct {
-	Owner                      string
-	DestinationAccountPublicID pgtype.UUID
-	Nickname                   string
+	Owner                    string
+	DestinationAccountNumber string
+	Nickname                 string
 }
 
 type CreateBeneficiaryTxResult struct {
@@ -30,7 +29,7 @@ func (store *SQLStore) CreateBeneficiaryTx(
 ) (CreateBeneficiaryTxResult, error) {
 	var result CreateBeneficiaryTxResult
 	err := store.execTx(ctx, func(q *Queries) error {
-		account, err := q.GetAccountByPublicID(ctx, arg.DestinationAccountPublicID)
+		account, err := q.GetAccountByAccountNumber(ctx, arg.DestinationAccountNumber)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrAccountNotFound
 		}

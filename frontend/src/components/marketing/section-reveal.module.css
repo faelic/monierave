@@ -1,0 +1,35 @@
+.shell {
+  min-width: 0;
+  background: var(--marketing-canvas);
+}
+
+.reveal {
+  --section-reveal-delay: 0ms;
+  min-height: 100%;
+}
+
+.reveal[data-reveal-ready="true"][data-reveal-visible="false"] {
+  transform: translateY(1.5rem);
+  opacity: 0;
+}
+
+.reveal[data-reveal-ready="true"] {
+  transition:
+    transform 720ms var(--section-reveal-delay) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 620ms var(--section-reveal-delay) ease-out;
+}
+
+.reveal[data-reveal-visible="true"] {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal[data-reveal-ready="true"],
+  .reveal[data-reveal-visible="true"] {
+    transform: none;
+    opacity: 1;
+    transition: none;
+  }
+}

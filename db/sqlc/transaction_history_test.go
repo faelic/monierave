@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
@@ -38,7 +37,7 @@ func TestTransactionHistoryOrderingRunningBalanceAndFilters(t *testing.T) {
 	require.Equal(t, fixture.transfer.Transaction.Reference, rows[1].Reference)
 	require.Equal(t, "outgoing", rows[1].Direction)
 	require.Equal(t, int64(800), rows[1].BalanceAfter)
-	require.Equal(t, publicUUIDText(fixture.counterparty.PublicID), rows[1].Counterparty)
+	require.Equal(t, fixture.counterparty.AccountNumber, rows[1].Counterparty)
 
 	require.Equal(t, fixture.deposit.Transaction.Reference, rows[2].Reference)
 	require.Equal(t, "incoming", rows[2].Direction)
@@ -97,7 +96,7 @@ func TestTransactionDetailIsOwnershipScoped(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, "outgoing", senderView.Direction)
-	require.Equal(t, publicUUIDText(fixture.counterparty.PublicID), senderView.Counterparty)
+	require.Equal(t, fixture.counterparty.AccountNumber, senderView.Counterparty)
 
 	recipientView, err := testQueries.GetOwnedTransactionByReference(
 		ctx,
@@ -108,7 +107,7 @@ func TestTransactionDetailIsOwnershipScoped(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, "incoming", recipientView.Direction)
-	require.Equal(t, publicUUIDText(fixture.account.PublicID), recipientView.Counterparty)
+	require.Equal(t, fixture.account.AccountNumber, recipientView.Counterparty)
 
 	foreignUser := createRandomUser(t)
 	_, err = testQueries.GetOwnedTransactionByReference(
@@ -154,12 +153,12 @@ func createTransactionHistoryFixture(t *testing.T) transactionHistoryFixture {
 	t.Helper()
 	ctx := context.Background()
 	user := createRandomUser(t)
-	account, err := testStore.CreateAccountTx(ctx, CreateAccountParams{
+	account, err := testStore.CreateAccountTx(ctx, CreateAccountTxParams{
 		Owner: user.Username, Currency: "USD",
 	})
 	require.NoError(t, err)
 	otherUser := createRandomUser(t)
-	counterparty, err := testStore.CreateAccountTx(ctx, CreateAccountParams{
+	counterparty, err := testStore.CreateAccountTx(ctx, CreateAccountTxParams{
 		Owner: otherUser.Username, Currency: "USD",
 	})
 	require.NoError(t, err)
@@ -174,7 +173,7 @@ func createTransactionHistoryFixture(t *testing.T) transactionHistoryFixture {
 
 	transfer, err := testStore.TransferTx(ctx, TransferTxParams{
 		FromAccountPublicID: account.PublicID,
-		ToAccountPublicID:   counterparty.PublicID,
+		ToAccountNumber:     counterparty.AccountNumber,
 		Amount:              200,
 		Currency:            account.Currency,
 		Username:            account.Owner,
@@ -208,8 +207,4 @@ func historyParams(
 		AccountPublicID: account.PublicID,
 		Username:        account.Owner,
 	}
-}
-
-func publicUUIDText(value pgtype.UUID) string {
-	return uuid.UUID(value.Bytes).String()
 }

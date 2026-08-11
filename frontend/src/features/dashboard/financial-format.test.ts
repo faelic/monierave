@@ -4,7 +4,6 @@ import {
   accountLabel,
   formatMinorAmount,
   formatTransactionAmount,
-  maskOwnedAccountNumber,
 } from "@/features/dashboard/financial-format";
 
 describe("financial display formatting", () => {
@@ -28,8 +27,7 @@ describe("financial display formatting", () => {
     ).toBe("−USD 50.00");
   });
 
-  it("masks list account numbers and preserves lifecycle context", () => {
-    expect(maskOwnedAccountNumber("4839201756")).toBe("******1756");
+  it("preserves account lifecycle context", () => {
     expect(accountLabel({ currency: "EUR", status: "closed" })).toBe(
       "Closed EUR account",
     );

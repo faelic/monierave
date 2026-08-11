@@ -17,6 +17,21 @@ SELECT * FROM email_jobs
 WHERE id = $1
 LIMIT 1;
 
+-- name: GetEmailJobByVerificationTokenHash :one
+SELECT * FROM email_jobs
+WHERE verification_token_hash = $1
+LIMIT 1;
+
+-- name: SetEmailJobVerificationToken :one
+UPDATE email_jobs
+SET
+  verification_token_hash = $2,
+  verification_token_expires_at = $3,
+  updated_at = now()
+WHERE id = $1
+  AND job_type = 'verify_email'
+RETURNING *;
+
 -- name: GetEmailJobByProviderMessageID :one
 SELECT * FROM email_jobs
 WHERE provider_message_id = $1

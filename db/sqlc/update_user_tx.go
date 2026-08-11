@@ -14,7 +14,9 @@ type UpdateUserTxResult struct {
 
 type UpdateUserTxParams struct {
 	UpdateUserParams
-	RevokeSessions bool
+	RevokeSessions          bool
+	SessionRevocationReason string
+	SessionAuditEvent       string
 }
 
 func (store *SQLStore) UpdateUserTx(
@@ -50,9 +52,17 @@ func (store *SQLStore) UpdateUserTx(
 		if !arg.RevokeSessions {
 			return nil
 		}
+		reason := arg.SessionRevocationReason
+		if reason == "" {
+			reason = "security_profile_changed"
+		}
+		auditEvent := arg.SessionAuditEvent
+		if auditEvent == "" {
+			auditEvent = "sessions_revoked_security_profile_change"
+		}
 		sessions, err := q.RevokeAllUserSessions(ctx, RevokeAllUserSessionsParams{
 			Username:      result.User.Username,
-			RevokedReason: textValue("password_changed"),
+			RevokedReason: textValue(reason),
 		})
 		if err != nil {
 			return err
@@ -62,7 +72,7 @@ func (store *SQLStore) UpdateUserTx(
 				ctx,
 				q,
 				session,
-				"sessions_revoked_password_change",
+				auditEvent,
 				"user",
 				"active",
 				"revoked",

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme inline {
+  --font-hero-mono: var(--font-hero-monospace);
   --font-sans: var(--font-interface);
   --font-serif: var(--font-editorial);
   --font-display: var(--font-geometric);
@@ -33,6 +34,7 @@
 
 :root {
   color-scheme: light;
+  --font-hero-monospace: "Space Mono", monospace;
   --font-interface: "Source Sans 3 Variable", sans-serif;
   --font-editorial: "Fraunces Variable", serif;
   --font-geometric: "Manrope Variable", sans-serif;
@@ -54,9 +56,346 @@
   --danger-700: #a62a22;
   --info-700: #17627a;
 
+  /* Product workspace roles intentionally bridge the dark brand and light UI. */
+  --product-canvas: #f4f4f1;
+  --product-surface: #ffffff;
+  --product-surface-subtle: #ecece8;
+  --product-ink: #111317;
+  --product-ink-muted: #62656b;
+  --product-border: #d9d9d5;
+  --product-accent: #c8b77d;
+  --product-accent-soft: #eee8d6;
+  --product-navigation: #0d0f12;
+
   --shadow-1: 0 6px 20px rgb(5 5 5 / 9%);
   --shadow-2: 0 16px 40px rgb(5 5 5 / 15%);
-  --focus-ring: #2b57c9;
+  --focus-ring: #c8b77d;
+
+  /* Marketing surfaces share one canvas; depth and status use these roles. */
+  --marketing-canvas: #050608;
+  --marketing-navigation: #0d0f12;
+  --marketing-surface: #0b0e12;
+  --marketing-surface-raised: #11161c;
+  --marketing-text-primary: #f3f5f7;
+  --marketing-text-secondary: rgb(243 245 247 / 68%);
+  --marketing-text-muted: rgb(243 245 247 / 52%);
+  --marketing-border: rgb(255 255 255 / 8%);
+  --marketing-accent: #c8b77d;
+  --marketing-accent-highlight: #e1d4a6;
+  --marketing-success: #80c7a3;
+  --marketing-warning: #e3a45a;
+  --marketing-danger: #e1948e;
+  --marketing-neutral: #73808a;
+}
+
+.banking-workspace {
+  color-scheme: dark;
+  --font-interface: "Inter Variable", sans-serif;
+  --ink-950: #f5f5f3;
+  --ink-700: #c3c5c9;
+  --ink-600: #8d9096;
+  --evergreen-900: #050506;
+  --evergreen-800: #f2f2ef;
+  --evergreen-700: #bcbec3;
+  --jade-500: #35c978;
+  --jade-100: rgb(53 201 120 / 11%);
+  --paper-50: #050506;
+  --paper-100: #121317;
+  --line-200: rgb(255 255 255 / 7%);
+  --line-300: rgb(255 255 255 / 12%);
+  --success-700: #45d58a;
+  --warning-700: #ddb75e;
+  --danger-700: #ed716c;
+  --info-700: #9aa7b3;
+  --product-canvas: #050506;
+  --product-surface: #0b0c0e;
+  --product-surface-subtle: #101114;
+  --product-surface-raised: #141519;
+  --product-surface-hover: #17181c;
+  --product-ink: #f5f5f3;
+  --product-ink-muted: #8d9096;
+  --product-text: #f5f5f3;
+  --product-text-muted: #8d9096;
+  --product-text-faint: #5f6268;
+  --product-border: rgb(255 255 255 / 7%);
+  --product-border-strong: rgb(255 255 255 / 13%);
+  --product-accent: #c8b77d;
+  --product-accent-soft: rgb(200 183 125 / 10%);
+  --product-navigation: #080809;
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at 78% -16%,
+      rgb(200 183 125 / 4%),
+      transparent 32rem
+    ),
+    var(--product-canvas);
+  color: var(--product-text);
+  font-family: var(--font-interface);
+  font-size: 0.9375rem;
+}
+
+.banking-workspace ::selection {
+  background: rgb(200 183 125 / 28%);
+  color: var(--product-text);
+}
+
+.banking-workspace .workspace-sidebar {
+  border-color: var(--product-border);
+  background: var(--product-navigation);
+}
+
+.banking-workspace .workspace-brand {
+  border: 1px solid var(--product-border);
+  background: rgb(255 255 255 / 2%);
+}
+
+.banking-workspace .workspace-brand svg,
+.banking-workspace .workspace-mobile-header svg {
+  color: var(--product-text);
+}
+
+.banking-workspace .workspace-nav-link {
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.banking-workspace .workspace-nav-link:hover,
+.banking-workspace .workspace-nav-link-active {
+  background: var(--product-surface-raised);
+}
+
+.banking-workspace .workspace-nav-link-active {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 3%);
+}
+
+.banking-workspace .workspace-nav-icon {
+  transform-origin: center;
+  transition: color 150ms ease;
+}
+
+.banking-workspace .workspace-nav-link:hover .workspace-nav-icon {
+  animation: workspace-icon-turn 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--product-accent);
+}
+
+.banking-workspace .workspace-user {
+  border-color: var(--product-border);
+  background: rgb(255 255 255 / 2%);
+}
+
+.banking-workspace .workspace-avatar {
+  border: 1px solid rgb(200 183 125 / 24%);
+  background: rgb(200 183 125 / 10%);
+  color: #e2d6ad;
+}
+
+.banking-workspace .workspace-mobile-header,
+.banking-workspace .workspace-mobile-nav {
+  border-color: var(--product-border);
+  background: rgb(8 8 9 / 94%);
+}
+
+.banking-workspace .workspace-verification-banner {
+  border-color: rgb(200 183 125 / 16%);
+  background: rgb(200 183 125 / 7%);
+}
+
+.banking-workspace .workspace-main > * {
+  width: 100%;
+  max-width: 86rem;
+  animation: workspace-page-enter 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.banking-workspace .workspace-main h1 {
+  font-size: clamp(1.75rem, 3vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.032em;
+}
+
+.banking-workspace .workspace-main header {
+  border-color: var(--product-border);
+}
+
+.banking-workspace .workspace-main header > div > p:first-child {
+  letter-spacing: 0.08em;
+}
+
+.banking-workspace .workspace-main .rounded-md.border {
+  border-color: var(--product-border);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 2.5%),
+    0 1px 2px rgb(0 0 0 / 28%);
+}
+
+.banking-workspace .workspace-main ul.divide-y > li {
+  transition: background-color 140ms ease;
+}
+
+.banking-workspace .workspace-main ul.divide-y > li:hover {
+  background: rgb(255 255 255 / 2%);
+}
+
+.banking-workspace .workspace-main a.rounded-md.border,
+.banking-workspace .workspace-main article.rounded-md.border {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.banking-workspace .workspace-main a.rounded-md.border:hover {
+  border-color: var(--product-border-strong) !important;
+  background: var(--product-surface-raised) !important;
+  transform: translateY(-1px);
+}
+
+.banking-workspace .bg-white {
+  background-color: var(--product-surface) !important;
+}
+
+.banking-workspace .bg-paper-50,
+.banking-workspace .bg-paper-100 {
+  background-color: var(--product-surface-subtle) !important;
+}
+
+.banking-workspace .bg-jade-100 {
+  background-color: rgb(53 201 120 / 9%) !important;
+}
+
+.banking-workspace .bg-evergreen-800 {
+  background-color: var(--product-text) !important;
+  color: #09090a !important;
+}
+
+.banking-workspace .bg-evergreen-800:hover {
+  background-color: #d8d9d7 !important;
+}
+
+.banking-workspace .border-line-200,
+.banking-workspace .divide-line-200 > :not(:last-child) {
+  border-color: var(--product-border) !important;
+}
+
+.banking-workspace .border-line-300 {
+  border-color: var(--product-border-strong) !important;
+}
+
+.banking-workspace input,
+.banking-workspace select,
+.banking-workspace textarea {
+  border-color: var(--product-border-strong);
+  background: var(--product-surface-raised);
+  color: var(--product-text);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.banking-workspace input::placeholder,
+.banking-workspace textarea::placeholder {
+  color: var(--product-text-faint);
+}
+
+.banking-workspace input:hover,
+.banking-workspace select:hover,
+.banking-workspace textarea:hover {
+  border-color: rgb(255 255 255 / 20%);
+}
+
+.banking-workspace input:focus,
+.banking-workspace select:focus,
+.banking-workspace textarea:focus {
+  border-color: rgb(200 183 125 / 48%);
+}
+
+.banking-workspace option {
+  background: var(--product-surface-raised);
+  color: var(--product-text);
+}
+
+.banking-workspace a,
+.banking-workspace button,
+.banking-workspace input,
+.banking-workspace select {
+  -webkit-font-smoothing: antialiased;
+}
+
+.banking-workspace [role="alert"] {
+  color: var(--product-text);
+}
+
+.banking-workspace [class~="bg-[#fff5f3]"],
+.banking-workspace [class~="bg-[#fae3e1]"] {
+  background: rgb(237 113 108 / 9%) !important;
+}
+
+.banking-workspace [class~="bg-[#fff8e8]"],
+.banking-workspace [class~="bg-[#fff1d6]"] {
+  background: rgb(221 183 94 / 9%) !important;
+}
+
+.banking-workspace [class~="bg-[#e0f0f5]"] {
+  background: rgb(154 167 179 / 10%) !important;
+}
+
+.banking-workspace-dialog {
+  color-scheme: dark;
+  border-color: rgb(255 255 255 / 9%);
+  background: #0b0c0e;
+  color: #f5f5f3;
+  font-family: "Inter Variable", sans-serif;
+}
+
+.banking-workspace-dialog .bg-white,
+.banking-workspace-dialog .bg-paper-100 {
+  background: #141519 !important;
+}
+
+.banking-workspace-dialog .text-ink-600 {
+  color: #8d9096 !important;
+}
+
+.banking-workspace-dialog .text-evergreen-800 {
+  color: #f5f5f3 !important;
+}
+
+.banking-workspace code,
+.banking-workspace [data-financial-number] {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+@keyframes workspace-icon-turn {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+
+  55% {
+    transform: rotate(205deg) scale(1.08);
+  }
+
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes workspace-page-enter {
+  from {
+    transform: translateY(0.35rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banking-workspace .workspace-nav-link:hover .workspace-nav-icon,
+  .banking-workspace .workspace-main > * {
+    animation: none;
+  }
 }
 
 * {
@@ -115,34 +454,24 @@ a {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-.wallet-auth-panel {
-  background:
-    radial-gradient(
-      circle at 52% 43%,
-      rgb(205 206 211 / 58%),
-      transparent 23rem
-    ),
-    linear-gradient(145deg, rgb(255 255 255 / 72%), transparent 52%),
-    var(--paper-50);
-}
-
-.wallet-auth-panel::before {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgb(5 5 5 / 4%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(5 5 5 / 4%) 1px, transparent 1px);
-  background-size: 4rem 4rem;
-  mask-image: linear-gradient(to bottom, black, transparent 82%);
-  content: "";
-}
-
-.wallet-auth-visual {
-  filter: drop-shadow(0 2rem 3rem rgb(5 5 5 / 12%));
-}
-
 .auth-form-enter {
   animation: auth-enter 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.marketing-header-enter {
+  animation: marketing-header-enter 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes marketing-header-enter {
+  from {
+    transform: translateY(-0.75rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @keyframes auth-enter {
@@ -187,21 +516,25 @@ a {
 
 .landing-hero {
   position: relative;
-  min-height: calc(100svh - 4.75rem);
+  min-height: calc(100svh - 5rem);
   overflow: hidden;
   background:
     radial-gradient(
-      ellipse 54% 60% at 73% 40%,
-      rgb(54 55 61 / 34%),
-      transparent 67%
+      ellipse 34% 52% at 79% 43%,
+      rgb(200 183 125 / 10%),
+      transparent 70%
     ),
     radial-gradient(
-      ellipse 40% 25% at 69% 76%,
-      rgb(22 23 27 / 74%),
-      transparent 76%
+      ellipse 38% 34% at 58% 52%,
+      rgb(84 76 57 / 10%),
+      transparent 72%
     ),
-    linear-gradient(180deg, #050505 0%, #050505 72%, #030303 100%);
-  color: #f3f3f1;
+    linear-gradient(
+      180deg,
+      var(--marketing-canvas) 0%,
+      var(--marketing-canvas) 100%
+    );
+  color: var(--marketing-text-primary);
 }
 
 .landing-hero::after {
@@ -217,79 +550,62 @@ a {
   position: relative;
   z-index: 1;
   display: grid;
-  min-height: calc(100svh - 4.75rem);
-  grid-template-rows: minmax(34rem, 1fr) auto;
+  min-height: calc(100svh - 5rem);
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
-.landing-pipeline {
+.landing-trust-rail {
+  min-height: 6rem;
+  padding-block: 1rem 1.25rem;
+  border-top: 1px solid rgb(243 243 241 / 10%);
+  background: linear-gradient(180deg, rgb(255 255 255 / 1.5%), transparent);
+}
+
+.landing-trust-intro {
+  color: rgb(243 243 241 / 42%);
+}
+
+.landing-organic-stage {
+  min-width: 0;
+  overflow: hidden;
+  isolation: isolate;
   filter: drop-shadow(0 2.25rem 3.5rem rgb(0 0 0 / 42%));
 }
 
-.landing-reference-art {
-  position: relative;
-  grid-column: 1 / -1;
-  overflow: hidden;
-  background-image: url("/references/landing-reference-art.png");
-  background-position: center top;
-  background-repeat: no-repeat;
-  background-size: 100% auto;
-  isolation: isolate;
-}
-
-.landing-reference-art::after {
+.landing-organic-stage::after {
   position: absolute;
+  z-index: 20;
   inset: 0;
   background: linear-gradient(
     90deg,
-    #050505 0%,
-    #050505 44%,
-    rgb(5 5 5 / 96%) 48%,
-    rgb(5 5 5 / 72%) 51%,
-    transparent 56%
+    rgb(3 6 9 / 92%) 0%,
+    rgb(3 6 9 / 72%) 29%,
+    rgb(3 6 9 / 24%) 47%,
+    transparent 64%
   );
   pointer-events: none;
   content: "";
 }
 
-@media (min-width: 48rem) {
-  .landing-reference-art {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+.landing-organic-stage canvas {
+  display: block;
+}
+
+@media (max-width: 47.999rem) {
+  .landing-organic-stage::after {
+    background: linear-gradient(
+      180deg,
+      rgb(3 6 9 / 18%) 0%,
+      transparent 34%,
+      rgb(3 6 9 / 12%) 100%
+    );
   }
 }
 
 .landing-trust-mark {
-  color: rgb(243 243 241 / 27%);
+  color: rgb(243 243 241 / 46%);
   letter-spacing: 0.075em;
   text-transform: uppercase;
-}
-
-.vault-lab-page {
-  background:
-    radial-gradient(
-      circle at 76% 28%,
-      rgb(167 168 173 / 14%),
-      transparent 26rem
-    ),
-    linear-gradient(rgb(255 255 255 / 3%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 3%) 1px, transparent 1px),
-    linear-gradient(145deg, #19191c, #050505 68%);
-  background-size:
-    auto,
-    4rem 4rem,
-    4rem 4rem,
-    auto;
-}
-
-.vault-lab-stage {
-  background:
-    radial-gradient(circle at 50% 50%, rgb(167 168 173 / 14%), transparent 42%),
-    linear-gradient(145deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 1%));
-  box-shadow:
-    inset 0 1px rgb(255 255 255 / 8%),
-    0 2rem 5rem rgb(0 0 0 / 18%);
 }
 
 .marketing-reveal {
@@ -333,9 +649,38 @@ a {
   }
 }
 
+@keyframes organic-hero-cursor-blink {
+  0%,
+  48% {
+    opacity: 1;
+  }
+  49%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.organic-hero-cursor {
+  display: inline-block;
+  width: 0;
+  margin-left: 0.04em;
+  overflow: visible;
+  animation: organic-hero-cursor-blink 1s steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .organic-hero-cursor {
+    animation: none;
+  }
+}
+
 @media (max-width: 63.999rem) {
   .landing-hero-frame {
     grid-template-rows: auto auto;
+  }
+
+  .landing-trust-rail {
+    min-height: auto;
   }
 }
 

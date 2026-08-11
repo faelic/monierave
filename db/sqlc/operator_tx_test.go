@@ -49,7 +49,7 @@ func TestSetAccountStatusTxAuditsFreezeAndUnfreeze(t *testing.T) {
 
 func TestSetAccountStatusTxRejectsClosedAndInvalidActions(t *testing.T) {
 	user := createRandomUser(t)
-	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountParams{
+	account, err := testStore.CreateAccountTx(context.Background(), CreateAccountTxParams{
 		Owner: user.Username, Currency: "USD",
 	})
 	require.NoError(t, err)
@@ -406,7 +406,7 @@ func createReversalTransferFixture(
 	from, to := createLimitTestAccounts(t, "USD", funding)
 	transfer, err := testStore.TransferTx(context.Background(), TransferTxParams{
 		FromAccountPublicID: from.PublicID,
-		ToAccountPublicID:   to.PublicID,
+		ToAccountNumber:     to.AccountNumber,
 		Amount:              amount,
 		Currency:            "USD",
 		Username:            from.Owner,

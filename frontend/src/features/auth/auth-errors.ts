@@ -17,6 +17,8 @@ export function authErrorMessage(error: unknown, action: AuthAction) {
   }
 
   const messages: Record<string, string> = {
+    current_password_required:
+      "Enter your current password to make this security-sensitive change.",
     email_address_undeliverable:
       "This address cannot receive Monierave mail. Enter a different email address.",
     email_already_exists: "An account already uses this email address.",

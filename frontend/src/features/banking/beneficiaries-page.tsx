@@ -31,6 +31,7 @@ export function BeneficiariesPage() {
   const [nickname, setNickname] = useState("");
   const [editing, setEditing] = useState<Beneficiary>();
   const [removing, setRemoving] = useState<Beneficiary>();
+  const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState<string>();
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.beneficiaries.all });
@@ -45,6 +46,7 @@ export function BeneficiariesPage() {
       setAccountNumber("");
       setNickname("");
       setError(undefined);
+      setShowCreate(false);
       await invalidate();
     },
   });
@@ -68,56 +70,72 @@ export function BeneficiariesPage() {
 
   return (
     <div>
-      <header className="border-line-200 border-b pb-7">
-        <h1 className="text-4xl font-semibold">Beneficiaries</h1>
-        <p className="text-ink-600 mt-3 max-w-2xl">
-          Save recipients for recognition and management. For security, saved
-          numbers remain masked and a transfer still requires the full account
-          number.
-        </p>
-      </header>
-      {error ? <Notice message={error} /> : null}
-      <section className="mt-8 max-w-2xl">
-        <h2 className="text-xl font-semibold">Add beneficiary</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="10-digit account number" name="beneficiary-account">
-            <Input
-              id="beneficiary-account"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => setAccountNumber(event.target.value)}
-              value={accountNumber}
-            />
-          </Field>
-          <Field label="Nickname" name="beneficiary-nickname">
-            <Input
-              id="beneficiary-nickname"
-              maxLength={50}
-              onChange={(event) => setNickname(event.target.value)}
-              value={nickname}
-            />
-          </Field>
+      <header className="border-line-200 flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-4xl font-semibold">Beneficiaries</h1>
+          <p className="text-ink-600 mt-3 max-w-2xl">
+            Save recipients for recognition and management. For security, saved
+            numbers remain masked and a transfer still requires the full account
+            number.
+          </p>
         </div>
         <Button
-          className="mt-4"
-          loading={create.isPending}
-          onClick={() => {
-            const number = accountNumberSchema.safeParse(accountNumber);
-            const name = nicknameSchema.safeParse(nickname);
-            if (!number.success || !name.success) {
-              setError(
-                number.error?.issues[0]?.message ??
-                  name.error?.issues[0]?.message,
-              );
-              return;
-            }
-            create.mutate();
-          }}
+          aria-expanded={showCreate}
+          className="self-start sm:self-auto"
+          onClick={() => setShowCreate((visible) => !visible)}
+          variant={showCreate ? "secondary" : "primary"}
         >
           <Plus aria-hidden="true" className="size-4" />
-          Save beneficiary
+          {showCreate ? "Close form" : "Add beneficiary"}
         </Button>
-      </section>
+      </header>
+      {error ? <Notice message={error} /> : null}
+      {showCreate ? (
+        <section className="border-line-200 mt-8 max-w-3xl rounded-md border bg-white p-5 sm:p-6">
+          <p className="text-evergreen-700 text-xs font-bold tracking-[0.12em] uppercase">
+            New saved recipient
+          </p>
+          <h2 className="mt-2 text-xl font-semibold">Add beneficiary</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="10-digit account number" name="beneficiary-account">
+              <Input
+                id="beneficiary-account"
+                inputMode="numeric"
+                maxLength={10}
+                onChange={(event) => setAccountNumber(event.target.value)}
+                value={accountNumber}
+              />
+            </Field>
+            <Field label="Nickname" name="beneficiary-nickname">
+              <Input
+                id="beneficiary-nickname"
+                maxLength={50}
+                onChange={(event) => setNickname(event.target.value)}
+                value={nickname}
+              />
+            </Field>
+          </div>
+          <Button
+            className="mt-4"
+            loading={create.isPending}
+            onClick={() => {
+              const number = accountNumberSchema.safeParse(accountNumber);
+              const name = nicknameSchema.safeParse(nickname);
+              if (!number.success || !name.success) {
+                setError(
+                  number.error?.issues[0]?.message ??
+                    name.error?.issues[0]?.message,
+                );
+                return;
+              }
+              create.mutate();
+            }}
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            Save beneficiary
+          </Button>
+        </section>
+      ) : null}
 
       <section className="mt-12">
         <h2 className="text-xl font-semibold">Saved beneficiaries</h2>
@@ -128,9 +146,17 @@ export function BeneficiariesPage() {
         ) : beneficiaries.isError ? (
           <Notice message={bankingErrorMessage(beneficiaries.error)} />
         ) : beneficiaries.data.length === 0 ? (
-          <p className="border-line-200 text-ink-600 mt-4 border-y py-8">
-            You have no saved beneficiaries.
-          </p>
+          <div className="border-line-200 mt-4 rounded-md border bg-white px-5 py-9 text-center">
+            <p className="font-semibold">You have no saved beneficiaries.</p>
+            <p className="text-ink-600 mt-2 text-sm">
+              Save a recipient nickname so future account checks are easier to
+              recognise.
+            </p>
+            <Button className="mt-5" onClick={() => setShowCreate(true)}>
+              <Plus aria-hidden="true" className="size-4" />
+              Add first beneficiary
+            </Button>
+          </div>
         ) : (
           <ul className="border-line-200 divide-line-200 mt-4 divide-y border-y">
             {beneficiaries.data.map((beneficiary) => (

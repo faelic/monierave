@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, fieldDescriptionIDs } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   createTransfer,
@@ -17,17 +17,21 @@ import {
 import { bankingErrorMessage } from "@/features/banking/banking-errors";
 import {
   accountNumberSchema,
+  majorAmountError,
   narrationSchema,
+  normalizeAccountNumberInput,
+  normalizeMajorAmountInput,
   parseMajorAmount,
 } from "@/features/banking/banking-validation";
+import { RecipientIdentity } from "@/features/banking/recipient-identity";
 import { listOwnedAccounts } from "@/features/dashboard/dashboard-api";
 import {
   accountLabel,
   formatMinorAmount,
-  maskOwnedAccountNumber,
 } from "@/features/dashboard/financial-format";
 import { isApiError } from "@/lib/api/api-error";
 import type {
+  Account,
   RecipientResolution,
   TransferResponse,
 } from "@/lib/api/contracts";
@@ -51,6 +55,8 @@ export function TransferPage() {
   const [narration, setNarration] = useState("");
   const [stage, setStage] = useState<Stage>("prepare");
   const [error, setError] = useState<string>();
+  const [recipientError, setRecipientError] = useState<string>();
+  const [amountError, setAmountError] = useState<string>();
   const [intent, setIntent] = useState<TransferIntent>();
   const [idempotencyKey, setIdempotencyKey] = useState<string>();
   const [result, setResult] = useState<TransferResponse>();
@@ -60,9 +66,13 @@ export function TransferPage() {
   const resolution = useMutation({
     mutationFn: () =>
       resolveRecipient(accountNumberSchema.parse(accountNumber)),
-    onError: (cause) => setError(bankingErrorMessage(cause)),
+    onError: (cause) => {
+      setRecipientError(bankingErrorMessage(cause));
+      setError(undefined);
+    },
     onSuccess: (resolved) => {
       setRecipient(resolved);
+      setRecipientError(undefined);
       setError(undefined);
     },
   });
@@ -95,15 +105,19 @@ export function TransferPage() {
 
   function prepareReview() {
     setError(undefined);
-    if (!sender || !recipient) {
-      setError("Choose a sender and resolve a recipient first.");
+    if (!sender) {
+      setError("Choose the account you want to send from.");
       return;
     }
+    if (!recipient) {
+      setRecipientError("Search for a recipient before continuing.");
+      return;
+    }
+    const validationMessage = majorAmountError(amount);
+    setAmountError(validationMessage);
+    if (validationMessage) return;
     const minorAmount = parseMajorAmount(amount);
-    if (!minorAmount) {
-      setError("Enter a positive amount with no more than two decimal places.");
-      return;
-    }
+    if (!minorAmount) return;
     const parsedNarration = narrationSchema.safeParse(narration);
     if (!parsedNarration.success) {
       setError(parsedNarration.error.issues[0]?.message);
@@ -134,12 +148,13 @@ export function TransferPage() {
   }
 
   if (stage === "result" && result) {
-    return <TransferResult result={result} />;
+    return <TransferResult recipient={recipient} result={result} />;
   }
 
   if (stage === "uncertain") {
     return (
-      <div className="max-w-xl">
+      <div className="max-w-2xl">
+        <TransferProgress stage="uncertain" />
         <p className="text-warning-700 text-sm font-bold uppercase">
           Checking result
         </p>
@@ -165,6 +180,7 @@ export function TransferPage() {
   if (stage === "review" && intent && sender && recipient) {
     return (
       <div className="max-w-2xl">
+        <TransferProgress stage="review" />
         <p className="text-evergreen-700 text-sm font-bold uppercase">
           Review transfer
         </p>
@@ -176,12 +192,10 @@ export function TransferPage() {
         <dl className="border-line-200 mt-8 grid gap-5 border-y py-6">
           <Review
             label="From"
-            value={`${accountLabel(sender)} · ${maskOwnedAccountNumber(sender.account_number)}`}
+            value={`${accountLabel(sender)} · ${sender.account_number}`}
           />
-          <Review
-            label="Recipient"
-            value={`${recipient.account_name} · ${recipient.account_number}`}
-          />
+          <Review label="Recipient name" value={recipient.account_name} />
+          <Review label="Recipient account" value={recipient.account_number} />
           <Review
             label="Amount"
             value={formatMinorAmount(intent.amount, intent.currency)}
@@ -215,7 +229,8 @@ export function TransferPage() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div>
+      <TransferProgress stage="prepare" />
       <h1 className="text-4xl font-semibold">Send money</h1>
       <p className="text-ink-600 mt-3 leading-7">
         Internal Monierave transfers currently have no fee.
@@ -228,95 +243,131 @@ export function TransferPage() {
       ) : senders.length === 0 ? (
         <Message message="You need an active account before you can send money." />
       ) : (
-        <div className="mt-8 grid gap-6">
-          <Field label="Send from" name="sender">
-            <select
-              className="border-line-300 min-h-11 rounded-sm border bg-white px-3"
-              id="sender"
-              onChange={(event) => setSenderID(event.target.value)}
-              value={sender?.id}
-            >
-              {senders.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.currency} ·{" "}
-                  {maskOwnedAccountNumber(account.account_number)} ·{" "}
-                  {formatMinorAmount(account.balance, account.currency)}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            hint="Resolution confirms current receiving eligibility but does not guarantee the later transfer."
-            label="Recipient account number"
-            name="recipient"
-          >
-            <div className="flex gap-2">
-              <Input
-                autoComplete="off"
-                id="recipient"
-                inputMode="numeric"
-                maxLength={10}
-                onChange={(event) => {
-                  setAccountNumber(event.target.value);
-                  setRecipient(undefined);
-                }}
-                value={accountNumber}
-              />
-              <Button
-                loading={resolution.isPending}
-                onClick={() => {
-                  const parsed = accountNumberSchema.safeParse(accountNumber);
-                  if (!parsed.success) {
-                    setError(parsed.error.issues[0]?.message);
-                    return;
-                  }
-                  resolution.mutate();
-                }}
-                variant="secondary"
+        <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(17rem,1fr)]">
+          <div className="grid gap-6">
+            <Field label="Send from" name="sender">
+              <select
+                className="border-line-300 min-h-11 w-full rounded-sm border bg-white px-3"
+                id="sender"
+                onChange={(event) => setSenderID(event.target.value)}
+                value={sender?.id}
               >
-                <Search aria-hidden="true" className="size-4" />
-                Resolve
-              </Button>
-            </div>
-          </Field>
-          {recipient ? (
-            <div className="border-success-700 bg-jade-100 rounded-sm border-l-4 p-4">
-              <p className="font-semibold">{recipient.account_name}</p>
-              <p className="text-ink-700 mt-1">
-                {recipient.account_number} · {recipient.currency} · Can receive
-              </p>
-            </div>
-          ) : null}
-          <Field
-            label={`Amount${sender ? ` (${sender.currency})` : ""}`}
-            name="amount"
-          >
-            <Input
-              id="amount"
-              inputMode="decimal"
-              onChange={(event) => setAmount(event.target.value)}
-              placeholder="0.00"
-              value={amount}
-            />
-          </Field>
-          <Field label="Narration" name="narration" optional>
-            <Input
-              id="narration"
-              maxLength={255}
-              onChange={(event) => setNarration(event.target.value)}
-              value={narration}
-            />
-          </Field>
-          <Button onClick={prepareReview}>Continue to review</Button>
+                {senders.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.currency} · {account.account_number} ·{" "}
+                    {formatMinorAmount(account.balance, account.currency)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field
+              error={recipientError}
+              hint="Searching confirms current receiving eligibility but does not guarantee the later transfer."
+              label="Recipient account number"
+              name="recipient"
+            >
+              <div className="flex gap-2">
+                <Input
+                  autoComplete="off"
+                  aria-describedby={fieldDescriptionIDs({
+                    error: recipientError,
+                    hint: "search guidance",
+                    name: "recipient",
+                  })}
+                  aria-invalid={Boolean(recipientError)}
+                  id="recipient"
+                  inputMode="numeric"
+                  maxLength={10}
+                  onChange={(event) => {
+                    setAccountNumber(
+                      normalizeAccountNumberInput(event.target.value),
+                    );
+                    setRecipient(undefined);
+                    setRecipientError(undefined);
+                  }}
+                  pattern="[0-9]*"
+                  placeholder="10-digit account number"
+                  value={accountNumber}
+                />
+                <Button
+                  loading={resolution.isPending}
+                  onClick={() => {
+                    const parsed = accountNumberSchema.safeParse(accountNumber);
+                    if (!parsed.success) {
+                      setRecipientError(parsed.error.issues[0]?.message);
+                      return;
+                    }
+                    setRecipientError(undefined);
+                    resolution.mutate();
+                  }}
+                  variant="secondary"
+                >
+                  <Search aria-hidden="true" className="size-4" />
+                  Search
+                </Button>
+              </div>
+            </Field>
+            {recipient ? (
+              <RecipientIdentity
+                accountName={recipient.account_name}
+                accountNumber={recipient.account_number}
+                canReceive={recipient.can_receive}
+                currency={recipient.currency}
+              />
+            ) : null}
+            <Field
+              error={amountError}
+              label={`Amount${sender ? ` (${sender.currency})` : ""}`}
+              name="amount"
+            >
+              <Input
+                aria-describedby={fieldDescriptionIDs({
+                  error: amountError,
+                  name: "amount",
+                })}
+                aria-invalid={Boolean(amountError)}
+                id="amount"
+                inputMode="decimal"
+                onChange={(event) => {
+                  setAmount(normalizeMajorAmountInput(event.target.value));
+                  setAmountError(undefined);
+                }}
+                pattern="[0-9]*[.]?[0-9]{0,2}"
+                placeholder="0.00"
+                value={amount}
+              />
+            </Field>
+            <Field label="Narration" name="narration" optional>
+              <Input
+                id="narration"
+                maxLength={255}
+                onChange={(event) => setNarration(event.target.value)}
+                value={narration}
+              />
+            </Field>
+            <Button onClick={prepareReview}>Continue to review</Button>
+          </div>
+          <TransferSummary
+            amount={amount}
+            recipient={recipient}
+            sender={sender}
+          />
         </div>
       )}
     </div>
   );
 }
 
-function TransferResult({ result }: { result: TransferResponse }) {
+function TransferResult({
+  recipient,
+  result,
+}: {
+  recipient: RecipientResolution | undefined;
+  result: TransferResponse;
+}) {
   return (
     <div className="max-w-xl text-center">
+      <TransferProgress stage="result" />
       <CheckCircle2
         aria-hidden="true"
         className="text-success-700 mx-auto size-14"
@@ -337,6 +388,12 @@ function TransferResult({ result }: { result: TransferResponse }) {
       <p className="text-ink-600 mt-1">
         Reference: {result.transaction.reference}
       </p>
+      <RecipientIdentity
+        accountName={recipient?.account_name ?? "Recipient"}
+        accountNumber={result.to_account.account_number}
+        className="mt-7 text-left"
+        currency={result.to_account.currency}
+      />
       <Button asChild className="mt-7">
         <Link
           href={`/app/transactions/${result.transaction.reference}` as Route}
@@ -345,6 +402,98 @@ function TransferResult({ result }: { result: TransferResponse }) {
         </Link>
       </Button>
     </div>
+  );
+}
+
+function TransferProgress({ stage }: { stage: Stage }) {
+  const active =
+    stage === "prepare"
+      ? 1
+      : stage === "review"
+        ? 2
+        : stage === "result"
+          ? 3
+          : 2;
+  return (
+    <ol
+      aria-label="Transfer progress"
+      className="border-line-200 mb-8 grid grid-cols-3 border-b pb-5"
+    >
+      {["Details", "Review", "Result"].map((label, index) => {
+        const step = index + 1;
+        const reached = step <= active;
+        return (
+          <li
+            aria-current={step === active ? "step" : undefined}
+            className={`flex items-center gap-2 text-sm font-semibold ${
+              reached ? "text-ink-950" : "text-ink-600"
+            }`}
+            key={label}
+          >
+            <span
+              className={`grid size-7 place-items-center rounded-full text-xs ${
+                reached
+                  ? "bg-[var(--product-accent)] text-[#111317]"
+                  : "bg-paper-100 text-ink-600"
+              }`}
+            >
+              {step}
+            </span>
+            <span className="hidden sm:inline">{label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function TransferSummary({
+  amount,
+  recipient,
+  sender,
+}: {
+  amount: string;
+  recipient: RecipientResolution | undefined;
+  sender: Account | undefined;
+}) {
+  const parsedAmount = parseMajorAmount(amount);
+  return (
+    <aside className="border-line-200 rounded-md border bg-white p-5 lg:sticky lg:top-24">
+      <p className="text-evergreen-700 text-xs font-bold tracking-[0.12em] uppercase">
+        Transfer summary
+      </p>
+      <h2 className="mt-2 text-lg font-semibold">Before review</h2>
+      <dl className="mt-5 grid gap-4 text-sm">
+        <div>
+          <dt className="text-ink-600">From</dt>
+          <dd className="mt-1 font-semibold">
+            {sender
+              ? `${sender.currency} · ${sender.account_number}`
+              : "Choose an account"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-ink-600">Recipient</dt>
+          <dd className="mt-1 font-semibold">
+            {recipient
+              ? `${recipient.account_name} · ${recipient.account_number}`
+              : "Search for an account number"}
+          </dd>
+        </div>
+        <div className="border-line-200 border-t pt-4">
+          <dt className="text-ink-600">Estimated total debit</dt>
+          <dd className="mt-1 text-xl font-semibold" data-financial-number>
+            {sender && parsedAmount
+              ? formatMinorAmount(parsedAmount, sender.currency)
+              : "—"}
+          </dd>
+          <p className="text-ink-600 mt-1">Fee: 0</p>
+        </div>
+      </dl>
+      <p className="text-ink-600 mt-5 text-xs leading-5">
+        Nothing moves until you confirm the complete transfer on the next step.
+      </p>
+    </aside>
   );
 }
 

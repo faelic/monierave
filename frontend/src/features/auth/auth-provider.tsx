@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function handleSessionExpired() {
-      clearAccessCredential();
+      clearAccessCredential(false);
       setUser(null);
       setStatus("anonymous");
       queryClient.clear();
@@ -109,13 +109,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function updateUser(input: UpdateUserInput) {
+    const emailChanged =
+      typeof input.email === "string" && input.email !== user?.email;
+    const sessionRevoked = emailChanged || typeof input.password === "string";
     const currentUser = await updateCurrentUser(input);
+    if (sessionRevoked) {
+      clearPrivateState();
+      return currentUser;
+    }
     setUser(currentUser);
     queryClient.setQueryData(queryKeys.currentUser, currentUser);
     return currentUser;
   }
 
   function clearPrivateState() {
+    clearAccessCredential();
     setUser(null);
     setStatus("anonymous");
     queryClient.clear();

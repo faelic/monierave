@@ -35,7 +35,7 @@ test("creates a registration and explains the email confirmation step", async ({
   await page.getByLabel("Username").fill("favour22");
   await page.getByLabel("Email address").fill("FAVOUR@example.com");
   await page.getByLabel("Password", { exact: true }).fill("clear-sky-2026");
-  await page.getByRole("button", { name: "Create registration" }).click();
+  await page.getByRole("button", { name: "Create profile" }).click();
 
   await expect(page).toHaveURL(/\/signup\/check-email$/, { timeout: 15_000 });
   await expect(
@@ -67,13 +67,15 @@ test("shows a safe compromised-password response without leaking details", async
   await page.getByLabel("Username").fill("favour22");
   await page.getByLabel("Email address").fill("favour@example.com");
   await page.getByLabel("Password", { exact: true }).fill("password123");
-  await page.getByRole("button", { name: "Create registration" }).click();
+  await page.getByRole("button", { name: "Create profile" }).click();
 
   await expect(page.getByText(/known data breaches/i)).toBeVisible();
   await expect(page).toHaveURL(/\/signup$/);
 });
 
-test("routes a pending login into verification recovery", async ({ page }) => {
+test("routes a pending login into the limited application", async ({
+  page,
+}) => {
   await mockPendingAuthentication(page);
 
   await page.goto("/login?returnTo=https%3A%2F%2Fattacker.example%2Fcollect");
@@ -81,12 +83,16 @@ test("routes a pending login into verification recovery", async ({ page }) => {
   await page.getByLabel("Password", { exact: true }).fill("clear-sky-2026");
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page).toHaveURL(/\/verification-needed$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
   await expect(
-    page.getByRole("heading", { name: "Verify your email." }),
+    page.getByRole("heading", {
+      name: "Verify your email to activate banking.",
+    }),
   ).toBeVisible();
-  await expect(page.getByText("Valid for 24 hours")).toBeVisible();
-  await expect(page.getByText(/Available until/)).toBeVisible();
+  await expect(page.getByText("Protected until verified")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Profile" }).first(),
+  ).toBeVisible();
   await expect(page).not.toHaveURL(/attacker/);
 });
 
@@ -139,6 +145,7 @@ test("resends verification and replaces an undeliverable address", async ({
   await expect(page.getByText(/fresh verification email/i)).toBeVisible();
   expect(resendCount).toBe(1);
 
+  await page.locator("summary").click();
   await page.getByLabel("Email address").fill("valid@example.com");
   await page.getByRole("button", { name: "Update email" }).click();
   await expect(page.getByText(/Email updated/i)).toBeVisible();
@@ -154,7 +161,7 @@ test("auth screens fit the viewport without horizontal overflow", async ({
   await page.goto("/login");
 
   await expect(
-    page.getByRole("heading", { name: "Sign in securely." }),
+    page.getByRole("heading", { name: "Welcome back" }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -163,10 +170,29 @@ test("auth screens fit the viewport without horizontal overflow", async ({
   ).toBe(true);
 });
 
+test("short landscape signup keeps the complete form in one viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 576, width: 1024 });
+  await mockAPI(page, unauthorized);
+  await page.goto("/signup");
+
+  await expect(page.getByText("At least 8 characters.")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create profile" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollHeight <= window.innerHeight,
+    ),
+  ).toBe(true);
+});
+
 async function mockPendingAuthentication(
   page: Page,
   extension?: (route: Route) => Promise<boolean | void>,
 ) {
+  let signedIn = false;
   await mockAPI(page, async (route) => {
     if (extension) {
       const handled = await extension(route);
@@ -178,12 +204,22 @@ async function mockPendingAuthentication(
     const path = requestURL(route);
     const method = route.request().method();
     if (path === "/users/login" && method === "POST") {
+      signedIn = true;
       return json(route, {
         access_token: "pending-access-token",
         access_token_expires_at: "2099-01-01T00:00:00Z",
         session_id: "session-not-rendered",
         user: pendingUser,
       });
+    }
+    if (signedIn && path === "/tokens/renew_access" && method === "POST") {
+      return json(route, {
+        access_token: "renewed-pending-access-token",
+        access_token_expires_at: "2099-01-01T00:00:00Z",
+      });
+    }
+    if (signedIn && path === "/users/me" && method === "GET") {
+      return json(route, pendingUser);
     }
     if (path === "/users/me/email-status" && method === "GET") {
       return json(route, {
@@ -219,6 +255,8 @@ async function signInPendingUser(page: Page) {
   await page.getByLabel("Username").fill("favour22");
   await page.getByLabel("Password", { exact: true }).fill("clear-sky-2026");
   await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
+  await page.getByRole("link", { name: "Continue verification" }).click();
   await expect(page).toHaveURL(/\/verification-needed$/, { timeout: 15_000 });
 }
 

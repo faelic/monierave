@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -150,8 +151,29 @@ func (server *Server) requestLoggerMiddleware() gin.HandlerFunc {
 			Str("route", route).
 			Int("status", status).
 			Int64("duration_ms", elapsed.Milliseconds()).
-			Str("client_ip", ctx.ClientIP()).
+			Str("client_ip_hash", server.privateSecurityValue("request-ip", ctx.ClientIP())[:16]).
 			Msg("HTTP request completed")
+	}
+}
+
+func (server *Server) requireOperationsToken() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		configured := strings.TrimSpace(server.config.OperationsToken)
+		if configured == "" && !strings.EqualFold(server.config.Environment, "production") {
+			ctx.Next()
+			return
+		}
+		provided := strings.TrimSpace(strings.TrimPrefix(
+			ctx.GetHeader("Authorization"),
+			"Bearer ",
+		))
+		expectedHash := sha256.Sum256([]byte(configured))
+		providedHash := sha256.Sum256([]byte(provided))
+		if provided == "" || subtle.ConstantTimeCompare(expectedHash[:], providedHash[:]) != 1 {
+			ctx.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		ctx.Next()
 	}
 }
 
@@ -349,6 +371,8 @@ func stableErrorCode(err error) string {
 		return "forbidden"
 	case errors.Is(err, ErrInvalidCredentials):
 		return "invalid_credentials"
+	case errors.Is(err, ErrCurrentPasswordRequired):
+		return "current_password_required"
 	case errors.Is(err, ErrRateLimited):
 		return "rate_limited"
 	case errors.Is(err, ErrServiceUnavailable):

@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 const verifiedUser = {
@@ -38,7 +40,7 @@ const accounts = [
 
 test("renders the verified dashboard without combining currencies", async ({
   page,
-}) => {
+}, testInfo) => {
   await mockDashboardAPI(page);
   await page.goto("/app");
 
@@ -61,6 +63,8 @@ test("renders the verified dashboard without combining currencies", async ({
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+
+  await captureDashboardReview(page, testInfo.project.name, "verified");
 });
 
 test("redirects an anonymous dashboard request to safe sign in", async ({
@@ -73,13 +77,14 @@ test("redirects an anonymous dashboard request to safe sign in", async ({
     timeout: 15_000,
   });
   await expect(
-    page.getByRole("heading", { name: "Sign in securely." }),
+    page.getByRole("heading", { name: "Welcome back" }),
   ).toBeVisible();
 });
 
-test("redirects a pending customer away from financial information", async ({
+test("gives a pending customer a limited dashboard without financial requests", async ({
   page,
-}) => {
+}, testInfo) => {
+  let financialRequests = 0;
   await mockAPI(page, async (route) => {
     const path = requestPath(route);
     if (path === "/tokens/renew_access") {
@@ -106,16 +111,45 @@ test("redirects a pending customer away from financial information", async ({
         verified_at: null,
       });
     }
+    if (
+      path.startsWith("/accounts") ||
+      path.startsWith("/transactions") ||
+      path.startsWith("/beneficiaries") ||
+      path.startsWith("/transfers")
+    ) {
+      financialRequests += 1;
+    }
     return unauthorized(route);
   });
 
   await page.goto("/app");
-  await expect(page).toHaveURL(/\/verification-needed$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
   await expect(page.getByText(/USD\s*1,250\.50/)).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Verify your email." }),
+    page.getByRole("heading", {
+      name: "Verify your email to activate banking.",
+    }),
   ).toBeVisible();
+  await expect(page.getByText("Protected until verified")).toBeVisible();
+  expect(financialRequests).toBe(0);
+
+  await captureDashboardReview(page, testInfo.project.name, "limited");
 });
+
+async function captureDashboardReview(
+  page: Page,
+  project: string,
+  state: "limited" | "verified",
+) {
+  if (process.env.CAPTURE_DASHBOARD_REVIEW !== "1") return;
+  const directory = "visual-reviews/dashboard-resend";
+  await mkdir(directory, { recursive: true });
+  await page.screenshot({
+    animations: "disabled",
+    fullPage: true,
+    path: `${directory}/${project}-${state}.png`,
+  });
+}
 
 test("shows an explicit empty account state", async ({ page }) => {
   await mockDashboardAPI(page, []);
@@ -127,6 +161,23 @@ test("shows an explicit empty account state", async ({ page }) => {
   await expect(page.getByText(/USD\s*1,250\.50/)).toHaveCount(0);
   await expect(page.getByText(/EUR\s*42\.00/)).toHaveCount(0);
   await expect(page.getByText("Primary overview account")).toHaveCount(0);
+});
+
+test("combines account activity without combining currencies", async ({
+  page,
+}) => {
+  await mockDashboardAPI(page);
+  await page.goto("/app/transactions");
+
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await expect(page.getByText("Acme Market")).toBeVisible();
+  await expect(page.getByText("Salary")).toBeVisible();
+  await expect(page.getByText(/USD\s*25\.00/)).toBeVisible();
+  await expect(page.getByText(/EUR\s*42\.00/)).toBeVisible();
+
+  await page.getByLabel("Account").selectOption(accounts[1].id);
+  await expect(page.getByText("Salary")).toBeVisible();
+  await expect(page.getByText("Acme Market")).toHaveCount(0);
 });
 
 async function mockDashboardAPI(
@@ -166,6 +217,28 @@ async function mockDashboardAPI(
             narration: "Lunch",
             posted_at: "2026-08-05T12:00:01Z",
             reference: "TXN-ABC123",
+            status: "posted",
+            type: "internal_transfer",
+          },
+        ],
+      });
+    }
+    if (path === `/accounts/${accounts[1].id}/transactions`) {
+      return json(route, {
+        transactions: [
+          {
+            account_id: accounts[1].id,
+            amount: 4200,
+            balance_after: 4200,
+            counterparty: "Salary",
+            counterparty_type: "account",
+            created_at: "2026-08-04T09:00:00Z",
+            currency: "EUR",
+            direction: "incoming",
+            id: "44444444-4444-4444-8444-444444444444",
+            narration: "August salary",
+            posted_at: "2026-08-04T09:00:01Z",
+            reference: "TXN-EUR-42",
             status: "posted",
             type: "internal_transfer",
           },

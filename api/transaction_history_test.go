@@ -34,7 +34,7 @@ func TestGetTransactionAPIUsesOwnershipScopedReference(t *testing.T) {
 		SignedAmount:     -500,
 		Direction:        "outgoing",
 		CounterpartyKind: "customer",
-		Counterparty:     uuid.NewString(),
+		Counterparty:     "9374028641",
 	}
 
 	ctrl := gomock.NewController(t)
@@ -70,6 +70,8 @@ func TestGetTransactionAPIUsesOwnershipScopedReference(t *testing.T) {
 	require.Equal(t, row.Reference, response.Reference)
 	require.Equal(t, "outgoing", response.Direction)
 	require.Equal(t, publicUUID(account.PublicID), response.AccountID)
+	require.Equal(t, row.Counterparty, response.Counterparty)
+	require.NotEqual(t, publicUUID(account.PublicID), response.Counterparty)
 	require.NotContains(t, recorder.Body.String(), `"signed_amount"`)
 }
 
@@ -308,7 +310,7 @@ func historyRow(
 		SignedAmount:     -100,
 		Direction:        "outgoing",
 		CounterpartyKind: "customer",
-		Counterparty:     uuid.NewString(),
+		Counterparty:     "9374028641",
 		BalanceAfter:     balanceAfter,
 	}
 }

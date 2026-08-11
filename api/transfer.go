@@ -21,11 +21,11 @@ const idempotencyKeyHeader = "Idempotency-Key"
 var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type transferRequest struct {
-	FromAccountID string `json:"from_account_id" binding:"required"`
-	ToAccountID   string `json:"to_account_id" binding:"required"`
-	Amount        int64  `json:"amount" binding:"required,gt=0"`
-	Currency      string `json:"currency" binding:"required,currency"`
-	Narration     string `json:"narration" binding:"omitempty,max=255"`
+	FromAccountID   string `json:"from_account_id" binding:"required"`
+	ToAccountNumber string `json:"to_account_number" binding:"required"`
+	Amount          int64  `json:"amount" binding:"required,gt=0"`
+	Currency        string `json:"currency" binding:"required,currency"`
+	Narration       string `json:"narration" binding:"omitempty,max=255"`
 }
 
 type bankingTransactionResponse struct {
@@ -62,9 +62,15 @@ func newBankingTransactionResponse(
 }
 
 type transferResponse struct {
-	Transaction bankingTransactionResponse `json:"transaction"`
-	FromAccount accountResponse            `json:"from_account"`
-	ToAccount   accountResponse            `json:"to_account"`
+	Transaction bankingTransactionResponse  `json:"transaction"`
+	FromAccount accountResponse             `json:"from_account"`
+	ToAccount   transferDestinationResponse `json:"to_account"`
+	Fee         int64                       `json:"fee"`
+}
+
+type transferDestinationResponse struct {
+	AccountNumber string `json:"account_number"`
+	Currency      string `json:"currency"`
 }
 
 func (server *Server) createTransfer(ctx *gin.Context) {
@@ -89,14 +95,14 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidAccountID))
 		return
 	}
-	toPublicID, err := parsePublicID(req.ToAccountID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidAccountID))
+	toAccountNumber := strings.TrimSpace(req.ToAccountNumber)
+	if !accountNumberPattern.MatchString(toAccountNumber) {
+		writeRecipientNotFound(ctx)
 		return
 	}
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
-	requestHash, err := hashTransferRequest(req, fromPublicID, toPublicID)
+	requestHash, err := hashTransferRequest(req, fromPublicID, toAccountNumber)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrTransferFailed))
 		return
@@ -104,7 +110,7 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 	result, err := server.store.IdempotentTransferTx(ctx, db.IdempotentTransferTxParams{
 		TransferTxParams: db.TransferTxParams{
 			FromAccountPublicID: fromPublicID,
-			ToAccountPublicID:   toPublicID,
+			ToAccountNumber:     toAccountNumber,
 			Amount:              req.Amount,
 			Currency:            req.Currency,
 			Username:            authPayload.Username,
@@ -128,6 +134,9 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 			http.StatusNotFound,
 			codedErrorResponse(ctx, "account_not_found", ErrAccountNotFound),
 		)
+		return
+	case errors.Is(err, db.ErrRecipientNotFound):
+		writeRecipientNotFound(ctx)
 		return
 	case errors.Is(err, db.ErrInsufficientBalance):
 		ctx.JSON(
@@ -180,27 +189,31 @@ func (server *Server) createTransfer(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, transferResponse{
 		Transaction: newBankingTransactionResponse(result.Transaction),
 		FromAccount: newAccountResponse(result.FromAccount),
-		ToAccount:   newAccountResponse(result.ToAccount),
+		ToAccount: transferDestinationResponse{
+			AccountNumber: maskAccountNumber(result.ToAccount.AccountNumber),
+			Currency:      result.ToAccount.Currency,
+		},
+		Fee: 0,
 	})
 }
 
 func hashTransferRequest(
 	req transferRequest,
 	fromPublicID pgtype.UUID,
-	toPublicID pgtype.UUID,
+	toAccountNumber string,
 ) ([]byte, error) {
 	normalized := struct {
-		FromAccountID string `json:"from_account_id"`
-		ToAccountID   string `json:"to_account_id"`
-		Amount        int64  `json:"amount"`
-		Currency      string `json:"currency"`
-		Narration     string `json:"narration"`
+		FromAccountID   string `json:"from_account_id"`
+		ToAccountNumber string `json:"to_account_number"`
+		Amount          int64  `json:"amount"`
+		Currency        string `json:"currency"`
+		Narration       string `json:"narration"`
 	}{
-		FromAccountID: publicUUIDString(fromPublicID),
-		ToAccountID:   publicUUIDString(toPublicID),
-		Amount:        req.Amount,
-		Currency:      req.Currency,
-		Narration:     strings.TrimSpace(req.Narration),
+		FromAccountID:   publicUUIDString(fromPublicID),
+		ToAccountNumber: toAccountNumber,
+		Amount:          req.Amount,
+		Currency:        req.Currency,
+		Narration:       strings.TrimSpace(req.Narration),
 	}
 	payload, err := json.Marshal(normalized)
 	if err != nil {

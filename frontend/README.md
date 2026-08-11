@@ -12,16 +12,11 @@ controls, and public support guidance. Cards, notifications, MFA, device lists,
 and persisted preferences remain hidden because the backend does not provide
 those contracts yet.
 
-The wallet hero appears on the marketing and authentication surfaces. Its
-real-time holder, three textured cards, payment tokens, lighting, camera, and
-4.671333-second native Three.js animation clip live under
-`src/features/wallet-hero`. The scene remains a separate dynamic chunk, unmounts
-offscreen, provides a visible pause control, and never loads on compact
-viewports, reduced-motion environments, data-saving connections, constrained
-devices, or unsupported WebGL contexts. See
-[`docs/wallet-hero.md`](docs/wallet-hero.md) for texture replacement, Figma,
-GLB, performance, and timing guidance. Banking screens and transactional forms
-remain free of 3D.
+The marketing hero uses a lightweight inline-SVG celestial globe under
+`src/features/rotating-globe-hero`. The globe rotates deterministically and
+freezes into a complete static state for reduced motion. Authentication uses a
+CSS atmosphere, while banking screens and transactional forms remain free of
+decorative 3D.
 
 ## Local setup
 
@@ -70,9 +65,8 @@ but pinning one verified compiler keeps local and CI behavior deterministic.
   recipient resolution, idempotent transfer intent, and beneficiary lifecycle.
 - `src/features/profile` owns safe personal-information updates and supported
   session-security controls.
-- `src/features/wallet-hero` owns the adaptive runtime policy, wallet scene,
-  native Three.js animation controller, replaceable card artwork, failure
-  boundary, and static fallback.
+- `src/features/rotating-globe-hero` owns the production marketing hero,
+  animated headline, deterministic SVG globe, and reduced-motion behavior.
 - `src/lib/api` owns the HTTP boundary, stable error normalization,
   cancellation, and idempotency-key support.
 - `src/lib/query` owns server-state defaults and query-key factories.

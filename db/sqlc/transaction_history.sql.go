@@ -78,7 +78,7 @@ WITH owned_activity AS (
     CASE WHEN posting.amount > 0 THEN 'incoming' ELSE 'outgoing' END AS direction,
     coalesce(counterparty.kind, '') AS counterparty_kind,
     CASE
-      WHEN counterparty.kind = 'customer' THEN counterparty.account_public_id::text
+      WHEN counterparty.kind = 'customer' THEN counterparty.account_number
       WHEN counterparty.kind = 'settlement' THEN 'Monierave'
       ELSE ''
     END AS counterparty
@@ -91,7 +91,7 @@ WITH owned_activity AS (
     ON account.id = ledger.customer_account_id
    AND account.owner = $1
   LEFT JOIN LATERAL (
-    SELECT other_ledger.kind, other_account.public_id AS account_public_id
+    SELECT other_ledger.kind, other_account.account_number
     FROM ledger_postings AS other_posting
     JOIN ledger_accounts AS other_ledger
       ON other_ledger.id = other_posting.ledger_account_id
@@ -177,7 +177,7 @@ account_activity AS (
     CASE WHEN posting.amount > 0 THEN 'incoming' ELSE 'outgoing' END AS direction,
     coalesce(counterparty.kind, '') AS counterparty_kind,
     CASE
-      WHEN counterparty.kind = 'customer' THEN counterparty.account_public_id::text
+      WHEN counterparty.kind = 'customer' THEN counterparty.account_number
       WHEN counterparty.kind = 'settlement' THEN 'Monierave'
       ELSE ''
     END AS counterparty,
@@ -191,7 +191,7 @@ account_activity AS (
   JOIN banking_transactions AS transaction
     ON transaction.id = posting.transaction_id
   LEFT JOIN LATERAL (
-    SELECT other_ledger.kind, other_account.public_id AS account_public_id
+    SELECT other_ledger.kind, other_account.account_number
     FROM ledger_postings AS other_posting
     JOIN ledger_accounts AS other_ledger
       ON other_ledger.id = other_posting.ledger_account_id

@@ -4,9 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +13,7 @@ func TestCreateBeneficiaryTxAndOwnedOperations(t *testing.T) {
 	destinationOwner := createRandomUser(t)
 	destination, err := testStore.CreateAccountTx(
 		context.Background(),
-		CreateAccountParams{
+		CreateAccountTxParams{
 			Owner: destinationOwner.Username, Currency: "USD",
 		},
 	)
@@ -24,9 +22,9 @@ func TestCreateBeneficiaryTxAndOwnedOperations(t *testing.T) {
 	created, err := testStore.CreateBeneficiaryTx(
 		context.Background(),
 		CreateBeneficiaryTxParams{
-			Owner:                      owner.Username,
-			DestinationAccountPublicID: destination.PublicID,
-			Nickname:                   "Rent account",
+			Owner:                    owner.Username,
+			DestinationAccountNumber: destination.AccountNumber,
+			Nickname:                 "Rent account",
 		},
 	)
 	require.NoError(t, err)
@@ -42,7 +40,7 @@ func TestCreateBeneficiaryTxAndOwnedOperations(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	require.Equal(t, destination.PublicID, rows[0].DestinationAccountPublicID)
+	require.Equal(t, destination.AccountNumber, rows[0].DestinationAccountNumber)
 	require.Equal(t, "Rent account", rows[0].Nickname)
 
 	foreignOwner := createRandomUser(t)
@@ -93,16 +91,16 @@ func TestCreateBeneficiaryTxRejectsDuplicateAndClosedDestination(t *testing.T) {
 	destinationOwner := createRandomUser(t)
 	destination, err := testStore.CreateAccountTx(
 		context.Background(),
-		CreateAccountParams{
+		CreateAccountTxParams{
 			Owner: destinationOwner.Username, Currency: "USD",
 		},
 	)
 	require.NoError(t, err)
 
 	arg := CreateBeneficiaryTxParams{
-		Owner:                      owner.Username,
-		DestinationAccountPublicID: destination.PublicID,
-		Nickname:                   "Primary",
+		Owner:                    owner.Username,
+		DestinationAccountNumber: destination.AccountNumber,
+		Nickname:                 "Primary",
 	}
 	_, err = testStore.CreateBeneficiaryTx(context.Background(), arg)
 	require.NoError(t, err)
@@ -113,7 +111,7 @@ func TestCreateBeneficiaryTxRejectsDuplicateAndClosedDestination(t *testing.T) {
 	closedOwner := createRandomUser(t)
 	closedDestination, err := testStore.CreateAccountTx(
 		context.Background(),
-		CreateAccountParams{
+		CreateAccountTxParams{
 			Owner: closedOwner.Username, Currency: "USD",
 		},
 	)
@@ -130,9 +128,9 @@ func TestCreateBeneficiaryTxRejectsDuplicateAndClosedDestination(t *testing.T) {
 	_, err = testStore.CreateBeneficiaryTx(
 		context.Background(),
 		CreateBeneficiaryTxParams{
-			Owner:                      owner.Username,
-			DestinationAccountPublicID: closedDestination.PublicID,
-			Nickname:                   "Closed",
+			Owner:                    owner.Username,
+			DestinationAccountNumber: closedDestination.AccountNumber,
+			Nickname:                 "Closed",
 		},
 	)
 	require.ErrorIs(t, err, ErrAccountClosed)
@@ -140,11 +138,9 @@ func TestCreateBeneficiaryTxRejectsDuplicateAndClosedDestination(t *testing.T) {
 	_, err = testStore.CreateBeneficiaryTx(
 		context.Background(),
 		CreateBeneficiaryTxParams{
-			Owner: owner.Username,
-			DestinationAccountPublicID: pgtype.UUID{
-				Bytes: uuid.New(), Valid: true,
-			},
-			Nickname: "Missing",
+			Owner:                    owner.Username,
+			DestinationAccountNumber: "9999999999",
+			Nickname:                 "Missing",
 		},
 	)
 	require.ErrorIs(t, err, ErrAccountNotFound)

@@ -270,11 +270,12 @@ func TestLoginUserAPI(t *testing.T) {
 					Times(0)
 
 				store.EXPECT().
-					RecordLoginFailure(gomock.Any(), db.LoginFailureAuditParams{
-						Username:  user.Username,
-						ClientIP:  "127.0.0.1",
-						UserAgent: "api-test",
-						Reason:    "unknown_user",
+					RecordLoginFailure(gomock.Any(), gomock.Any()).
+					Do(func(_ context.Context, arg db.LoginFailureAuditParams) {
+						require.Equal(t, user.Username, arg.Username)
+						require.Equal(t, "unknown_user", arg.Reason)
+						require.Len(t, arg.ClientIP, 64)
+						require.Len(t, arg.UserAgent, 64)
 					}).
 					Return(nil)
 			},
@@ -299,11 +300,12 @@ func TestLoginUserAPI(t *testing.T) {
 					Times(0)
 
 				store.EXPECT().
-					RecordLoginFailure(gomock.Any(), db.LoginFailureAuditParams{
-						Username:  user.Username,
-						ClientIP:  "127.0.0.1",
-						UserAgent: "api-test",
-						Reason:    "invalid_password",
+					RecordLoginFailure(gomock.Any(), gomock.Any()).
+					Do(func(_ context.Context, arg db.LoginFailureAuditParams) {
+						require.Equal(t, user.Username, arg.Username)
+						require.Equal(t, "invalid_password", arg.Reason)
+						require.Len(t, arg.ClientIP, 64)
+						require.Len(t, arg.UserAgent, 64)
 					}).
 					Return(nil)
 			},
@@ -424,9 +426,11 @@ func TestUpdateUserEmailUsesTransactionalOutbox(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := mockdb.NewMockStore(ctrl)
 	server := newTestServer(t, store)
-	user, err := randomUser(util.RandomString(8))
+	currentPassword := util.RandomString(8)
+	user, err := randomUser(currentPassword)
 	require.NoError(t, err)
 	newEmail := "new-address@example.com"
+	store.EXPECT().GetUser(gomock.Any(), user.Username).Return(user, nil)
 
 	store.EXPECT().
 		UpdateUserTx(gomock.Any(), gomock.Any()).
@@ -434,6 +438,7 @@ func TestUpdateUserEmailUsesTransactionalOutbox(t *testing.T) {
 			require.Equal(t, user.Username, arg.Username)
 			require.True(t, arg.Email.Valid)
 			require.Equal(t, newEmail, arg.Email.String)
+			require.True(t, arg.RevokeSessions)
 
 			updated := user
 			updated.Email = newEmail
@@ -444,7 +449,10 @@ func TestUpdateUserEmailUsesTransactionalOutbox(t *testing.T) {
 			}, nil
 		})
 
-	body, err := json.Marshal(gin.H{"email": "NEW-ADDRESS@EXAMPLE.COM"})
+	body, err := json.Marshal(gin.H{
+		"current_password": currentPassword,
+		"email":            "NEW-ADDRESS@EXAMPLE.COM",
+	})
 	require.NoError(t, err)
 	request, err := http.NewRequest(http.MethodPatch, "/users/me", bytes.NewReader(body))
 	require.NoError(t, err)
@@ -523,13 +531,21 @@ func TestVerifyUserEmail(t *testing.T) {
 	user, err := randomUser(util.RandomString(8))
 	require.NoError(t, err)
 	jobID := uuid.New()
-	value, _, err := server.emailVerificationMaker.Create(
-		user.Username,
-		user.Email,
-		jobID.String(),
-		time.Hour,
-	)
+	value, err := server.emailVerificationMaker.Create(jobID.String())
 	require.NoError(t, err)
+	tokenHash, err := server.emailVerificationMaker.Hash(value)
+	require.NoError(t, err)
+	job := db.EmailJob{
+		ID:                         pgtype.UUID{Bytes: jobID, Valid: true},
+		Username:                   user.Username,
+		Recipient:                  user.Email,
+		VerificationTokenHash:      tokenHash,
+		VerificationTokenExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	}
+	store.EXPECT().
+		GetEmailJobByVerificationTokenHash(gomock.Any(), tokenHash).
+		Return(job, nil).
+		AnyTimes()
 
 	request, err := http.NewRequest(
 		http.MethodGet,
@@ -546,14 +562,30 @@ func TestVerifyUserEmail(t *testing.T) {
 	require.Equal(t, "DENY", recorder.Header().Get("X-Frame-Options"))
 	require.NotEmpty(t, recorder.Header().Get("Content-Security-Policy"))
 
+	for _, origin := range []string{"https://mail.google.com", "null"} {
+		request, err = http.NewRequest(
+			http.MethodGet,
+			"/users/verify-email?token="+url.QueryEscape(value),
+			nil,
+		)
+		require.NoError(t, err)
+		request.Header.Set("Origin", origin)
+		recorder = httptest.NewRecorder()
+		server.router.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.Contains(t, recorder.Body.String(), "Confirm your email")
+		require.Empty(t, recorder.Header().Get("Access-Control-Allow-Origin"))
+	}
+
 	verifiedUser := user
 	verifiedUser.AccountStatus = db.AccountStatusActive
 	verifiedUser.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
 	store.EXPECT().
 		VerifyUserEmailTx(gomock.Any(), db.VerifyUserEmailTxParams{
-			Username: user.Username,
-			Email:    user.Email,
-			JobID:    pgtype.UUID{Bytes: jobID, Valid: true},
+			Username:  user.Username,
+			Email:     user.Email,
+			JobID:     pgtype.UUID{Bytes: jobID, Valid: true},
+			TokenHash: tokenHash,
 		}).
 		Return(verifiedUser, nil)
 
@@ -564,6 +596,7 @@ func TestVerifyUserEmail(t *testing.T) {
 	)
 	require.NoError(t, err)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", "null")
 	recorder = httptest.NewRecorder()
 	server.router.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -577,22 +610,29 @@ func TestConfirmUserEmailJSON(t *testing.T) {
 	user, err := randomUser(util.RandomString(8))
 	require.NoError(t, err)
 	jobID := uuid.New()
-	value, _, err := server.emailVerificationMaker.Create(
-		user.Username,
-		user.Email,
-		jobID.String(),
-		time.Hour,
-	)
+	value, err := server.emailVerificationMaker.Create(jobID.String())
 	require.NoError(t, err)
+	tokenHash, err := server.emailVerificationMaker.Hash(value)
+	require.NoError(t, err)
+	store.EXPECT().
+		GetEmailJobByVerificationTokenHash(gomock.Any(), tokenHash).
+		Return(db.EmailJob{
+			ID:                         pgtype.UUID{Bytes: jobID, Valid: true},
+			Username:                   user.Username,
+			Recipient:                  user.Email,
+			VerificationTokenHash:      tokenHash,
+			VerificationTokenExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		}, nil)
 
 	verifiedUser := user
 	verifiedUser.AccountStatus = db.AccountStatusActive
 	verifiedUser.EmailVerifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
 	store.EXPECT().
 		VerifyUserEmailTx(gomock.Any(), db.VerifyUserEmailTxParams{
-			Username: user.Username,
-			Email:    user.Email,
-			JobID:    pgtype.UUID{Bytes: jobID, Valid: true},
+			Username:  user.Username,
+			Email:     user.Email,
+			JobID:     pgtype.UUID{Bytes: jobID, Valid: true},
+			TokenHash: tokenHash,
 		}).
 		Return(verifiedUser, nil)
 
@@ -664,6 +704,45 @@ func TestResendUserEmailVerification(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "verification email queued")
 }
 
+func TestGetCurrentUserAcrossAccountStatuses(t *testing.T) {
+	for _, status := range []string{
+		db.AccountStatusActive,
+		db.AccountStatusPending,
+		db.AccountStatusDisabled,
+	} {
+		t.Run(status, func(t *testing.T) {
+			user, err := randomUser(util.RandomString(12))
+			require.NoError(t, err)
+			user.AccountStatus = status
+
+			store := mockdb.NewMockStore(gomock.NewController(t))
+			store.EXPECT().
+				GetUser(gomock.Any(), user.Username).
+				Return(user, nil)
+			server := newTestServer(t, store)
+			request := httptest.NewRequest(http.MethodGet, "/users/me", nil)
+			addAuthorization(
+				t,
+				request,
+				server.tokenMaker,
+				authorizationTypeBearer,
+				user.Username,
+				time.Minute,
+			)
+			recorder := httptest.NewRecorder()
+
+			server.router.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			requireBodyMatchUser(t, recorder.Body, user)
+			require.NotContains(t, recorder.Body.String(), user.HashedPassword)
+			require.NotContains(t, recorder.Body.String(), "refresh_token")
+			require.NotContains(t, recorder.Body.String(), "device_token")
+			require.NotContains(t, recorder.Body.String(), "session_id")
+		})
+	}
+}
+
 type stringVerifier interface {
 	VerifyAccessToken(token string) (*token.Payload, error)
 }
@@ -703,14 +782,13 @@ func requireBodyMatchLoginUser(t *testing.T, body *bytes.Buffer, user db.User, t
 	err = json.Unmarshal(data, &gotRsp)
 	require.NoError(t, err)
 
-	require.True(t, gotRsp.SessionID.Valid)
 	require.NotEmpty(t, gotRsp.AccessToken)
 	require.False(t, gotRsp.AccessTokenExpiresAt.IsZero())
 
 	accessPayload, err := tokenMaker.VerifyAccessToken(gotRsp.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, user.Username, accessPayload.Username)
-	require.Equal(t, uuid.UUID(gotRsp.SessionID.Bytes), accessPayload.SessionID)
+	require.NotEqual(t, uuid.Nil, accessPayload.SessionID)
 
 	require.Equal(t, user.Username, gotRsp.User.Username)
 	require.Equal(t, user.FullName, gotRsp.User.FullName)

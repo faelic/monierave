@@ -53,16 +53,16 @@ func TestCreateBeneficiaryAPI(t *testing.T) {
 			store.EXPECT().CreateBeneficiaryTx(
 				gomock.Any(),
 				db.CreateBeneficiaryTxParams{
-					Owner:                      owner,
-					DestinationAccountPublicID: destination.PublicID,
-					Nickname:                   "Landlord",
+					Owner:                    owner,
+					DestinationAccountNumber: destination.AccountNumber,
+					Nickname:                 "Landlord",
 				},
 			).Return(result, tc.storeError)
 
 			server := newTestServer(t, store)
 			body, err := json.Marshal(createBeneficiaryRequest{
-				DestinationAccountID: publicUUID(destination.PublicID),
-				Nickname:             "  Landlord  ",
+				DestinationAccountNumber: destination.AccountNumber,
+				Nickname:                 "  Landlord  ",
 			})
 			require.NoError(t, err)
 			request := httptest.NewRequest(
@@ -89,9 +89,11 @@ func TestCreateBeneficiaryAPI(t *testing.T) {
 				require.Equal(t, "Landlord", response.Nickname)
 				require.Equal(
 					t,
-					publicUUID(destination.PublicID),
-					response.DestinationAccountID,
+					maskAccountNumber(destination.AccountNumber),
+					response.DestinationAccountNumber,
 				)
+				require.True(t, response.CanReceive)
+				require.NotContains(t, recorder.Body.String(), publicUUID(destination.PublicID))
 				require.NotContains(t, recorder.Body.String(), `"owner"`)
 			}
 			if tc.errorCode != "" {
@@ -111,8 +113,8 @@ func TestBeneficiaryAPIRejectsBlankNickname(t *testing.T) {
 		mockdb.NewMockStore(gomock.NewController(t)),
 	)
 	body, err := json.Marshal(createBeneficiaryRequest{
-		DestinationAccountID: publicUUID(destination.PublicID),
-		Nickname:             "   ",
+		DestinationAccountNumber: destination.AccountNumber,
+		Nickname:                 "   ",
 	})
 	require.NoError(t, err)
 	request := httptest.NewRequest(
@@ -138,13 +140,13 @@ func TestListBeneficiariesAPIUsesOwnerScope(t *testing.T) {
 	now := time.Now().UTC()
 	rows := []db.ListOwnedBeneficiariesRow{
 		{
-			ID:                         pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			Nickname:                   "Savings",
-			DestinationAccountPublicID: pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			Currency:                   "USD",
-			DestinationAccountStatus:   db.FinancialAccountStatusActive,
-			CreatedAt:                  timestamp(now),
-			UpdatedAt:                  timestamp(now),
+			ID:                       pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			Nickname:                 "Savings",
+			DestinationAccountNumber: "4839201756",
+			Currency:                 "USD",
+			DestinationAccountStatus: db.FinancialAccountStatusActive,
+			CreatedAt:                timestamp(now),
+			UpdatedAt:                timestamp(now),
 		},
 	}
 
@@ -175,6 +177,8 @@ func TestListBeneficiariesAPIUsesOwnerScope(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
 	require.Len(t, response, 1)
 	require.Equal(t, "Savings", response[0].Nickname)
+	require.Equal(t, "******1756", response[0].DestinationAccountNumber)
+	require.True(t, response[0].CanReceive)
 }
 
 func TestUpdateAndDeleteBeneficiaryAPIHideForeignRecords(t *testing.T) {

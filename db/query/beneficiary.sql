@@ -12,7 +12,7 @@ RETURNING *;
 SELECT
   beneficiary.id,
   beneficiary.nickname,
-  account.public_id AS destination_account_public_id,
+  account.account_number AS destination_account_number,
   account.currency,
   account.status AS destination_account_status,
   beneficiary.created_at,
@@ -38,7 +38,7 @@ WITH updated AS (
 SELECT
   updated.id,
   updated.nickname,
-  account.public_id AS destination_account_public_id,
+  account.account_number AS destination_account_number,
   account.currency,
   account.status AS destination_account_status,
   updated.created_at,

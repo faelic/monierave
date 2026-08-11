@@ -11,7 +11,7 @@ import (
 
 type Store interface {
 	Querier
-	CreateAccountTx(ctx context.Context, arg CreateAccountParams) (Account, error)
+	CreateAccountTx(ctx context.Context, arg CreateAccountTxParams) (Account, error)
 	CreateUserTx(ctx context.Context, arg CreateUserParams) (CreateUserTxResult, error)
 	CloseAccountTx(ctx context.Context, arg CloseAccountTxParams) (Account, error)
 	CreateBeneficiaryTx(ctx context.Context, arg CreateBeneficiaryTxParams) (CreateBeneficiaryTxResult, error)
