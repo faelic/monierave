@@ -171,17 +171,18 @@
 
 @media (max-width: 44rem) {
   .section {
-    min-height: 38rem;
+    min-height: 34rem;
   }
 
   .copy {
-    padding-top: 7.5rem;
-    padding-bottom: 5rem;
+    padding-top: 6.5rem;
+    padding-bottom: 4.5rem;
   }
 
   .heading {
     max-width: 11ch;
-    font-size: clamp(2.8rem, 13vw, 4rem);
+    font-size: clamp(2.4rem, 10.5vw, 2.85rem);
+    line-height: 1;
   }
 
   .actions {

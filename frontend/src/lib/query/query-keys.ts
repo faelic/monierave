@@ -5,6 +5,8 @@ export const queryKeys = {
     all: ["accounts"] as const,
     recentTransactions: (accountID: string) =>
       ["accounts", "recent-transactions", accountID] as const,
+    moneyMovement: (accountID: string, days: number) =>
+      ["accounts", "money-movement", accountID, days] as const,
     detail: (accountID: string) => ["accounts", "detail", accountID] as const,
     statement: (accountID: string, filters: Record<string, string>) =>
       ["accounts", "statement", accountID, filters] as const,

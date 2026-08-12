@@ -18,6 +18,8 @@
   --celestial-globe: #eceff2;
   --celestial-heading: #fafcfe;
   display: grid;
+  width: 100%;
+  min-width: 0;
   height: 100%;
   min-height: 0;
   color: var(--celestial-heading);
@@ -116,24 +118,41 @@
 
 .heroBody {
   display: flex;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   align-items: center;
-  padding: clamp(3.5rem, 8vh, 6rem) 48px 3rem;
+  padding: clamp(3rem, 7vh, 5rem) 48px 3.5rem;
   background: transparent;
 }
 
 .heroInner {
-  display: flex;
+  display: grid;
   width: 100%;
-  max-width: 1344px;
+  min-width: 0;
+  max-width: 1200px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   margin-inline: auto;
+  grid-template-columns: minmax(0, 33.75rem) minmax(27.5rem, 30rem);
+  gap: clamp(4rem, 5.5vw, 5rem);
+  transform: translateY(-0.75rem);
 }
 
 .heroCopy {
-  width: min(600px, 100%);
+  width: 100%;
+  max-width: 33.75rem;
   padding-top: 0;
+}
+
+.heroCopy h1 {
+  max-width: 12ch;
+  font-size: clamp(4.25rem, 5.2vw, 4.75rem);
+  line-height: 0.94;
+}
+
+.heroCopy [data-testid="hero-supporting-copy"] p {
+  max-width: 31rem;
 }
 
 .headline {
@@ -206,6 +225,16 @@
   background: #ffffff;
 }
 
+.primaryAction:focus-visible,
+.secondaryAction:focus-visible,
+.createAccountLink:focus-visible,
+.navigationLink:focus-visible,
+.signInLink:focus-visible,
+.mobileMenuTrigger:focus-visible,
+.mobileClose:focus-visible {
+  outline-color: var(--marketing-accent-highlight);
+}
+
 .primaryAction:hover {
   transform: translateY(-1px);
 }
@@ -217,10 +246,10 @@
 }
 
 .globeFrame {
-  width: 30%;
-  max-width: 403.2px;
-  flex: 0 0 auto;
-  transform: translate(clamp(-4.5rem, -5vw, -2rem), 1rem);
+  width: clamp(28.75rem, 33vw, 30rem);
+  max-width: 30rem;
+  justify-self: center;
+  transform: translate(-0.5rem, 0.5rem);
   filter: drop-shadow(0 0 2.75rem rgb(200 183 125 / 10%));
 }
 
@@ -381,23 +410,35 @@
 
   .heroBody {
     min-height: inherit;
-    padding: 40px 16px;
+    padding: clamp(2.5rem, 7vw, 4.5rem) clamp(1.5rem, 5vw, 3rem) 3.5rem;
   }
 
   .heroInner {
-    flex-direction: column;
-  }
-
-  .globeFrame {
-    width: 30%;
-    max-width: none;
-    order: -1;
-    margin-bottom: 24px;
+    position: relative;
+    display: block;
+    overflow: hidden;
     transform: none;
   }
 
+  .globeFrame {
+    position: absolute;
+    z-index: 0;
+    top: -0.75rem;
+    right: 0;
+    width: clamp(7rem, 20vw, 10rem);
+    max-width: none;
+    margin: 0;
+    transform: none;
+    opacity: 0.68;
+    filter: drop-shadow(0 0 2rem rgb(200 183 125 / 8%));
+  }
+
   .heroCopy {
-    width: min(600px, 100%);
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 600px;
+    min-width: 0;
     padding-top: 0;
   }
 
@@ -410,6 +451,128 @@
     margin-top: 24px;
     font-size: 18px;
     line-height: 1.4;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .productionBody {
+    min-height: calc(100svh - 10.5rem);
+  }
+
+  .heroBody {
+    min-height: calc(100svh - 10.5rem);
+    padding: clamp(1.5rem, 3.5svh, 2.25rem) 1.5rem 1.25rem;
+  }
+
+  .heroInner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 100%;
+    align-content: start;
+    justify-items: center;
+    gap: clamp(1rem, 2svh, 1.375rem);
+    overflow: visible;
+  }
+
+  .globeFrame {
+    position: relative;
+    top: auto;
+    right: auto;
+    grid-row: 1;
+    width: clamp(10rem, 43vw, 10.875rem);
+    opacity: 0.8;
+  }
+
+  .heroCopy {
+    display: grid;
+    grid-row: 2;
+    justify-items: center;
+    padding-top: 0;
+    text-align: center;
+  }
+
+  .heroCopy > div {
+    display: grid;
+    justify-items: center;
+  }
+
+  .heroCopy h1 {
+    max-width: 100%;
+    font-size: clamp(2.6rem, 11.4vw, 3rem);
+    line-height: 0.98;
+  }
+
+  .heroCopy [data-testid="hero-eyebrow"] {
+    margin-bottom: 0.625rem;
+  }
+
+  .heroCopy [data-testid="hero-supporting-copy"] p {
+    max-width: 30rem;
+    margin-top: clamp(1rem, 2svh, 1.25rem);
+    font-size: clamp(0.95rem, 4vw, 1.0625rem);
+    line-height: 1.55;
+  }
+
+  .heroCopy [data-testid="hero-actions"] {
+    width: 100%;
+    max-width: 32rem;
+    margin-top: clamp(1.125rem, 2.25svh, 1.5rem);
+    justify-content: center;
+  }
+
+  .primaryAction,
+  .secondaryAction {
+    width: 100%;
+  }
+
+  .secondaryAction {
+    min-height: 2.75rem;
+    border-color: transparent;
+    color: rgb(250 252 254 / 68%);
+  }
+
+  .secondaryAction:hover {
+    border-color: transparent;
+  }
+}
+
+@media (max-width: 47.999rem) and (max-height: 43.75rem) {
+  .heroBody {
+    padding: 1.25rem 1.5rem 1rem;
+  }
+
+  .heroInner {
+    gap: 1rem;
+  }
+
+  .globeFrame {
+    width: clamp(7.5rem, 32vw, 8.25rem);
+  }
+
+  .heroCopy h1 {
+    font-size: clamp(2.45rem, 10.5vw, 2.75rem);
+  }
+
+  .heroCopy [data-testid="hero-eyebrow"] {
+    margin-bottom: 0.5rem;
+  }
+
+  .heroCopy [data-testid="hero-supporting-copy"] p {
+    margin-top: 1rem;
+    font-size: 0.9375rem;
+    line-height: 1.45;
+  }
+
+  .heroCopy [data-testid="hero-actions"] {
+    margin-top: 1.125rem;
+  }
+
+  .primaryAction {
+    min-height: 2.75rem;
+  }
+
+  .secondaryAction {
+    min-height: 2.25rem;
   }
 }
 

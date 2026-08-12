@@ -11,6 +11,101 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getOwnedAccountMoneyMovement = `-- name: GetOwnedAccountMoneyMovement :many
+WITH target_ledger AS (
+  SELECT ledger.id
+  FROM accounts AS account
+  JOIN ledger_accounts AS ledger
+    ON ledger.customer_account_id = account.id
+   AND ledger.kind = 'customer'
+  WHERE account.public_id = $1
+    AND account.owner = $2
+),
+periods AS (
+  SELECT generate_series(
+    CASE
+      WHEN $3::text = 'week'
+        THEN date_trunc('week', $4::timestamptz)
+      ELSE date_trunc('day', $4::timestamptz)
+    END,
+    CASE
+      WHEN $3::text = 'week'
+        THEN date_trunc('week', $5::timestamptz - interval '1 microsecond')
+      ELSE date_trunc('day', $5::timestamptz - interval '1 microsecond')
+    END,
+    CASE
+      WHEN $3::text = 'week' THEN interval '1 week'
+      ELSE interval '1 day'
+    END
+  )::timestamptz AS bucket_start
+),
+movement AS (
+  SELECT
+    (CASE
+      WHEN $3::text = 'week'
+        THEN date_trunc('week', transaction.posted_at)
+      ELSE date_trunc('day', transaction.posted_at)
+    END)::timestamptz AS bucket_start,
+    posting.amount
+  FROM target_ledger
+  JOIN ledger_postings AS posting
+    ON posting.ledger_account_id = target_ledger.id
+  JOIN banking_transactions AS transaction
+    ON transaction.id = posting.transaction_id
+  WHERE transaction.status IN ('posted', 'reversed')
+    AND transaction.posted_at >= $4
+    AND transaction.posted_at < $5
+)
+SELECT
+  periods.bucket_start,
+  coalesce(sum(movement.amount) FILTER (WHERE movement.amount > 0), 0)::bigint AS incoming,
+  coalesce(abs(sum(movement.amount) FILTER (WHERE movement.amount < 0)), 0)::bigint AS outgoing
+FROM periods
+LEFT JOIN movement USING (bucket_start)
+GROUP BY periods.bucket_start
+ORDER BY periods.bucket_start
+`
+
+type GetOwnedAccountMoneyMovementParams struct {
+	AccountPublicID pgtype.UUID        `json:"account_public_id"`
+	Username        string             `json:"username"`
+	BucketInterval  string             `json:"bucket_interval"`
+	FromTime        pgtype.Timestamptz `json:"from_time"`
+	ToTime          pgtype.Timestamptz `json:"to_time"`
+}
+
+type GetOwnedAccountMoneyMovementRow struct {
+	BucketStart pgtype.Timestamptz `json:"bucket_start"`
+	Incoming    int64              `json:"incoming"`
+	Outgoing    int64              `json:"outgoing"`
+}
+
+func (q *Queries) GetOwnedAccountMoneyMovement(ctx context.Context, arg GetOwnedAccountMoneyMovementParams) ([]GetOwnedAccountMoneyMovementRow, error) {
+	rows, err := q.db.Query(ctx, getOwnedAccountMoneyMovement,
+		arg.AccountPublicID,
+		arg.Username,
+		arg.BucketInterval,
+		arg.FromTime,
+		arg.ToTime,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetOwnedAccountMoneyMovementRow{}
+	for rows.Next() {
+		var i GetOwnedAccountMoneyMovementRow
+		if err := rows.Scan(&i.BucketStart, &i.Incoming, &i.Outgoing); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOwnedAccountStatementBalances = `-- name: GetOwnedAccountStatementBalances :one
 WITH target_ledger AS (
   SELECT ledger.id

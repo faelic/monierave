@@ -149,6 +149,52 @@ func TestStatementOpeningAndClosingBalances(t *testing.T) {
 	require.Equal(t, int64(800), throughTransfer.ClosingBalance)
 }
 
+func TestOwnedAccountMoneyMovementAggregatesPostedLedgerActivity(t *testing.T) {
+	fixture := createTransactionHistoryFixture(t)
+	ctx := context.Background()
+	from := fixture.deposit.Transaction.PostedAt.Time.Add(-time.Second)
+	to := fixture.withdrawal.Transaction.PostedAt.Time.Add(time.Second)
+
+	rows, err := testQueries.GetOwnedAccountMoneyMovement(
+		ctx,
+		GetOwnedAccountMoneyMovementParams{
+			AccountPublicID: fixture.account.PublicID,
+			Username:        fixture.account.Owner,
+			BucketInterval:  "day",
+			FromTime:        pgtype.Timestamptz{Time: from, Valid: true},
+			ToTime:          pgtype.Timestamptz{Time: to, Valid: true},
+		},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, rows)
+
+	var incoming, outgoing int64
+	for _, row := range rows {
+		incoming += row.Incoming
+		outgoing += row.Outgoing
+	}
+	require.Equal(t, int64(1_000), incoming)
+	require.Equal(t, int64(300), outgoing)
+
+	foreignUser := createRandomUser(t)
+	rows, err = testQueries.GetOwnedAccountMoneyMovement(
+		ctx,
+		GetOwnedAccountMoneyMovementParams{
+			AccountPublicID: fixture.account.PublicID,
+			Username:        foreignUser.Username,
+			BucketInterval:  "day",
+			FromTime:        pgtype.Timestamptz{Time: from, Valid: true},
+			ToTime:          pgtype.Timestamptz{Time: to, Valid: true},
+		},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, rows)
+	for _, row := range rows {
+		require.Zero(t, row.Incoming)
+		require.Zero(t, row.Outgoing)
+	}
+}
+
 func createTransactionHistoryFixture(t *testing.T) transactionHistoryFixture {
 	t.Helper()
 	ctx := context.Background()

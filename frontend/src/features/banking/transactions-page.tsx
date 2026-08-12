@@ -188,28 +188,33 @@ function ActivityFilters({
   status: StatusFilter;
 }) {
   const selectClass =
-    "border-line-300 min-h-11 rounded-sm border bg-white px-3 text-sm";
+    "border-line-300 min-h-12 w-full min-w-0 rounded-sm border bg-white px-3 text-sm";
+  const labelClass = "grid min-w-0 gap-2";
+  const labelTextClass =
+    "text-ink-600 px-0.5 text-xs font-semibold tracking-[0.04em]";
   return (
     <section
       aria-label="Activity filters"
-      className="border-line-200 mt-7 grid gap-3 rounded-md border bg-[var(--product-surface-subtle)] p-4 md:grid-cols-[minmax(13rem,1fr)_repeat(3,auto)]"
+      className="border-line-200 mt-7 grid grid-cols-1 gap-3 rounded-md border bg-[var(--product-surface-subtle)] p-4 min-[24rem]:grid-cols-2 md:grid-cols-[minmax(13rem,1fr)_minmax(11rem,auto)_minmax(9rem,auto)_minmax(9rem,auto)] md:items-end"
     >
-      <label className="relative">
-        <span className="sr-only">Search activity</span>
-        <Search
-          aria-hidden="true"
-          className="text-ink-600 absolute top-1/2 left-3 size-4 -translate-y-1/2"
-        />
-        <input
-          className="border-line-300 min-h-11 w-full rounded-sm border bg-white pr-3 pl-10"
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search reference or recipient"
-          type="search"
-          value={search}
-        />
+      <label className={`${labelClass} min-[24rem]:col-span-2 md:col-span-1`}>
+        <span className={labelTextClass}>Search activity</span>
+        <span className="relative block">
+          <Search
+            aria-hidden="true"
+            className="text-ink-600 absolute top-1/2 left-3 size-4 -translate-y-1/2"
+          />
+          <input
+            className="border-line-300 min-h-12 w-full rounded-sm border bg-white pr-3 pl-10"
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Reference or recipient"
+            type="search"
+            value={search}
+          />
+        </span>
       </label>
-      <label>
-        <span className="sr-only">Account</span>
+      <label className={`${labelClass} min-[24rem]:col-span-2 md:col-span-1`}>
+        <span className={labelTextClass}>Account</span>
         <select
           className={selectClass}
           onChange={(event) => onAccountChange(event.target.value)}
@@ -223,8 +228,8 @@ function ActivityFilters({
           ))}
         </select>
       </label>
-      <label>
-        <span className="sr-only">Direction</span>
+      <label className={labelClass}>
+        <span className={labelTextClass}>Direction</span>
         <select
           className={selectClass}
           onChange={(event) =>
@@ -237,8 +242,8 @@ function ActivityFilters({
           <option value="outgoing">Outgoing</option>
         </select>
       </label>
-      <label>
-        <span className="sr-only">Status</span>
+      <label className={labelClass}>
+        <span className={labelTextClass}>Status</span>
         <select
           className={selectClass}
           onChange={(event) =>

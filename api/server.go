@@ -160,6 +160,7 @@ func (server *Server) setupRouter() {
 	financialRoutes.GET("/accounts", server.listAccount)
 	financialRoutes.GET("/accounts/:public_id/transactions", server.listAccountTransactions)
 	financialRoutes.GET("/accounts/:public_id/statement", server.getAccountStatement)
+	financialRoutes.GET("/accounts/:public_id/money-movement", server.getAccountMoneyMovement)
 	financialRoutes.POST("/accounts/:public_id/close", server.closeAccount)
 	financialRoutes.POST("/beneficiaries", server.createBeneficiary)
 	financialRoutes.GET("/beneficiaries", server.listBeneficiaries)

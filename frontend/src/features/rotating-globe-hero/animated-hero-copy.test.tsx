@@ -32,17 +32,17 @@ describe("AnimatedHeroCopy", () => {
     act(() => vi.advanceTimersByTime(heroCopyTiming.initialDelay - 1));
     expect(visual).toHaveTextContent("_");
     act(() => vi.advanceTimersByTime(1));
-    expect(visual).toHaveTextContent("Y_");
+    expect(visual).toHaveTextContent("B_");
 
     act(() => vi.advanceTimersByTime(8_000));
-    expect(visual).toHaveTextContent("Your money, without mystery.");
+    expect(visual).toHaveTextContent("Banking made clear.");
     expect(screen.getByTestId("hero-headline-cursor")).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(heroCopyTiming.cursorSettleDelay));
     expect(
       screen.queryByTestId("hero-headline-cursor"),
     ).not.toBeInTheDocument();
     act(() => vi.advanceTimersByTime(8_000));
-    expect(visual).toHaveTextContent("Your money, without mystery.");
+    expect(visual).toHaveTextContent("Banking made clear.");
   });
 
   it("reveals supporting content on its own staged delay", () => {
@@ -69,7 +69,7 @@ describe("AnimatedHeroCopy", () => {
 
     rerender(<AnimatedHeroCopy debugElapsedMs={600} />);
     expect(screen.getByTestId("hero-headline-visual").textContent).toContain(
-      "Your",
+      "Bank",
     );
     expect(screen.getByTestId("hero-supporting-copy")).toHaveClass(
       "opacity-100",
@@ -87,7 +87,7 @@ describe("AnimatedHeroCopy", () => {
     act(() => vi.advanceTimersByTime(20));
 
     expect(screen.getByTestId("hero-headline-visual")).toHaveTextContent(
-      "Your money, without mystery.",
+      "Banking made clear.",
     );
     expect(
       screen.queryByTestId("hero-headline-cursor"),

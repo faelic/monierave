@@ -19,6 +19,7 @@ import (
 const (
 	defaultTransactionPageSize = int32(20)
 	maxTransactionPageSize     = int32(100)
+	maxMoneyMovementRange      = 366 * 24 * time.Hour
 )
 
 type transactionHistoryQuery struct {
@@ -50,6 +51,29 @@ type accountStatementResponse struct {
 	ClosingBalance int64                 `json:"closing_balance"`
 	Transactions   []transactionResponse `json:"transactions"`
 	NextCursor     string                `json:"next_cursor,omitempty"`
+}
+
+type moneyMovementQuery struct {
+	From     string `form:"from" binding:"required"`
+	To       string `form:"to" binding:"required"`
+	Interval string `form:"interval" binding:"required,oneof=day week"`
+}
+
+type moneyMovementBucketResponse struct {
+	Start    time.Time `json:"start"`
+	Incoming int64     `json:"incoming"`
+	Outgoing int64     `json:"outgoing"`
+}
+
+type moneyMovementResponse struct {
+	AccountID string                        `json:"account_id"`
+	Currency  string                        `json:"currency"`
+	From      time.Time                     `json:"from"`
+	To        time.Time                     `json:"to"`
+	Interval  string                        `json:"interval"`
+	MoneyIn   int64                         `json:"money_in"`
+	MoneyOut  int64                         `json:"money_out"`
+	Buckets   []moneyMovementBucketResponse `json:"buckets"`
 }
 
 type transactionResponse struct {
@@ -158,6 +182,75 @@ func (server *Server) getAccountStatement(ctx *gin.Context) {
 		ClosingBalance: balances.ClosingBalance,
 		Transactions:   transactions,
 		NextCursor:     nextCursor,
+	})
+}
+
+func (server *Server) getAccountMoneyMovement(ctx *gin.Context) {
+	var query moneyMovementQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, err))
+		return
+	}
+	fromTime, toTime, err := parseTransactionDateRange(query.From, query.To)
+	if err != nil || !fromTime.Valid || !toTime.Valid ||
+		toTime.Time.Sub(fromTime.Time) > maxMoneyMovementRange {
+		ctx.JSON(http.StatusBadRequest, errorResponse(ctx, ErrInvalidDateRange))
+		return
+	}
+	publicID, ok := bindAccountPublicID(ctx)
+	if !ok {
+		return
+	}
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	account, err := server.store.GetOwnedAccountByPublicID(
+		ctx,
+		db.GetOwnedAccountByPublicIDParams{
+			PublicID: publicID,
+			Owner:    authPayload.Username,
+		},
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		ctx.JSON(http.StatusNotFound, errorResponse(ctx, ErrAccountNotFound))
+		return
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
+		return
+	}
+	rows, err := server.store.GetOwnedAccountMoneyMovement(
+		ctx,
+		db.GetOwnedAccountMoneyMovementParams{
+			AccountPublicID: publicID,
+			Username:        authPayload.Username,
+			BucketInterval:  query.Interval,
+			FromTime:        fromTime,
+			ToTime:          toTime,
+		},
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(ctx, ErrInternalServer))
+		return
+	}
+	buckets := make([]moneyMovementBucketResponse, 0, len(rows))
+	var moneyIn, moneyOut int64
+	for _, row := range rows {
+		buckets = append(buckets, moneyMovementBucketResponse{
+			Start:    row.BucketStart.Time,
+			Incoming: row.Incoming,
+			Outgoing: row.Outgoing,
+		})
+		moneyIn += row.Incoming
+		moneyOut += row.Outgoing
+	}
+	ctx.JSON(http.StatusOK, moneyMovementResponse{
+		AccountID: publicUUIDString(account.PublicID),
+		Currency:  account.Currency,
+		From:      fromTime.Time,
+		To:        toTime.Time,
+		Interval:  query.Interval,
+		MoneyIn:   moneyIn,
+		MoneyOut:  moneyOut,
+		Buckets:   buckets,
 	})
 }
 

@@ -9,19 +9,16 @@
 }
 
 .reveal[data-reveal-ready="true"][data-reveal-visible="false"] {
-  transform: translateY(1.5rem);
-  opacity: 0;
+  transform: translateY(0.75rem);
 }
 
 .reveal[data-reveal-ready="true"] {
-  transition:
-    transform 720ms var(--section-reveal-delay) cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 620ms var(--section-reveal-delay) ease-out;
+  transition: transform 440ms var(--section-reveal-delay)
+    cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .reveal[data-reveal-visible="true"] {
   transform: translateY(0);
-  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

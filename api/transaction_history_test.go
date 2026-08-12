@@ -231,6 +231,128 @@ func TestGetAccountStatementAPI(t *testing.T) {
 	require.Equal(t, row.BalanceAfter, *response.Transactions[0].BalanceAfter)
 }
 
+func TestGetAccountMoneyMovementAPI(t *testing.T) {
+	account := randomAccount()
+	from := "2026-08-01"
+	to := "2026-08-08"
+	fromTime, toTime, err := parseTransactionDateRange(from, to)
+	require.NoError(t, err)
+	rows := []db.GetOwnedAccountMoneyMovementRow{
+		{
+			BucketStart: timestamp(fromTime.Time),
+			Incoming:    12_500,
+			Outgoing:    3_000,
+		},
+		{
+			BucketStart: timestamp(fromTime.Time.AddDate(0, 0, 1)),
+			Incoming:    2_500,
+			Outgoing:    4_000,
+		},
+	}
+
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	store.EXPECT().GetOwnedAccountByPublicID(
+		gomock.Any(),
+		db.GetOwnedAccountByPublicIDParams{
+			PublicID: account.PublicID, Owner: account.Owner,
+		},
+	).Return(account, nil)
+	store.EXPECT().GetOwnedAccountMoneyMovement(
+		gomock.Any(),
+		db.GetOwnedAccountMoneyMovementParams{
+			AccountPublicID: account.PublicID,
+			Username:        account.Owner,
+			BucketInterval:  "day",
+			FromTime:        fromTime,
+			ToTime:          toTime,
+		},
+	).Return(rows, nil)
+
+	server := newTestServer(t, store)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/accounts/"+publicUUID(account.PublicID)+
+			"/money-movement?from="+from+"&to="+to+"&interval=day",
+		nil,
+	)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		account.Owner,
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response moneyMovementResponse
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, publicUUID(account.PublicID), response.AccountID)
+	require.Equal(t, account.Currency, response.Currency)
+	require.Equal(t, int64(15_000), response.MoneyIn)
+	require.Equal(t, int64(7_000), response.MoneyOut)
+	require.Len(t, response.Buckets, 2)
+}
+
+func TestGetAccountMoneyMovementHidesForeignAccount(t *testing.T) {
+	account := randomAccount()
+	ctrl := gomock.NewController(t)
+	store := mockdb.NewMockStore(ctrl)
+	store.EXPECT().GetOwnedAccountByPublicID(
+		gomock.Any(),
+		db.GetOwnedAccountByPublicIDParams{
+			PublicID: account.PublicID, Owner: account.Owner,
+		},
+	).Return(db.Account{}, pgx.ErrNoRows)
+
+	server := newTestServer(t, store)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/accounts/"+publicUUID(account.PublicID)+
+			"/money-movement?from=2026-08-01&to=2026-08-08&interval=day",
+		nil,
+	)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		account.Owner,
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+}
+
+func TestGetAccountMoneyMovementRejectsInvalidRange(t *testing.T) {
+	account := randomAccount()
+	ctrl := gomock.NewController(t)
+	server := newTestServer(t, mockdb.NewMockStore(ctrl))
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/accounts/"+publicUUID(account.PublicID)+
+			"/money-movement?from=2025-01-01&to=2026-08-08&interval=day",
+		nil,
+	)
+	addAuthorization(
+		t,
+		request,
+		server.tokenMaker,
+		authorizationTypeBearer,
+		account.Owner,
+		time.Minute,
+	)
+	recorder := httptest.NewRecorder()
+	server.router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+}
+
 func TestTransactionHistoryQueryValidation(t *testing.T) {
 	account := randomAccount()
 	testCases := []struct {

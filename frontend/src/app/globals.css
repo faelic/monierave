@@ -404,16 +404,15 @@
 
 html {
   min-width: 20rem;
-  background: var(--paper-50);
+  background: var(--marketing-canvas);
+  overscroll-behavior-y: none;
   text-rendering: optimizeLegibility;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 62%), transparent 18rem),
-    var(--paper-50);
+  background: var(--marketing-canvas);
   color: var(--ink-950);
   font-family: var(--font-interface);
   font-size: 1rem;
@@ -550,19 +549,27 @@ a {
   position: relative;
   z-index: 1;
   display: grid;
+  min-width: 0;
   min-height: calc(100svh - 5rem);
   grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.landing-hero-frame > * {
+  min-width: 0;
 }
 
 .landing-trust-rail {
-  min-height: 6rem;
-  padding-block: 1rem 1.25rem;
+  min-height: 5rem;
+  padding-block: 0.875rem 1rem;
   border-top: 1px solid rgb(243 243 241 / 10%);
   background: linear-gradient(180deg, rgb(255 255 255 / 1.5%), transparent);
 }
 
 .landing-trust-intro {
-  color: rgb(243 243 241 / 42%);
+  color: rgb(243 243 241 / 58%);
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .landing-organic-stage {
@@ -603,7 +610,7 @@ a {
 }
 
 .landing-trust-mark {
-  color: rgb(243 243 241 / 46%);
+  color: rgb(243 243 241 / 62%);
   letter-spacing: 0.075em;
   text-transform: uppercase;
 }
@@ -661,11 +668,27 @@ a {
 }
 
 .organic-hero-cursor {
+  position: relative;
   display: inline-block;
-  width: 0;
+  width: 0.55em;
+  height: 0.85em;
   margin-left: 0.04em;
   overflow: visible;
+  color: transparent;
+  vertical-align: baseline;
   animation: organic-hero-cursor-blink 1s steps(1, end) infinite;
+}
+
+.organic-hero-cursor::after {
+  position: absolute;
+  right: 0;
+  bottom: 0.06em;
+  width: 0.5em;
+  height: 0.065em;
+  border-radius: 999px;
+  background: currentColor;
+  color: white;
+  content: "";
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -681,6 +704,44 @@ a {
 
   .landing-trust-rail {
     min-height: auto;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .landing-hero {
+    min-height: auto;
+  }
+
+  .landing-hero-frame {
+    min-height: auto;
+    grid-template-rows: minmax(calc(100svh - 10.5rem), auto) auto;
+  }
+
+  .landing-trust-rail {
+    min-height: 5.5rem;
+    padding-block: 0.75rem 0.875rem;
+  }
+
+  .landing-trust-intro {
+    margin: 0;
+    text-align: center;
+  }
+
+  .landing-trust-list {
+    display: grid;
+    margin-top: 0.625rem;
+    padding: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    overflow: visible;
+  }
+
+  .landing-trust-list .landing-trust-mark {
+    min-width: 0;
+    align-items: flex-start;
+    font-size: 0.55rem;
+    line-height: 1.35;
+    white-space: normal;
   }
 }
 

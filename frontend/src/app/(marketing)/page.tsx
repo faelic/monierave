@@ -14,11 +14,9 @@ export const metadata: Metadata = {
 };
 
 const trustMarks = [
-  "Account identity",
-  "Posted ledger",
-  "Verified users",
-  "Zero-fee internal",
-  "Secure sessions",
+  "Clear balances",
+  "Verified recipients",
+  "Secure transfers",
 ] as const;
 
 export default function MarketingHomePage() {
@@ -32,9 +30,9 @@ export default function MarketingHomePage() {
 
           <div className="landing-trust-rail relative z-10 px-5 sm:px-8 lg:px-[4.625rem]">
             <p className="landing-trust-intro text-[0.6875rem]">
-              The controls a modern money platform should make visible:
+              Built for clear money movement
             </p>
-            <ul className="mt-4 grid grid-cols-2 items-center gap-x-7 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+            <ul className="landing-trust-list mt-4 grid grid-cols-2 items-center gap-x-7 gap-y-3 sm:grid-cols-3">
               {trustMarks.map((mark, index) => (
                 <li
                   className="landing-trust-mark flex items-center gap-2 text-[0.67rem] font-bold"

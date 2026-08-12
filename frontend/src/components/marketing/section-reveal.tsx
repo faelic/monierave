@@ -66,7 +66,7 @@ export function SectionReveal({
         setVisible(true);
         observer.disconnect();
       },
-      { rootMargin: "0px 0px -10%", threshold: 0.14 },
+      { rootMargin: "0px 0px 14%", threshold: 0.04 },
     );
     observer.observe(element);
     return () => {

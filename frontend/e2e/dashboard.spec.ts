@@ -180,6 +180,37 @@ test("combines account activity without combining currencies", async ({
   await expect(page.getByText("Acme Market")).toHaveCount(0);
 });
 
+test("keeps mobile activity filters balanced and readable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 844, width: 390 });
+  await mockDashboardAPI(page);
+  await page.goto("/app/transactions");
+
+  const search = page.getByLabel("Search activity");
+  const account = page.getByLabel("Account");
+  const direction = page.getByLabel("Direction");
+  const status = page.getByLabel("Status");
+
+  const [searchBox, accountBox, directionBox, statusBox] = await Promise.all([
+    search.boundingBox(),
+    account.boundingBox(),
+    direction.boundingBox(),
+    status.boundingBox(),
+  ]);
+
+  expect(searchBox?.width).toBe(accountBox?.width);
+  expect(
+    Math.abs((directionBox?.width ?? 0) - (statusBox?.width ?? 0)),
+  ).toBeLessThan(2);
+  expect(directionBox?.y).toBe(statusBox?.y);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
 async function mockDashboardAPI(
   page: Page,
   accountResponse: readonly (typeof accounts)[number][] = accounts,

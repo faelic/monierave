@@ -70,11 +70,11 @@ test("explains the supported product clearly", async ({ page }) => {
 
   await expect(
     page.getByRole("heading", {
-      name: "Your money, without mystery.",
+      name: "Banking made clear.",
     }),
   ).toBeVisible();
   await expect(page.getByRole("main")).toBeVisible();
-  await expect(page.getByText("Zero-fee internal")).toBeVisible();
+  await expect(page.getByText("Secure transfers")).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "See what changes when money moves.",
@@ -191,15 +191,15 @@ test("matches the canonical desktop hero structure", async ({ page }) => {
   await page.goto("/");
 
   const heading = page.getByRole("heading", {
-    name: "Your money, without mystery.",
+    name: "Banking made clear.",
   });
   const box = await heading.boundingBox();
 
   expect(box).not.toBeNull();
-  expect(box?.x).toBeGreaterThanOrEqual(40);
-  expect(box?.x).toBeLessThanOrEqual(80);
-  expect(box?.y).toBeGreaterThanOrEqual(220);
-  expect(box?.y).toBeLessThanOrEqual(300);
+  expect(box?.x).toBeGreaterThanOrEqual(160);
+  expect(box?.x).toBeLessThanOrEqual(185);
+  expect(box?.y).toBeGreaterThanOrEqual(205);
+  expect(box?.y).toBeLessThanOrEqual(285);
   await expect(
     page.locator(".landing-hero").getByRole("link", { name: "Get started" }),
   ).toBeVisible();
@@ -207,8 +207,51 @@ test("matches the canonical desktop hero structure", async ({ page }) => {
   const globeBox = await page
     .getByTestId("celestial-money-globe")
     .boundingBox();
-  expect(globeBox?.width ?? 0).toBeGreaterThanOrEqual(300);
-  expect(globeBox?.width ?? 0).toBeLessThanOrEqual(420);
+  expect(globeBox?.width ?? 0).toBeGreaterThanOrEqual(460);
+  expect(globeBox?.width ?? 0).toBeLessThanOrEqual(500);
+  const copyToGlobeGap =
+    (globeBox?.x ?? 0) - ((box?.x ?? 0) + (box?.width ?? 0));
+  expect(copyToGlobeGap).toBeGreaterThanOrEqual(60);
+  expect(copyToGlobeGap).toBeLessThanOrEqual(150);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("fits the complete mobile hero into the first viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 844, width: 390 });
+  await mockAnonymousSession(page);
+  await page.goto("/");
+
+  const hero = page.locator(".landing-hero");
+  const heroStage = page.locator("[data-rotating-globe-stage]");
+  const trustRail = page.locator(".landing-trust-rail");
+  const globe = page.getByTestId("celestial-money-globe");
+  const primaryAction = hero.getByRole("link", { name: "Get started" });
+  const [stageBox, trustBox, globeBox, actionBox] = await Promise.all([
+    heroStage.boundingBox(),
+    trustRail.boundingBox(),
+    globe.boundingBox(),
+    primaryAction.boundingBox(),
+  ]);
+
+  expect(globeBox?.width ?? 0).toBeGreaterThanOrEqual(155);
+  expect(globeBox?.width ?? 0).toBeLessThanOrEqual(180);
+  expect(stageBox?.y ?? 0).toBeGreaterThanOrEqual(80);
+  expect(stageBox?.y ?? 0).toBeLessThanOrEqual(82);
+  const stageBottom = (stageBox?.y ?? 0) + (stageBox?.height ?? 0);
+  const actionBottom = (actionBox?.y ?? 0) + (actionBox?.height ?? 0);
+  expect(stageBottom).toBeGreaterThanOrEqual(750);
+  expect(stageBottom).toBeLessThanOrEqual(770);
+  expect(trustBox?.y).toBeGreaterThanOrEqual(750);
+  expect(trustBox?.y).toBeLessThanOrEqual(770);
+  expect(actionBottom).toBeLessThanOrEqual(730);
+  expect(actionBox?.x).toBeGreaterThanOrEqual(20);
+  expect(actionBox?.width ?? 0).toBeGreaterThanOrEqual(330);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

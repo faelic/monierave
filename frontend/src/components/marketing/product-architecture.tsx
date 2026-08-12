@@ -129,6 +129,29 @@ function SecurityIcon() {
   );
 }
 
+const mobileCapabilities = [
+  {
+    description: "Secure sign-in, verified email, and a clear dashboard.",
+    icon: <AccessIcon />,
+    title: "Access & overview",
+  },
+  {
+    description: "See account details, status, and current posted balances.",
+    icon: <AccountsIcon />,
+    title: "Accounts & balances",
+  },
+  {
+    description: "Find recipients, review every detail, and send with clarity.",
+    icon: <TransferIcon />,
+    title: "Transfers & recipients",
+  },
+  {
+    description: "Follow outcomes and manage your profile and sessions.",
+    icon: <ActivityIcon />,
+    title: "Activity & security",
+  },
+] as const;
+
 export function ProductArchitecture() {
   const sectionRef = useRef<HTMLElement>(null);
   const [stage, setStage] = useState(0);
@@ -192,7 +215,7 @@ export function ProductArchitecture() {
           <div className={styles.copyColumn}>
             <p className={styles.eyebrow}>Your Monierave workspace</p>
             <h2 className={styles.heading} id="product-architecture-title">
-              Everything important, connected.
+              Everything important is connected.
             </h2>
             <p className={styles.introduction}>
               Your dashboard connects accounts, transfers, beneficiaries,
@@ -309,6 +332,27 @@ export function ProductArchitecture() {
             >
               <p>Personal details, sessions, and safe logout</p>
             </ArchitectureNode>
+          </div>
+
+          <div
+            aria-label="Monierave mobile product capabilities"
+            className={styles.mobileCapabilities}
+          >
+            {mobileCapabilities.map((capability, index) => (
+              <article
+                className={styles.mobileCapability}
+                key={capability.title}
+              >
+                <div aria-hidden="true" className={styles.nodeIcon}>
+                  {capability.icon}
+                </div>
+                <div>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <h3>{capability.title}</h3>
+                  <p>{capability.description}</p>
+                </div>
+              </article>
+            ))}
           </div>
         </div>
       </div>

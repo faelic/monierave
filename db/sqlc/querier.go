@@ -60,6 +60,7 @@ type Querier interface {
 	GetOutboxEvent(ctx context.Context, id pgtype.UUID) (OutboxEvent, error)
 	GetOutboxEventByEmailJobID(ctx context.Context, emailJobID pgtype.UUID) (OutboxEvent, error)
 	GetOwnedAccountByPublicID(ctx context.Context, arg GetOwnedAccountByPublicIDParams) (Account, error)
+	GetOwnedAccountMoneyMovement(ctx context.Context, arg GetOwnedAccountMoneyMovementParams) ([]GetOwnedAccountMoneyMovementRow, error)
 	GetOwnedAccountStatementBalances(ctx context.Context, arg GetOwnedAccountStatementBalancesParams) (GetOwnedAccountStatementBalancesRow, error)
 	GetOwnedTransactionByReference(ctx context.Context, arg GetOwnedTransactionByReferenceParams) (GetOwnedTransactionByReferenceRow, error)
 	GetSession(ctx context.Context, id pgtype.UUID) (Session, error)

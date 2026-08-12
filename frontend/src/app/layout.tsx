@@ -8,6 +8,7 @@ import "@fontsource-variable/fraunces";
 import "@fontsource-variable/manrope";
 import "@fontsource-variable/source-sans-3";
 import "@fontsource/space-mono/400.css";
+import { connection } from "next/server";
 
 import { AppProviders } from "@/app/providers";
 
@@ -21,11 +22,14 @@ export const metadata: Metadata = {
   description: "A calm, precise digital banking experience.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // The request-specific CSP nonce can only be attached during dynamic rendering.
+  await connection();
+
   return (
     <html lang="en">
       <head />

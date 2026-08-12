@@ -514,11 +514,28 @@
 
 @media (max-width: 47.999rem) {
   .inner {
-    padding-block: 5rem;
+    padding-block: 4.5rem;
+  }
+
+  .headingBlock {
+    margin-inline: auto;
+    text-align: center;
+  }
+
+  .eyebrow,
+  .heading,
+  .introduction {
+    margin-inline: auto;
   }
 
   .heading {
-    max-width: 11ch;
+    max-width: 12ch;
+    font-size: clamp(2.4rem, 10.5vw, 2.85rem);
+    line-height: 1;
+  }
+
+  .introduction {
+    margin-top: 1.25rem;
   }
 
   .steps {
@@ -556,7 +573,7 @@
   .step:first-of-type,
   .step:last-of-type {
     display: grid;
-    min-height: 14rem;
+    min-height: 12.5rem;
     align-items: center;
     padding: 2rem 0;
     grid-template-columns: 8rem minmax(0, 1fr);
@@ -587,7 +604,7 @@
   .step,
   .step:first-of-type,
   .step:last-of-type {
-    min-height: 13rem;
+    min-height: 12rem;
     grid-template-columns: 6.5rem minmax(0, 1fr);
     gap: 1rem;
   }

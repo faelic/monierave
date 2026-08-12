@@ -116,9 +116,14 @@
 .diagram {
   position: relative;
   display: flex;
+  width: 90%;
   max-width: 42rem;
   flex-direction: column;
   justify-self: end;
+}
+
+.mobileCapabilities {
+  display: none;
 }
 
 .node {
@@ -363,7 +368,11 @@
 @media (max-width: 63.999rem) {
   .inner {
     grid-template-columns: minmax(0, 0.72fr) minmax(30rem, 1.28fr);
-    gap: 2rem;
+    gap: 3rem;
+  }
+
+  .diagram {
+    justify-self: end;
   }
 }
 
@@ -381,13 +390,28 @@
 
   .inner {
     grid-template-columns: 1fr;
-    gap: 4rem;
-    padding-block: 5rem;
+    gap: 3rem;
+    padding-block: 4.5rem;
+  }
+
+  .copyColumn {
+    text-align: center;
+  }
+
+  .eyebrow,
+  .heading,
+  .introduction {
+    margin-inline: auto;
   }
 
   .heading {
-    max-width: 10ch;
-    font-size: clamp(2.8rem, 13vw, 4rem);
+    max-width: 12ch;
+    font-size: clamp(2.4rem, 10.5vw, 2.85rem);
+    line-height: 1;
+  }
+
+  .introduction {
+    margin-top: 1.25rem;
   }
 
   .architectureSummary,
@@ -396,30 +420,48 @@
   }
 
   .diagram {
-    width: 100%;
-    max-width: none;
-    justify-self: stretch;
+    display: none;
   }
 
-  .compactNode,
-  .dashboardNode,
-  .activityNode,
-  .securityNode {
-    width: 100%;
+  .mobileCapabilities {
+    display: grid;
+    border-top: 1px solid rgb(236 239 242 / 12%);
   }
 
-  .capabilityGrid {
-    grid-template-columns: 1fr;
+  .mobileCapability {
+    display: grid;
+    min-height: 8rem;
+    align-items: center;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid rgb(236 239 242 / 10%);
+    grid-template-columns: 3rem minmax(0, 1fr);
+    gap: 1rem;
   }
 
-  .beneficiaryNode {
-    grid-column: auto;
+  .mobileCapability .nodeIcon {
+    width: 3rem;
+    height: 3rem;
+    color: rgb(200 183 125 / 72%);
   }
 
-  .node {
-    color: rgb(246 247 248 / 76%);
-    border-color: rgb(236 239 242 / 14%);
-    background: rgb(255 255 255 / 2.5%);
+  .mobileCapability span {
+    color: rgb(200 183 125 / 62%);
+    font-family: var(--font-hero-monospace);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+  }
+
+  .mobileCapability h3 {
+    margin: 0.3rem 0 0;
+    color: rgb(246 247 248 / 88%);
+    font-size: 1rem;
+  }
+
+  .mobileCapability p {
+    margin: 0.4rem 0 0;
+    color: var(--marketing-text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.5;
   }
 }
 

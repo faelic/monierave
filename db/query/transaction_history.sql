@@ -145,3 +145,57 @@ JOIN ledger_postings AS posting
   ON posting.ledger_account_id = target_ledger.id
 JOIN banking_transactions AS transaction
   ON transaction.id = posting.transaction_id;
+
+-- name: GetOwnedAccountMoneyMovement :many
+WITH target_ledger AS (
+  SELECT ledger.id
+  FROM accounts AS account
+  JOIN ledger_accounts AS ledger
+    ON ledger.customer_account_id = account.id
+   AND ledger.kind = 'customer'
+  WHERE account.public_id = sqlc.arg(account_public_id)
+    AND account.owner = sqlc.arg(username)
+),
+periods AS (
+  SELECT generate_series(
+    CASE
+      WHEN sqlc.arg(bucket_interval)::text = 'week'
+        THEN date_trunc('week', sqlc.arg(from_time)::timestamptz)
+      ELSE date_trunc('day', sqlc.arg(from_time)::timestamptz)
+    END,
+    CASE
+      WHEN sqlc.arg(bucket_interval)::text = 'week'
+        THEN date_trunc('week', sqlc.arg(to_time)::timestamptz - interval '1 microsecond')
+      ELSE date_trunc('day', sqlc.arg(to_time)::timestamptz - interval '1 microsecond')
+    END,
+    CASE
+      WHEN sqlc.arg(bucket_interval)::text = 'week' THEN interval '1 week'
+      ELSE interval '1 day'
+    END
+  )::timestamptz AS bucket_start
+),
+movement AS (
+  SELECT
+    (CASE
+      WHEN sqlc.arg(bucket_interval)::text = 'week'
+        THEN date_trunc('week', transaction.posted_at)
+      ELSE date_trunc('day', transaction.posted_at)
+    END)::timestamptz AS bucket_start,
+    posting.amount
+  FROM target_ledger
+  JOIN ledger_postings AS posting
+    ON posting.ledger_account_id = target_ledger.id
+  JOIN banking_transactions AS transaction
+    ON transaction.id = posting.transaction_id
+  WHERE transaction.status IN ('posted', 'reversed')
+    AND transaction.posted_at >= sqlc.arg(from_time)
+    AND transaction.posted_at < sqlc.arg(to_time)
+)
+SELECT
+  periods.bucket_start,
+  coalesce(sum(movement.amount) FILTER (WHERE movement.amount > 0), 0)::bigint AS incoming,
+  coalesce(abs(sum(movement.amount) FILTER (WHERE movement.amount < 0)), 0)::bigint AS outgoing
+FROM periods
+LEFT JOIN movement USING (bucket_start)
+GROUP BY periods.bucket_start
+ORDER BY periods.bucket_start;

@@ -865,6 +865,21 @@ func (mr *MockStoreMockRecorder) GetOwnedAccountByPublicID(ctx, arg any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOwnedAccountByPublicID", reflect.TypeOf((*MockStore)(nil).GetOwnedAccountByPublicID), ctx, arg)
 }
 
+// GetOwnedAccountMoneyMovement mocks base method.
+func (m *MockStore) GetOwnedAccountMoneyMovement(ctx context.Context, arg db.GetOwnedAccountMoneyMovementParams) ([]db.GetOwnedAccountMoneyMovementRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOwnedAccountMoneyMovement", ctx, arg)
+	ret0, _ := ret[0].([]db.GetOwnedAccountMoneyMovementRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOwnedAccountMoneyMovement indicates an expected call of GetOwnedAccountMoneyMovement.
+func (mr *MockStoreMockRecorder) GetOwnedAccountMoneyMovement(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOwnedAccountMoneyMovement", reflect.TypeOf((*MockStore)(nil).GetOwnedAccountMoneyMovement), ctx, arg)
+}
+
 // GetOwnedAccountStatementBalances mocks base method.
 func (m *MockStore) GetOwnedAccountStatementBalances(ctx context.Context, arg db.GetOwnedAccountStatementBalancesParams) (db.GetOwnedAccountStatementBalancesRow, error) {
 	m.ctrl.T.Helper()

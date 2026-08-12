@@ -19,13 +19,13 @@ describe("ProductArchitecture", () => {
     expect(
       screen.getByRole("heading", {
         level: 2,
-        name: "Everything important, connected.",
+        name: "Everything important is connected.",
       }),
     ).toBeInTheDocument();
 
-    const nodeTitles = screen
-      .getAllByRole("heading", { level: 3 })
-      .map((heading) => heading.textContent);
+    const nodeTitles = Array.from(
+      container.querySelectorAll("[data-node-stage] h3"),
+    ).map((heading) => heading.textContent);
     expect(nodeTitles).toEqual([
       "Verified access",
       "Dashboard overview",

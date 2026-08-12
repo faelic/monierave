@@ -24,14 +24,17 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useAuth } from "@/features/auth/auth-provider";
 import { hasFinancialAccess } from "@/features/auth/user-access";
 import {
+  getAccountMoneyMovement,
   listOwnedAccounts,
   listRecentAccountTransactions,
 } from "@/features/dashboard/dashboard-api";
+import { CurrencyIdentity } from "@/features/dashboard/currency-identity";
 import {
   accountLabel,
   formatMinorAmount,
   formatTransactionAmount,
 } from "@/features/dashboard/financial-format";
+import { MoneyMovementChart } from "@/features/dashboard/money-movement-chart";
 import { isApiError } from "@/lib/api/api-error";
 import type { Account, BankingTransaction } from "@/lib/api/contracts";
 import { queryKeys } from "@/lib/query/query-keys";
@@ -49,6 +52,8 @@ export function DashboardOverview() {
 function FinancialDashboardOverview() {
   const { user } = useAuth();
   const [balancesVisible, setBalancesVisible] = useState(true);
+  const [movementAccountID, setMovementAccountID] = useState("");
+  const [movementDays, setMovementDays] = useState<7 | 30 | 90>(30);
   const accounts = useQuery({
     queryFn: listOwnedAccounts,
     queryKey: queryKeys.accounts.all,
@@ -56,11 +61,26 @@ function FinancialDashboardOverview() {
   const primaryAccount =
     accounts.data?.find((account) => account.status === "active") ??
     accounts.data?.[0];
+  const movementAccount =
+    accounts.data?.find((account) => account.id === movementAccountID) ??
+    primaryAccount;
+  const movementRange = moneyMovementRange(movementDays);
+  const moneyMovement = useQuery({
+    enabled: Boolean(movementAccount),
+    queryFn: () =>
+      getAccountMoneyMovement(movementAccount!.id, {
+        ...movementRange,
+        interval: movementDays === 90 ? "week" : "day",
+      }),
+    queryKey: movementAccount
+      ? queryKeys.accounts.moneyMovement(movementAccount.id, movementDays)
+      : ["accounts", "money-movement", "none", movementDays],
+  });
   const recentActivity = useQuery({
-    enabled: Boolean(primaryAccount),
-    queryFn: () => listRecentAccountTransactions(primaryAccount!.id),
-    queryKey: primaryAccount
-      ? queryKeys.accounts.recentTransactions(primaryAccount.id)
+    enabled: Boolean(movementAccount),
+    queryFn: () => listRecentAccountTransactions(movementAccount!.id),
+    queryKey: movementAccount
+      ? queryKeys.accounts.recentTransactions(movementAccount.id)
       : ["accounts", "recent-transactions", "none"],
   });
 
@@ -156,7 +176,125 @@ function FinancialDashboardOverview() {
         )}
       </section>
 
-      {primaryAccount ? (
+      {movementAccount ? (
+        <section aria-labelledby="movement-heading" className="mt-12">
+          <div className="border-line-200 flex flex-col gap-4 border-b pb-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-evergreen-700 text-xs font-bold tracking-[0.14em] uppercase">
+                Posted ledger activity
+              </p>
+              <h2 className="mt-1 text-2xl font-semibold" id="movement-heading">
+                Money movement
+              </h2>
+              <p className="text-ink-600 mt-1 text-sm">
+                Money entering and leaving one currency account. Currencies are
+                never combined.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <label>
+                <span className="sr-only">Money movement account</span>
+                <select
+                  className="border-line-300 min-h-11 rounded-sm border bg-white px-3 text-sm"
+                  onChange={(event) => setMovementAccountID(event.target.value)}
+                  value={movementAccount.id}
+                >
+                  {accounts.data?.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.currency} · {account.account_number}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div
+                aria-label="Money movement period"
+                className="border-line-300 inline-flex rounded-sm border bg-white p-1"
+                role="group"
+              >
+                {([7, 30, 90] as const).map((days) => (
+                  <button
+                    aria-pressed={movementDays === days}
+                    className={`min-h-9 rounded-sm px-3 text-sm font-semibold transition-colors ${
+                      movementDays === days
+                        ? "bg-[var(--product-navigation)] text-white"
+                        : "text-ink-600 hover:text-ink-950"
+                    }`}
+                    key={days}
+                    onClick={() => setMovementDays(days)}
+                    type="button"
+                  >
+                    {days}D
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {moneyMovement.isPending ? (
+            <div
+              aria-label="Loading money movement"
+              className="border-line-200 mt-5 h-80 animate-pulse rounded-md border bg-white motion-reduce:animate-none"
+              role="status"
+            />
+          ) : moneyMovement.isError ? (
+            <DashboardSectionError
+              error={moneyMovement.error}
+              onRetry={() => void moneyMovement.refetch()}
+              title="We could not load money movement."
+            />
+          ) : (
+            <div className="border-line-200 relative mt-5 overflow-hidden rounded-lg border bg-white p-4 sm:p-6">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-28 -right-16 size-72 rounded-full bg-[var(--product-accent-soft)] opacity-30 blur-3xl"
+              />
+              <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-ink-600 text-xs font-bold tracking-[0.12em] uppercase">
+                    Net movement
+                  </p>
+                  <p
+                    className={`mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl ${
+                      moneyMovement.data.money_in -
+                        moneyMovement.data.money_out >=
+                      0
+                        ? "text-success-700"
+                        : "text-ink-950"
+                    }`}
+                    data-financial-number
+                  >
+                    {formatSignedAmount(
+                      moneyMovement.data.money_in -
+                        moneyMovement.data.money_out,
+                      moneyMovement.data.currency,
+                    )}
+                  </p>
+                  <p className="text-ink-600 mt-2 text-sm">
+                    Net posted change during the selected period
+                  </p>
+                </div>
+                <div className="grid gap-5 sm:grid-cols-2 sm:gap-8">
+                  <MovementLegend
+                    amount={moneyMovement.data.money_in}
+                    currency={moneyMovement.data.currency}
+                    direction="in"
+                  />
+                  <MovementLegend
+                    amount={moneyMovement.data.money_out}
+                    currency={moneyMovement.data.currency}
+                    direction="out"
+                  />
+                </div>
+              </div>
+              <div className="border-line-200 relative mt-6 border-t pt-5">
+                <MoneyMovementChart data={moneyMovement.data} />
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {movementAccount ? (
         <section aria-labelledby="activity-heading" className="mt-12">
           <div className="border-line-200 flex flex-col gap-2 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -164,7 +302,8 @@ function FinancialDashboardOverview() {
                 Recent activity
               </h2>
               <p className="text-ink-600 mt-1 text-sm">
-                {accountLabel(primaryAccount)} · {primaryAccount.account_number}
+                {accountLabel(movementAccount)} ·{" "}
+                {movementAccount.account_number}
               </p>
             </div>
             <p className="text-ink-600 text-sm">Latest five transactions</p>
@@ -372,7 +511,9 @@ function AccountSummary({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-semibold">{accountLabel(account)}</p>
+          <p>
+            <CurrencyIdentity currency={account.currency} />
+          </p>
           <p
             className="text-ink-600 mt-1 font-mono text-sm tracking-[0.08em]"
             data-financial-number
@@ -428,8 +569,19 @@ function AccountStatus({ status }: { status: Account["status"] }) {
 
 function TransactionRow({ transaction }: { transaction: BankingTransaction }) {
   const incoming = transaction.direction === "incoming";
+  const tone =
+    transaction.status === "posted"
+      ? "positive"
+      : transaction.status === "pending"
+        ? "warning"
+        : transaction.status === "failed"
+          ? "danger"
+          : "neutral";
   return (
-    <article className="grid min-h-20 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 py-3">
+    <Link
+      className="grid min-h-20 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 rounded-sm px-2 py-3 no-underline transition-colors hover:bg-[var(--product-surface-subtle)]"
+      href={`/app/transactions/${transaction.reference}` as Route}
+    >
       <span
         className={`grid size-10 place-items-center rounded-sm ${
           incoming
@@ -447,14 +599,17 @@ function TransactionRow({ transaction }: { transaction: BankingTransaction }) {
         <p className="truncate font-semibold">
           {transaction.counterparty || transactionLabel(transaction)}
         </p>
-        <p className="text-ink-600 mt-0.5 truncate text-sm">
+        <div className="text-ink-600 mt-1 flex flex-wrap items-center gap-2 text-sm">
           <time dateTime={transaction.created_at}>
             {formatDateTime(transaction.created_at)}
           </time>
-          {" · "}
-          <span className="capitalize">{transaction.status}</span>
-          {transaction.narration ? ` · ${transaction.narration}` : ""}
-        </p>
+          <StatusBadge className="capitalize" tone={tone}>
+            {transaction.status}
+          </StatusBadge>
+          {transaction.narration ? (
+            <span className="truncate">{transaction.narration}</span>
+          ) : null}
+        </div>
       </div>
       <p
         aria-label={`${incoming ? "Incoming" : "Outgoing"} ${formatMinorAmount(
@@ -468,8 +623,46 @@ function TransactionRow({ transaction }: { transaction: BankingTransaction }) {
       >
         {formatTransactionAmount(transaction)}
       </p>
-    </article>
+    </Link>
   );
+}
+
+function MovementLegend({
+  amount,
+  currency,
+  direction,
+}: {
+  amount: number;
+  currency: Account["currency"];
+  direction: "in" | "out";
+}) {
+  const incoming = direction === "in";
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        aria-hidden="true"
+        className={`size-2.5 shrink-0 rounded-full ${incoming ? "bg-success-700" : "bg-[var(--product-accent)]"}`}
+      />
+      <div>
+        <p className="text-ink-600 text-xs font-semibold">Money {direction}</p>
+        <p className="mt-0.5 font-semibold" data-financial-number>
+          {formatMinorAmount(amount, currency)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function formatSignedAmount(amount: number, currency: Account["currency"]) {
+  const prefix = amount > 0 ? "+" : amount < 0 ? "−" : "";
+  return `${prefix}${formatMinorAmount(Math.abs(amount), currency)}`;
+}
+
+function moneyMovementRange(days: number) {
+  const to = new Date();
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - days);
+  return { from: from.toISOString(), to: to.toISOString() };
 }
 
 function AccountGridSkeleton() {

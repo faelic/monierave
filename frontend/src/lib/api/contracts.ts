@@ -63,6 +63,23 @@ export type TransactionHistoryPage = {
   next_cursor?: string;
 };
 
+export type MoneyMovementBucket = {
+  start: string;
+  incoming: number;
+  outgoing: number;
+};
+
+export type MoneyMovement = {
+  account_id: string;
+  currency: Account["currency"];
+  from: string;
+  to: string;
+  interval: "day" | "week";
+  money_in: number;
+  money_out: number;
+  buckets: MoneyMovementBucket[];
+};
+
 export type TransferDestination = {
   account_number: string;
   currency: Account["currency"];

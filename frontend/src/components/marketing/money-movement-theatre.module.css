@@ -799,7 +799,33 @@
 
 @media (max-width: 44rem) {
   .inner {
+    padding-block: 4.5rem;
     padding-inline: 1.25rem;
+  }
+
+  .headingBlock {
+    text-align: center;
+  }
+
+  .eyebrow,
+  .heading,
+  .introduction {
+    margin-inline: auto;
+  }
+
+  .heading {
+    max-width: 12ch;
+    font-size: clamp(2.4rem, 10.5vw, 2.85rem);
+    line-height: 1;
+  }
+
+  .introduction {
+    margin-top: 1.25rem;
+    line-height: 1.55;
+  }
+
+  .tabs {
+    margin-top: 3rem;
   }
 
   .tabs {

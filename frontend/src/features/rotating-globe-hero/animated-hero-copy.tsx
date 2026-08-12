@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 
 export const heroCopyTiming = {
-  headline: "Your money,\nwithout mystery.",
+  headline: "Banking\nmade clear.",
   eyebrowDelay: 80,
   initialDelay: 300,
   characterDelay: 80,
@@ -19,7 +19,7 @@ export function AnimatedHeroCopy({
   actions,
   className,
   debugElapsedMs = null,
-  supportingCopy = "Accounts, recipients, and transfers in one calm place, with every important detail reviewed before money moves.",
+  supportingCopy = "Manage accounts, verify recipients, and move money with every important detail clearly reviewed.",
 }: {
   actions?: ReactNode;
   className?: string;
@@ -139,6 +139,7 @@ export function AnimatedHeroCopy({
       ? actionsVisible
       : debugElapsedMs >= heroCopyTiming.actionsDelay;
   const visibleHeadline = heroCopyTiming.headline.slice(0, effectiveCharacters);
+  const visibleHeadlineParts = visibleHeadline.split("\n");
   const typingCompletionTime =
     heroCopyTiming.initialDelay +
     (heroCopyTiming.headline.length - 1) * heroCopyTiming.characterDelay;
@@ -163,7 +164,7 @@ export function AnimatedHeroCopy({
         Monierave banking
       </p>
       <h1 className="font-hero-mono relative max-w-[17ch] text-[clamp(2rem,8vw,2.5rem)] leading-[0.96] font-normal tracking-[-0.025em] text-white md:text-[clamp(3.25rem,4.2vw,4rem)]">
-        <span className="sr-only">Your money, without mystery.</span>
+        <span className="sr-only">Banking made clear.</span>
         <span aria-hidden="true" className="relative block">
           <span className="invisible block whitespace-pre-line">
             {heroCopyTiming.headline}
@@ -172,15 +173,33 @@ export function AnimatedHeroCopy({
             className="absolute inset-0 block whitespace-pre-line"
             data-testid="hero-headline-visual"
           >
-            {visibleHeadline}
-            {effectiveCursorVisible ? (
-              <span
-                className="organic-hero-cursor"
-                data-testid="hero-headline-cursor"
-              >
-                _
-              </span>
-            ) : null}
+            {visibleHeadlineParts.map((line, index) => {
+              const isLastVisibleLine =
+                index === visibleHeadlineParts.length - 1;
+
+              return (
+                <span className="block" key={`${index}-${line}`}>
+                  {index === 1 && line.startsWith("made clear") ? (
+                    <>
+                      made
+                      <span className="inline-block w-[0.22em]"> </span>
+                      {line.slice("made ".length)}
+                    </>
+                  ) : (
+                    line
+                  )}
+                  {effectiveCursorVisible && isLastVisibleLine ? (
+                    <span
+                      className="organic-hero-cursor"
+                      data-testid="hero-headline-cursor"
+                    >
+                      _
+                    </span>
+                  ) : null}
+                  {!isLastVisibleLine ? "\n" : null}
+                </span>
+              );
+            })}
           </span>
         </span>
       </h1>
@@ -199,7 +218,7 @@ export function AnimatedHeroCopy({
       </div>
       <div
         className={cn(
-          "mt-7 flex flex-wrap gap-3 [&>*]:transition-[opacity,transform] [&>*]:duration-[520ms] [&>*]:ease-[cubic-bezier(0.16,1,0.3,1)] [&>*]:motion-reduce:transition-none [&>*:nth-child(2)]:delay-[90ms]",
+          "mt-7 flex flex-wrap gap-2 sm:gap-3 [&>*]:transition-[opacity,transform] [&>*]:duration-[520ms] [&>*]:ease-[cubic-bezier(0.16,1,0.3,1)] [&>*]:motion-reduce:transition-none [&>*:nth-child(2)]:delay-[90ms]",
           effectiveActionsVisible
             ? "[&>*]:translate-y-0 [&>*]:opacity-100"
             : "[&>*]:translate-y-7 [&>*]:opacity-0 [&>*]:[will-change:transform,opacity]",
