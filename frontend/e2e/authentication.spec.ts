@@ -114,7 +114,14 @@ test("resends verification and replaces an undeliverable address", async ({
       );
     }
     if (path === "/users/me" && method === "PATCH") {
-      const body = (await route.request().postDataJSON()) as { email: string };
+      const body = (await route.request().postDataJSON()) as {
+        current_password: string;
+        email: string;
+      };
+      expect(body).toEqual({
+        current_password: "clear-sky-2026",
+        email: "valid@example.com",
+      });
       email = body.email;
       return json(route, {
         ...pendingUser,
@@ -147,11 +154,15 @@ test("resends verification and replaces an undeliverable address", async ({
 
   await page.locator("summary").click();
   await page.getByLabel("Email address").fill("valid@example.com");
+  await page.getByLabel("Current password").fill("clear-sky-2026");
   await page.getByRole("button", { name: "Update email" }).click();
-  await expect(page.getByText(/Email updated/i)).toBeVisible();
+  await expect(page).toHaveURL(/\/signup\/check-email$/, { timeout: 15_000 });
+  await expect(
+    page.getByRole("heading", { name: "Check your email." }),
+  ).toBeVisible();
   await expect(
     page.getByText("valid@example.com", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test("auth screens fit the viewport without horizontal overflow", async ({

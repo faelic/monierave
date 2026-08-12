@@ -20,7 +20,6 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["127.0.0.1", "monierave.test"],
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,

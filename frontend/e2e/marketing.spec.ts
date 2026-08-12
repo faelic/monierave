@@ -15,7 +15,7 @@ const activeUser = {
 
 test("offers the dashboard instead of sign in after restoring a session", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.route("http://localhost:8080/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "OPTIONS") {
@@ -49,12 +49,19 @@ test("offers the dashboard instead of sign in after restoring a session", async 
   await page.goto("/");
 
   const navigation = page.getByRole("banner");
+  if (testInfo.project.name !== "chromium") {
+    await navigation.getByRole("button", { name: "Open navigation" }).click();
+  }
+  const accountActions =
+    testInfo.project.name === "chromium"
+      ? navigation
+      : page.getByRole("dialog", { name: "Navigation" });
   await expect(
-    navigation.getByRole("link", { name: "Open dashboard" }),
+    accountActions.getByRole("link", { name: "Open dashboard" }),
   ).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "Sign in" })).toHaveCount(
-    0,
-  );
+  await expect(
+    accountActions.getByRole("link", { name: "Sign in" }),
+  ).toHaveCount(0);
 });
 
 test("explains the supported product clearly", async ({ page }) => {

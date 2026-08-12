@@ -138,10 +138,6 @@ export function LoginForm() {
           Sign in
         </Button>
       </form>
-
-      <p className="auth-form-note mt-6 text-sm">
-        Protected by Monierave&apos;s single-device session controls.
-      </p>
     </div>
   );
 }

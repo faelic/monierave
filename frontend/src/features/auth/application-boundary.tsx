@@ -1,7 +1,8 @@
 "use client";
 
-import { redirect, usePathname, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
+import type { Route } from "next";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/auth-provider";
@@ -9,21 +10,33 @@ import { canAccessApplicationPath } from "@/features/auth/user-access";
 
 export function ApplicationBoundary({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { restore, status, user } = useAuth();
 
-  if (status === "anonymous") {
+  useEffect(() => {
     const currentPath = `${pathname}${
       searchParams.size ? `?${searchParams.toString()}` : ""
     }`;
-    redirect(`/login?returnTo=${encodeURIComponent(currentPath)}`);
-  }
+    if (status === "anonymous") {
+      router.replace(
+        `/login?returnTo=${encodeURIComponent(currentPath)}` as Route,
+      );
+      return;
+    }
+    if (
+      status === "authenticated" &&
+      !canAccessApplicationPath(user, pathname)
+    ) {
+      router.replace("/app?access=verification-required" as Route);
+    }
+  }, [pathname, router, searchParams, status, user]);
 
-  if (status === "authenticated" && !canAccessApplicationPath(user, pathname)) {
-    redirect("/app?access=verification-required");
-  }
-
-  if (status === "restoring") {
+  if (
+    status === "restoring" ||
+    status === "anonymous" ||
+    (status === "authenticated" && !canAccessApplicationPath(user, pathname))
+  ) {
     return <ApplicationSkeleton />;
   }
 
