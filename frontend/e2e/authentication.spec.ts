@@ -269,6 +269,9 @@ async function signInPendingUser(page: Page) {
   await expect(page).toHaveURL(/\/app$/, { timeout: 15_000 });
   await page.getByRole("link", { name: "Continue verification" }).click();
   await expect(page).toHaveURL(/\/verification-needed$/, { timeout: 15_000 });
+  await expect(
+    page.getByText(pendingUser.email, { exact: true }),
+  ).toBeVisible();
 }
 
 async function mockAPI(page: Page, handler: (route: Route) => Promise<void>) {

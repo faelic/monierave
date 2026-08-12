@@ -130,8 +130,14 @@ export function CreateAccountPage() {
       }
       setError(bankingErrorMessage(cause));
     },
-    onSuccess: async (account) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+    onSuccess: (account) => {
+      queryClient.setQueryData<Account[]>(queryKeys.accounts.all, (current) => {
+        if (!current) return [account];
+        return current.some((item) => item.id === account.id)
+          ? current
+          : [...current, account];
+      });
+      queryClient.setQueryData(queryKeys.accounts.detail(account.id), account);
       router.push(`/app/accounts/${account.id}` as Route);
     },
   });

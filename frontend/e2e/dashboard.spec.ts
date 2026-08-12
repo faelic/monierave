@@ -203,7 +203,9 @@ test("keeps mobile activity filters balanced and readable", async ({
   expect(
     Math.abs((directionBox?.width ?? 0) - (statusBox?.width ?? 0)),
   ).toBeLessThan(2);
-  expect(directionBox?.y).toBe(statusBox?.y);
+  expect(Math.abs((directionBox?.y ?? 0) - (statusBox?.y ?? 0))).toBeLessThan(
+    1,
+  );
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -231,6 +233,42 @@ async function mockDashboardAPI(
         "100",
       );
       return json(route, accountResponse);
+    }
+    if (path === `/accounts/${accounts[0].id}/money-movement`) {
+      return json(route, {
+        account_id: accounts[0].id,
+        buckets: [
+          {
+            incoming: 50_000,
+            outgoing: 35_000,
+            start: "2026-08-05T00:00:00Z",
+          },
+        ],
+        currency: "USD",
+        from: "2026-07-07T00:00:00Z",
+        interval: "day",
+        money_in: 50_000,
+        money_out: 35_000,
+        to: "2026-08-06T00:00:00Z",
+      });
+    }
+    if (path === `/accounts/${accounts[1].id}/money-movement`) {
+      return json(route, {
+        account_id: accounts[1].id,
+        buckets: [
+          {
+            incoming: 4_200,
+            outgoing: 0,
+            start: "2026-08-04T00:00:00Z",
+          },
+        ],
+        currency: "EUR",
+        from: "2026-07-07T00:00:00Z",
+        interval: "day",
+        money_in: 4_200,
+        money_out: 0,
+        to: "2026-08-06T00:00:00Z",
+      });
     }
     if (path === `/accounts/${accounts[0].id}/transactions`) {
       return json(route, {

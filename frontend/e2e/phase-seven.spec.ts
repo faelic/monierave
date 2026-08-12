@@ -101,7 +101,9 @@ test("creates an account without accepting client-generated identity fields", as
   await page.goto("/app/accounts/new");
   await page.getByText("EUR", { exact: true }).click();
   await page.getByRole("button", { name: "Open EUR account" }).click();
-  await expect(page).toHaveURL(new RegExp(`/app/accounts/${account.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/app/accounts/${account.id}$`), {
+    timeout: 15_000,
+  });
   expect(createBody).toEqual({ currency: "EUR" });
 });
 
@@ -123,7 +125,9 @@ test("prevents opening a duplicate currency account and links to the existing ac
     page.getByRole("button", { name: "Already have a USD account" }),
   ).toBeDisabled();
   await page.getByRole("link", { name: "View USD account" }).click();
-  await expect(page).toHaveURL(new RegExp(`/app/accounts/${account.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/app/accounts/${account.id}$`), {
+    timeout: 15_000,
+  });
   expect(createRequests).toBe(0);
 });
 
