@@ -30,6 +30,13 @@ describe("marketing account actions", () => {
     });
   });
 
+  it("does not imply a restored session when authentication is unavailable", () => {
+    expect(marketingAccountActions("unavailable", null)).toMatchObject({
+      primary: { href: "/signup", label: "Get started" },
+      secondary: { href: "/login", label: "Sign in" },
+    });
+  });
+
   it.each([
     ["active", "Open dashboard"],
     ["pending", "Continue verification"],

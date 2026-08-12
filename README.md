@@ -144,7 +144,13 @@ go run main.go worker
 | `ALLOWED_ORIGINS` | Comma-separated browser origins allowed by CORS. |
 | `APP_ENV` | Runtime mode. Production enables strict startup validation. |
 | `OPERATIONS_TOKEN` | Separate bearer secret protecting readiness and metrics. |
-| `REDIS_ADDRESS` | Redis address used by rate limits, relay, and worker. |
+| `DB_MAX_CONNS` | Maximum PostgreSQL connections opened by this process. Use a small value per hosted API, relay, and worker service. |
+| `DB_MIN_CONNS` | Minimum idle PostgreSQL connections retained by this process. Use `0` on constrained tiers. |
+| `DB_MAX_CONN_LIFETIME` | Maximum lifetime of a pooled PostgreSQL connection. |
+| `DB_MAX_CONN_IDLE_TIME` | Maximum idle time of a pooled PostgreSQL connection. |
+| `DB_CONNECT_TIMEOUT` | Timeout for establishing a PostgreSQL connection. |
+| `REDIS_URL` | Authenticated Redis URL. Production requires `rediss://`; this takes precedence over `REDIS_ADDRESS`. |
+| `REDIS_ADDRESS` | Local Redis address used by rate limits, relay, and worker. Use `REDIS_URL` in production. |
 | `WORKER_CONCURRENCY` | Number of concurrent Asynq worker handlers. |
 | `RELAY_BATCH_SIZE` | Maximum outbox events claimed per relay poll. |
 | `RELAY_POLL_INTERVAL` | Delay between outbox relay polls. |

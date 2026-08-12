@@ -31,7 +31,8 @@ export function marketingAccountActions(
   if (status === "unavailable") {
     return {
       loading: false,
-      primary: { href: "/app" as Route, label: "Open app" },
+      primary: { href: "/signup" as Route, label: "Get started" },
+      secondary: { href: "/login" as Route, label: "Sign in" },
     };
   }
   return {

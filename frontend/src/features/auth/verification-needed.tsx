@@ -44,6 +44,8 @@ export function VerificationNeeded() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { logout, refreshUser, status, updateUser, user } = useAuth();
+  const [emailUpdateRedirectPending, setEmailUpdateRedirectPending] =
+    useState(false);
   const [notice, setNotice] = useState<VerificationNotice>();
   const summaryRef = useRef<HTMLDivElement>(null);
   const verificationHandled = useRef(false);
@@ -85,7 +87,7 @@ export function VerificationNeeded() {
   });
 
   useEffect(() => {
-    if (status === "anonymous") {
+    if (status === "anonymous" && !emailUpdateRedirectPending) {
       router.replace("/login?returnTo=%2Fverification-needed" as Route);
     }
     if (
@@ -95,7 +97,7 @@ export function VerificationNeeded() {
     ) {
       router.replace("/app" as Route);
     }
-  }, [router, status, user]);
+  }, [emailUpdateRedirectPending, router, status, user]);
 
   useEffect(() => {
     if (notice) {
@@ -127,6 +129,7 @@ export function VerificationNeeded() {
 
   async function onEmailUpdate(values: EmailUpdateValues) {
     setNotice(undefined);
+    setEmailUpdateRedirectPending(true);
     try {
       const parsed = emailUpdateSchema.parse(values);
       await updateUser({
@@ -135,6 +138,7 @@ export function VerificationNeeded() {
       });
       router.replace("/signup/check-email" as Route);
     } catch (error) {
+      setEmailUpdateRedirectPending(false);
       setNotice({
         message:
           authErrorMessage(error, "update-email") ??

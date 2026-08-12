@@ -8,14 +8,14 @@ import (
 )
 
 func TestValidateWorkerConfig(t *testing.T) {
-	validConfig := Config{
+	validConfig := withDatabasePool(Config{
 		DBSource:                  "postgresql://localhost/database",
 		RedisAddress:              "localhost:6379",
 		MailerProvider:            "log",
 		WorkerConcurrency:         10,
 		PublicAPIURL:              "http://localhost:8080",
 		EmailVerificationDuration: 24 * time.Hour,
-	}
+	})
 
 	tests := []struct {
 		name    string
@@ -76,7 +76,7 @@ func TestValidateWorkerConfig(t *testing.T) {
 }
 
 func TestValidateAPIConfigDoesNotRequireWebhookSecret(t *testing.T) {
-	err := ValidateAPIConfig(Config{
+	err := ValidateAPIConfig(withDatabasePool(Config{
 		DBSource:               "postgresql://localhost/database",
 		RedisAddress:           "localhost:6379",
 		ServerAddress:          "0.0.0.0:8080",
@@ -89,13 +89,13 @@ func TestValidateAPIConfigDoesNotRequireWebhookSecret(t *testing.T) {
 		PasswordBreachCheckURL: "https://api.pwnedpasswords.com/range",
 		PasswordBreachTimeout:  2 * time.Second,
 		PasswordBreachCacheTTL: 24 * time.Hour,
-	})
+	}))
 
 	require.NoError(t, err)
 }
 
 func TestValidateAPIConfigRejectsSharedSessionCookieName(t *testing.T) {
-	config := Config{
+	config := withDatabasePool(Config{
 		DBSource:               "postgresql://localhost/database",
 		RedisAddress:           "localhost:6379",
 		ServerAddress:          "0.0.0.0:8080",
@@ -108,7 +108,7 @@ func TestValidateAPIConfigRejectsSharedSessionCookieName(t *testing.T) {
 		PasswordBreachCheckURL: "https://api.pwnedpasswords.com/range",
 		PasswordBreachTimeout:  2 * time.Second,
 		PasswordBreachCacheTTL: 24 * time.Hour,
-	}
+	})
 
 	err := ValidateAPIConfig(config)
 
@@ -116,10 +116,10 @@ func TestValidateAPIConfigRejectsSharedSessionCookieName(t *testing.T) {
 }
 
 func TestValidateAPIConfigFailsClosedInProduction(t *testing.T) {
-	config := Config{
+	config := withDatabasePool(Config{
 		Environment:              "production",
 		DBSource:                 "postgresql://db.example/monierave?sslmode=verify-full",
-		RedisAddress:             "redis.example:6379",
+		RedisURL:                 "rediss://default:secret@redis.example:6379/0",
 		ServerAddress:            "0.0.0.0:8080",
 		SecretKey:                "12345678901234567890123456789012",
 		OperationsToken:          "operations-token-123456789012345",
@@ -135,7 +135,7 @@ func TestValidateAPIConfigFailsClosedInProduction(t *testing.T) {
 		PasswordBreachCheckURL:   "https://api.pwnedpasswords.com/range",
 		PasswordBreachTimeout:    2 * time.Second,
 		PasswordBreachCacheTTL:   24 * time.Hour,
-	}
+	})
 	require.NoError(t, ValidateAPIConfig(config))
 
 	tests := []struct {
@@ -150,6 +150,8 @@ func TestValidateAPIConfigFailsClosedInProduction(t *testing.T) {
 		{"missing webhook secret", func(c *Config) { c.ResendWebhookSecret = "" }, "RESEND_WEBHOOK_SECRET"},
 		{"insecure cookie", func(c *Config) { c.RefreshCookieSecure = false }, "REFRESH_COOKIE_SECURE"},
 		{"verification disabled", func(c *Config) { c.EnforceEmailVerification = false }, "ENFORCE_EMAIL_VERIFICATION"},
+		{"insecure Redis", func(c *Config) { c.RedisURL = "redis://redis.example:6379" }, "REDIS_URL must use TLS"},
+		{"missing Redis URL", func(c *Config) { c.RedisURL = ""; c.RedisAddress = "redis.example:6379" }, "REDIS_URL must use TLS"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -158,4 +160,13 @@ func TestValidateAPIConfigFailsClosedInProduction(t *testing.T) {
 			require.ErrorContains(t, ValidateAPIConfig(candidate), test.wantErr)
 		})
 	}
+}
+
+func withDatabasePool(config Config) Config {
+	config.DBMaxConns = 4
+	config.DBMinConns = 0
+	config.DBMaxConnLifetime = 30 * time.Minute
+	config.DBMaxConnIdleTime = 5 * time.Minute
+	config.DBConnectTimeout = 5 * time.Second
+	return config
 }

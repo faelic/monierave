@@ -26,7 +26,13 @@ type Config struct {
 	RefreshCookieSecure       bool          `mapstructure:"REFRESH_COOKIE_SECURE"`
 	RefreshCookieSameSite     string        `mapstructure:"REFRESH_COOKIE_SAME_SITE"`
 	AllowedOrigins            string        `mapstructure:"ALLOWED_ORIGINS"`
+	RedisURL                  string        `mapstructure:"REDIS_URL"`
 	RedisAddress              string        `mapstructure:"REDIS_ADDRESS"`
+	DBMaxConns                int32         `mapstructure:"DB_MAX_CONNS"`
+	DBMinConns                int32         `mapstructure:"DB_MIN_CONNS"`
+	DBMaxConnLifetime         time.Duration `mapstructure:"DB_MAX_CONN_LIFETIME"`
+	DBMaxConnIdleTime         time.Duration `mapstructure:"DB_MAX_CONN_IDLE_TIME"`
+	DBConnectTimeout          time.Duration `mapstructure:"DB_CONNECT_TIMEOUT"`
 	MailerProvider            string        `mapstructure:"MAILER_PROVIDER"`
 	WorkerConcurrency         int           `mapstructure:"WORKER_CONCURRENCY"`
 	RelayBatchSize            int32         `mapstructure:"RELAY_BATCH_SIZE"`
@@ -62,7 +68,13 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("REFRESH_COOKIE_SECURE")
 	_ = viper.BindEnv("REFRESH_COOKIE_SAME_SITE")
 	_ = viper.BindEnv("ALLOWED_ORIGINS")
+	_ = viper.BindEnv("REDIS_URL")
 	_ = viper.BindEnv("REDIS_ADDRESS")
+	_ = viper.BindEnv("DB_MAX_CONNS")
+	_ = viper.BindEnv("DB_MIN_CONNS")
+	_ = viper.BindEnv("DB_MAX_CONN_LIFETIME")
+	_ = viper.BindEnv("DB_MAX_CONN_IDLE_TIME")
+	_ = viper.BindEnv("DB_CONNECT_TIMEOUT")
 	_ = viper.BindEnv("MAILER_PROVIDER")
 	_ = viper.BindEnv("WORKER_CONCURRENCY")
 	_ = viper.BindEnv("RELAY_BATCH_SIZE")
@@ -86,6 +98,11 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetDefault("DEVICE_COOKIE_NAME", "monierave_device")
 	viper.SetDefault("REFRESH_COOKIE_SECURE", true)
 	viper.SetDefault("REFRESH_COOKIE_SAME_SITE", "lax")
+	viper.SetDefault("DB_MAX_CONNS", 4)
+	viper.SetDefault("DB_MIN_CONNS", 0)
+	viper.SetDefault("DB_MAX_CONN_LIFETIME", 30*time.Minute)
+	viper.SetDefault("DB_MAX_CONN_IDLE_TIME", 5*time.Minute)
+	viper.SetDefault("DB_CONNECT_TIMEOUT", 5*time.Second)
 	viper.SetDefault("WORKER_CONCURRENCY", 10)
 	viper.SetDefault("RELAY_BATCH_SIZE", 50)
 	viper.SetDefault("RELAY_POLL_INTERVAL", time.Second)
@@ -121,8 +138,11 @@ func ValidateAPIConfig(config Config) error {
 	if config.ServerAddress == "" {
 		return fmt.Errorf("SERVER_ADDRESS is required")
 	}
-	if config.RedisAddress == "" {
-		return fmt.Errorf("REDIS_ADDRESS is required")
+	if err := validateDatabasePool(config); err != nil {
+		return err
+	}
+	if err := validateRedis(config); err != nil {
+		return err
 	}
 	if config.SecretKey == "" {
 		return fmt.Errorf("SECRET_KEY is required")
@@ -223,6 +243,10 @@ func validateProductionSecurity(config Config) error {
 	default:
 		return fmt.Errorf("DB_SOURCE must require TLS in production")
 	}
+	redisURL, err := url.Parse(config.RedisURL)
+	if err != nil || redisURL.Host == "" || redisURL.Scheme != "rediss" {
+		return fmt.Errorf("REDIS_URL must use TLS (rediss://) in production")
+	}
 	return nil
 }
 
@@ -230,8 +254,11 @@ func ValidateRelayConfig(config Config) error {
 	if config.DBSource == "" {
 		return fmt.Errorf("DB_SOURCE is required")
 	}
-	if config.RedisAddress == "" {
-		return fmt.Errorf("REDIS_ADDRESS is required")
+	if err := validateDatabasePool(config); err != nil {
+		return err
+	}
+	if err := validateRedis(config); err != nil {
+		return err
 	}
 	if config.RelayBatchSize <= 0 {
 		return fmt.Errorf("RELAY_BATCH_SIZE must be greater than 0")
@@ -249,8 +276,11 @@ func ValidateWorkerConfig(config Config) error {
 	if config.DBSource == "" {
 		return fmt.Errorf("DB_SOURCE is required")
 	}
-	if config.RedisAddress == "" {
-		return fmt.Errorf("REDIS_ADDRESS is required")
+	if err := validateDatabasePool(config); err != nil {
+		return err
+	}
+	if err := validateRedis(config); err != nil {
+		return err
 	}
 	if config.MailerProvider == "" {
 		return fmt.Errorf("MAILER_PROVIDER is required")
@@ -291,4 +321,41 @@ func ValidateWorkerConfig(config Config) error {
 		return fmt.Errorf("EMAIL_VERIFICATION_DURATION must be greater than 0")
 	}
 	return validateProductionSecurity(config)
+}
+
+func validateRedis(config Config) error {
+	if strings.TrimSpace(config.RedisURL) == "" && strings.TrimSpace(config.RedisAddress) == "" {
+		return fmt.Errorf("REDIS_URL or REDIS_ADDRESS is required")
+	}
+	if config.RedisURL == "" {
+		return nil
+	}
+	redisURL, err := url.Parse(config.RedisURL)
+	if err != nil || redisURL.Host == "" ||
+		(redisURL.Scheme != "redis" && redisURL.Scheme != "rediss") {
+		return fmt.Errorf("REDIS_URL must be a valid redis:// or rediss:// URL")
+	}
+	return nil
+}
+
+func validateDatabasePool(config Config) error {
+	if config.DBMaxConns <= 0 {
+		return fmt.Errorf("DB_MAX_CONNS must be greater than 0")
+	}
+	if config.DBMinConns < 0 {
+		return fmt.Errorf("DB_MIN_CONNS must not be negative")
+	}
+	if config.DBMinConns > config.DBMaxConns {
+		return fmt.Errorf("DB_MIN_CONNS must not exceed DB_MAX_CONNS")
+	}
+	if config.DBMaxConnLifetime <= 0 {
+		return fmt.Errorf("DB_MAX_CONN_LIFETIME must be greater than 0")
+	}
+	if config.DBMaxConnIdleTime <= 0 {
+		return fmt.Errorf("DB_MAX_CONN_IDLE_TIME must be greater than 0")
+	}
+	if config.DBConnectTimeout <= 0 {
+		return fmt.Errorf("DB_CONNECT_TIMEOUT must be greater than 0")
+	}
+	return nil
 }

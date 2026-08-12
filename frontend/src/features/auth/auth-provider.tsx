@@ -8,6 +8,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -42,9 +43,15 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const subscribeToHydration = () => () => undefined;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const mounted = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
   const [status, setStatus] = useState<SessionStatus>("restoring");
   const [user, setUser] = useState<User | null>(null);
   const restoreInFlight = useRef<Promise<User | null> | null>(null);
@@ -77,8 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   useEffect(() => {
+    if (!mounted) return;
     void restore();
-  }, [restore]);
+  }, [mounted, restore]);
 
   useEffect(() => {
     function handleSessionExpired() {
