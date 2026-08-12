@@ -24,7 +24,6 @@ import (
 	"github.com/faelic/monierave/worker"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -81,8 +80,18 @@ func configureLogging(level string, role string) {
 		Logger()
 }
 
-func openStore(ctx context.Context, dbSource string) (*pgxpool.Pool, db.Store, error) {
-	pool, err := pgxpool.New(ctx, dbSource)
+func openStore(ctx context.Context, config util.Config) (*pgxpool.Pool, db.Store, error) {
+	poolConfig, err := pgxpool.ParseConfig(config.DBSource)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse database config: %w", err)
+	}
+	poolConfig.MaxConns = config.DBMaxConns
+	poolConfig.MinConns = config.DBMinConns
+	poolConfig.MaxConnLifetime = config.DBMaxConnLifetime
+	poolConfig.MaxConnIdleTime = config.DBMaxConnIdleTime
+	poolConfig.ConnConfig.ConnectTimeout = config.DBConnectTimeout
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create database pool: %w", err)
 	}
@@ -110,13 +119,17 @@ func runAPI(config util.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, store, err := openStore(ctx, config.DBSource)
+	pool, store, err := openStore(ctx, config)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 	worker.ConfigureRedisLogging()
-	redisClient := redis.NewClient(&redis.Options{Addr: config.RedisAddress})
+	redisOptions, _, err := util.RedisOptions(config)
+	if err != nil {
+		return err
+	}
+	redisClient := redis.NewClient(redisOptions)
 	defer redisClient.Close()
 
 	server, err := api.NewServer(
@@ -175,13 +188,17 @@ func runRelay(config util.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, store, err := openStore(ctx, config.DBSource)
+	pool, store, err := openStore(ctx, config)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	distributor := worker.NewRedisTaskDistributor(asynq.RedisClientOpt{Addr: config.RedisAddress})
+	_, asynqOptions, err := util.RedisOptions(config)
+	if err != nil {
+		return err
+	}
+	distributor := worker.NewRedisTaskDistributor(asynqOptions)
 	defer distributor.Close()
 
 	relay := worker.NewOutboxRelay(store, distributor, worker.RelayConfig{
@@ -205,7 +222,7 @@ func runWorker(config util.Config) error {
 	)
 	defer stop()
 
-	pool, store, err := openStore(ctx, config.DBSource)
+	pool, store, err := openStore(ctx, config)
 	if err != nil {
 		return err
 	}
@@ -220,8 +237,12 @@ func runWorker(config util.Config) error {
 		return fmt.Errorf("create email verification token maker: %w", err)
 	}
 
+	_, asynqOptions, err := util.RedisOptions(config)
+	if err != nil {
+		return err
+	}
 	processor := worker.NewRedisTaskProcessor(
-		asynq.RedisClientOpt{Addr: config.RedisAddress},
+		asynqOptions,
 		store,
 		emailMailer,
 		config.WorkerConcurrency,
@@ -266,7 +287,7 @@ func runJobs(config util.Config, args []string) error {
 	}
 
 	ctx := context.Background()
-	pool, store, err := openStore(ctx, config.DBSource)
+	pool, store, err := openStore(ctx, config)
 	if err != nil {
 		return err
 	}
@@ -344,7 +365,7 @@ func runBanking(config util.Config, args []string) error {
 	}
 
 	ctx := context.Background()
-	pool, store, err := openStore(ctx, config.DBSource)
+	pool, store, err := openStore(ctx, config)
 	if err != nil {
 		return err
 	}
