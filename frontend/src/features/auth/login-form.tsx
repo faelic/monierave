@@ -147,7 +147,11 @@ function AuthenticationUnavailable({ onRetry }: { onRetry: () => void }) {
       </p>
       <div className="mt-7 grid gap-3 sm:grid-cols-2">
         <Button onClick={onRetry}>Try again</Button>
-        <Button asChild variant="secondary">
+        <Button
+          asChild
+          className="border-white/14 bg-white/[0.04] text-white/78 hover:bg-white/[0.08] hover:text-white"
+          variant="secondary"
+        >
           <Link href="/">Return home</Link>
         </Button>
       </div>

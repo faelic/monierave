@@ -718,27 +718,15 @@ a {
 }
 
 .organic-hero-cursor {
-  position: relative;
-  display: inline-block;
-  width: 0.55em;
-  height: 0.85em;
-  margin-left: 0.04em;
-  overflow: visible;
-  color: transparent;
-  vertical-align: baseline;
-  animation: organic-hero-cursor-blink 1s steps(1, end) infinite;
-}
-
-.organic-hero-cursor::after {
   position: absolute;
-  right: 0;
   bottom: 0.06em;
+  left: calc(100% + 0.08em);
   width: 0.5em;
   height: 0.065em;
   border-radius: 999px;
-  background: currentColor;
-  color: white;
-  content: "";
+  background: white;
+  color: transparent;
+  animation: organic-hero-cursor-blink 1s steps(1, end) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

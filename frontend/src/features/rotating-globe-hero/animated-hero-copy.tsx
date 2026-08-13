@@ -178,7 +178,10 @@ export function AnimatedHeroCopy({
                 index === visibleHeadlineParts.length - 1;
 
               return (
-                <span className="block" key={`${index}-${line}`}>
+                <span
+                  className="relative block w-fit max-w-full max-md:mx-auto"
+                  key={`${index}-${line}`}
+                >
                   {index === 1 && line.startsWith("made clear") ? (
                     <>
                       made

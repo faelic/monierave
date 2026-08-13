@@ -36,7 +36,10 @@ describe("AnimatedHeroCopy", () => {
 
     act(() => vi.advanceTimersByTime(8_000));
     expect(visual).toHaveTextContent("Banking made clear.");
-    expect(screen.getByTestId("hero-headline-cursor")).toBeInTheDocument();
+    const cursor = screen.getByTestId("hero-headline-cursor");
+    expect(cursor).toBeInTheDocument();
+    expect(cursor).toHaveClass("organic-hero-cursor");
+    expect(cursor.parentElement).toHaveClass("relative");
     act(() => vi.advanceTimersByTime(heroCopyTiming.cursorSettleDelay));
     expect(
       screen.queryByTestId("hero-headline-cursor"),
