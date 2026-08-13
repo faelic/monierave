@@ -33,10 +33,7 @@ import (
 )
 
 func main() {
-	role := "api"
-	if len(os.Args) > 1 {
-		role = os.Args[1]
-	}
+	role := resolveRuntimeRole(os.Args, os.Getenv("APP_ROLE"))
 	config, err := util.LoadConfig(".")
 	if err != nil {
 		zlog.Fatal().Err(err).Msg("could not load config")
@@ -65,6 +62,18 @@ func main() {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		zlog.Fatal().Err(err).Msg("process stopped")
 	}
+}
+
+func resolveRuntimeRole(args []string, configuredRole string) string {
+	if len(args) > 1 {
+		if role := strings.TrimSpace(args[1]); role != "" {
+			return role
+		}
+	}
+	if role := strings.TrimSpace(configuredRole); role != "" {
+		return role
+	}
+	return "api"
 }
 
 func configureLogging(level string, role string) {

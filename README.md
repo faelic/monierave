@@ -243,13 +243,19 @@ For a single-service Pxxl deployment, build the binary and start it with:
 
 ```bash
 go build -trimpath -o monierave .
-./monierave all
+APP_ROLE=all ./monierave
 ```
+
+Set `APP_ROLE=all` in Pxxl and use `./monierave` as the start command. This
+avoids relying on the hosting runtime to forward command-line arguments. An
+explicit command such as `./monierave worker` still takes precedence, which
+keeps local Docker and separate-service deployments unchanged.
 
 ## Configuration
 
 | Variable | Purpose |
 | --- | --- |
+| `APP_ROLE` | Optional hosted-runtime role: `api`, `all`, `relay`, or `worker`. Explicit command-line roles take precedence. |
 | `DB_SOURCE` | PostgreSQL connection used by runtime roles. |
 | `DB_TEST_SOURCE` | Dedicated `*_test` database used by integration tests. |
 | `SERVER_ADDRESS` | API listen address, normally `0.0.0.0:8080`. |

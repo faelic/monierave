@@ -18,6 +18,39 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestResolveRuntimeRole(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           []string
+		configuredRole string
+		want           string
+	}{
+		{
+			name:           "explicit command wins",
+			args:           []string{"monierave", "worker"},
+			configuredRole: "all",
+			want:           "worker",
+		},
+		{
+			name:           "configured role used without command",
+			args:           []string{"monierave"},
+			configuredRole: " all ",
+			want:           "all",
+		},
+		{
+			name: "api remains the default",
+			args: []string{"monierave"},
+			want: "api",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, resolveRuntimeRole(tt.args, tt.configuredRole))
+		})
+	}
+}
+
 func TestSuperviseRuntimeRolesStopsAllComponentsWhenOneFails(t *testing.T) {
 	expectedErr := errors.New("redis unavailable")
 	siblingStopped := make(chan struct{})
