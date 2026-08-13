@@ -37,10 +37,12 @@
 
 .headingBlock {
   max-width: 46rem;
+  margin-inline: auto;
+  text-align: center;
 }
 
 .eyebrow {
-  margin: 0;
+  margin: 0 auto;
   color: rgb(200 183 125 / 78%);
   font-size: 0.75rem;
   font-weight: 700;
@@ -50,7 +52,7 @@
 
 .heading {
   max-width: 13ch;
-  margin: 1rem 0 0;
+  margin: 1rem auto 0;
   font-family: var(--font-editorial);
   font-size: clamp(2.75rem, 5vw, 4.75rem);
   font-weight: 500;
@@ -65,7 +67,7 @@
 
 .introduction {
   max-width: 38rem;
-  margin: 1.5rem 0 0;
+  margin: 1.5rem auto 0;
   color: var(--marketing-text-secondary);
   font-size: clamp(1rem, 1.4vw, 1.125rem);
   line-height: 1.6;
