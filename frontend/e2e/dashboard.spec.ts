@@ -81,6 +81,25 @@ test("redirects an anonymous dashboard request to safe sign in", async ({
   ).toBeVisible();
 });
 
+test("fails closed when authentication services are unavailable", async ({
+  page,
+}) => {
+  await page.route("http://localhost:8080/**", (route) =>
+    route.abort("connectionfailed"),
+  );
+  await page.goto("/app");
+
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(
+    page.getByRole("heading", {
+      name: "We’re having trouble connecting to Monierave.",
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return home" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview" })).toHaveCount(0);
+});
+
 test("gives a pending customer a limited dashboard without financial requests", async ({
   page,
 }, testInfo) => {

@@ -74,7 +74,7 @@ test("explains the supported product clearly", async ({ page }) => {
     }),
   ).toBeVisible();
   await expect(page.getByRole("main")).toBeVisible();
-  await expect(page.getByText("Secure transfers")).toBeVisible();
+  await expect(page.getByText("Make a transfer")).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "See what changes when money moves.",
@@ -229,12 +229,11 @@ test("fits the complete mobile hero into the first viewport", async ({
 
   const hero = page.locator(".landing-hero");
   const heroStage = page.locator("[data-rotating-globe-stage]");
-  const trustRail = page.locator(".landing-trust-rail");
   const globe = page.getByTestId("celestial-money-globe");
   const primaryAction = hero.getByRole("link", { name: "Get started" });
-  const [stageBox, trustBox, globeBox, actionBox] = await Promise.all([
+  const [heroBox, stageBox, globeBox, actionBox] = await Promise.all([
+    hero.boundingBox(),
     heroStage.boundingBox(),
-    trustRail.boundingBox(),
     globe.boundingBox(),
     primaryAction.boundingBox(),
   ]);
@@ -244,12 +243,13 @@ test("fits the complete mobile hero into the first viewport", async ({
   expect(stageBox?.y ?? 0).toBeGreaterThanOrEqual(80);
   expect(stageBox?.y ?? 0).toBeLessThanOrEqual(82);
   const stageBottom = (stageBox?.y ?? 0) + (stageBox?.height ?? 0);
+  const heroBottom = (heroBox?.y ?? 0) + (heroBox?.height ?? 0);
   const actionBottom = (actionBox?.y ?? 0) + (actionBox?.height ?? 0);
-  expect(stageBottom).toBeGreaterThanOrEqual(750);
-  expect(stageBottom).toBeLessThanOrEqual(770);
-  expect(trustBox?.y).toBeGreaterThanOrEqual(750);
-  expect(trustBox?.y).toBeLessThanOrEqual(770);
-  expect(actionBottom).toBeLessThanOrEqual(730);
+  expect(stageBottom).toBeGreaterThanOrEqual(842);
+  expect(stageBottom).toBeLessThanOrEqual(846);
+  expect(heroBottom).toBeGreaterThanOrEqual(842);
+  expect(heroBottom).toBeLessThanOrEqual(846);
+  expect(actionBottom).toBeLessThanOrEqual(810);
   expect(actionBox?.x).toBeGreaterThanOrEqual(20);
   expect(actionBox?.width ?? 0).toBeGreaterThanOrEqual(330);
   expect(

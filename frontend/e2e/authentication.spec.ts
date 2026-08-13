@@ -181,6 +181,25 @@ test("auth screens fit the viewport without horizontal overflow", async ({
   ).toBe(true);
 });
 
+test("shows recovery actions instead of sign-in when authentication is unavailable", async ({
+  page,
+}) => {
+  await page.route("http://localhost:8080/**", (route) =>
+    route.abort("connectionfailed"),
+  );
+  await page.goto("/login");
+
+  await expect(
+    page.getByRole("heading", {
+      name: "We’re having trouble connecting to Monierave.",
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return home" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+});
+
 test("short landscape signup keeps the complete form in one viewport", async ({
   page,
 }) => {

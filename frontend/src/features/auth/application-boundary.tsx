@@ -1,6 +1,7 @@
 "use client";
 
 import type { Route } from "next";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
@@ -48,18 +49,21 @@ export function ApplicationBoundary({ children }: { children: ReactNode }) {
       >
         <div className="max-w-md text-center">
           <p className="text-evergreen-700 text-sm font-bold tracking-[0.14em] uppercase">
-            Secure session check
+            Connection interrupted
           </p>
           <h1 className="mt-3 text-3xl font-semibold">
-            We could not open your banking view.
+            We’re having trouble connecting to Monierave.
           </h1>
           <p className="text-ink-600 mt-4 leading-7">
-            No financial information has been loaded. Check your connection and
-            retry the secure session check.
+            Your account has not been changed, and no financial information has
+            been loaded. Check your connection and try again shortly.
           </p>
-          <Button className="mt-7" onClick={() => void restore()}>
-            Retry session check
-          </Button>
+          <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+            <Button onClick={() => void restore()}>Try again</Button>
+            <Button asChild variant="secondary">
+              <Link href="/">Return home</Link>
+            </Button>
+          </div>
         </div>
       </main>
     );

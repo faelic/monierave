@@ -210,20 +210,24 @@ export function BeneficiariesPage() {
                     </div>
                     <div className="flex gap-2">
                       <Button
+                        aria-label={`Rename ${beneficiary.nickname}`}
+                        className="size-11 min-h-0 p-0"
                         onClick={() => setEditing(beneficiary)}
                         size="compact"
+                        title="Rename beneficiary"
                         variant="secondary"
                       >
                         <Pencil aria-hidden="true" className="size-4" />
-                        Rename
                       </Button>
                       <Button
+                        aria-label={`Remove ${beneficiary.nickname}`}
+                        className="text-danger-700 hover:border-danger-700 size-11 min-h-0 p-0 hover:bg-[#2a1210]"
                         onClick={() => setRemoving(beneficiary)}
                         size="compact"
+                        title="Remove beneficiary"
                         variant="secondary"
                       >
                         <Trash2 aria-hidden="true" className="size-4" />
-                        Remove
                       </Button>
                     </div>
                   </>

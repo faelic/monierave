@@ -136,7 +136,7 @@
   margin-inline: auto;
   grid-template-columns: minmax(0, 33.75rem) minmax(27.5rem, 30rem);
   gap: clamp(4rem, 5.5vw, 5rem);
-  transform: translateY(-0.75rem);
+  transform: translateY(clamp(1.5rem, 3vh, 2rem));
 }
 
 .heroCopy {
@@ -456,11 +456,11 @@
 
 @media (max-width: 47.999rem) {
   .productionBody {
-    min-height: calc(100svh - 10.5rem);
+    min-height: calc(100svh - 5rem);
   }
 
   .heroBody {
-    min-height: calc(100svh - 10.5rem);
+    min-height: calc(100svh - 5rem);
     padding: clamp(1.5rem, 3.5svh, 2.25rem) 1.5rem 1.25rem;
   }
 
@@ -468,7 +468,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     min-height: 100%;
-    align-content: start;
+    align-content: center;
     justify-items: center;
     gap: clamp(1rem, 2svh, 1.375rem);
     overflow: visible;
