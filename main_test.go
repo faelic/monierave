@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	mockdb "github.com/faelic/monierave/db/mock"
 	db "github.com/faelic/monierave/db/sqlc"
@@ -15,6 +17,68 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+func TestSuperviseRuntimeRolesStopsAllComponentsWhenOneFails(t *testing.T) {
+	expectedErr := errors.New("redis unavailable")
+	siblingStopped := make(chan struct{})
+
+	err := superviseRuntimeRoles(context.Background(), []runtimeRole{
+		{
+			name: "relay",
+			run: func(context.Context) error {
+				return expectedErr
+			},
+		},
+		{
+			name: "api",
+			run: func(ctx context.Context) error {
+				<-ctx.Done()
+				close(siblingStopped)
+				return nil
+			},
+		},
+	})
+
+	require.ErrorIs(t, err, expectedErr)
+	require.Contains(t, err.Error(), "relay runtime stopped")
+	select {
+	case <-siblingStopped:
+	case <-time.After(time.Second):
+		t.Fatal("sibling component was not stopped")
+	}
+}
+
+func TestSuperviseRuntimeRolesStopsCleanlyWithParentContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	err := superviseRuntimeRoles(ctx, []runtimeRole{
+		{
+			name: "api",
+			run: func(ctx context.Context) error {
+				close(started)
+				<-ctx.Done()
+				return nil
+			},
+		},
+	})
+
+	require.NoError(t, err)
+}
+
+func TestSuperviseRuntimeRolesRejectsUnexpectedCleanExit(t *testing.T) {
+	err := superviseRuntimeRoles(context.Background(), []runtimeRole{
+		{name: "worker", run: func(context.Context) error { return nil }},
+	})
+
+	require.Error(t, err)
+	require.True(t, strings.Contains(err.Error(), "worker runtime stopped unexpectedly"))
+}
 
 func TestRunBankingAccountControlMapsOperatorFlags(t *testing.T) {
 	accountID := uuid.New()

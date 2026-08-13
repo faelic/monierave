@@ -39,4 +39,4 @@ EXPOSE 8080
 
 USER monierave
 
-CMD ["/app/main", "api"]
+CMD ["/app/main", "all"]

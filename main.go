@@ -46,6 +46,8 @@ func main() {
 	switch role {
 	case "api":
 		err = runAPI(config)
+	case "all":
+		err = runAll(config)
 	case "relay":
 		err = runRelay(config)
 	case "worker":
@@ -56,7 +58,7 @@ func main() {
 		err = runBanking(config, os.Args[2:])
 	default:
 		err = fmt.Errorf(
-			"unknown command %q; expected api, relay, worker, jobs, or banking",
+			"unknown command %q; expected api, all, relay, worker, jobs, or banking",
 			role,
 		)
 	}
@@ -102,18 +104,30 @@ func openStore(ctx context.Context, config util.Config) (*pgxpool.Pool, db.Store
 	return pool, db.NewStore(pool), nil
 }
 
-func runAPI(config util.Config) error {
+type runtimeRole struct {
+	name string
+	run  func(context.Context) error
+}
+
+type runtimeRoleResult struct {
+	name string
+	err  error
+}
+
+func runAll(config util.Config) error {
+	var err error
+	config, err = configureRuntimeServerAddress(config)
+	if err != nil {
+		return err
+	}
 	if err := util.ValidateAPIConfig(config); err != nil {
 		return fmt.Errorf("invalid API config: %w", err)
 	}
-	if port := os.Getenv("PORT"); port != "" {
-		if _, err := strconv.Atoi(port); err != nil {
-			return fmt.Errorf("invalid PORT: %w", err)
-		}
-		if gin.Mode() == gin.DebugMode {
-			gin.SetMode(gin.ReleaseMode)
-		}
-		config.ServerAddress = "0.0.0.0:" + port
+	if err := util.ValidateRelayConfig(config); err != nil {
+		return fmt.Errorf("invalid relay config: %w", err)
+	}
+	if err := util.ValidateWorkerConfig(config); err != nil {
+		return fmt.Errorf("invalid worker config: %w", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -124,6 +138,112 @@ func runAPI(config util.Config) error {
 		return err
 	}
 	defer pool.Close()
+
+	zlog.Info().Int("components", 3).Msg("starting combined runtime")
+	return superviseRuntimeRoles(ctx, []runtimeRole{
+		{
+			name: "api",
+			run: func(ctx context.Context) error {
+				return runAPIComponent(ctx, config, pool, store)
+			},
+		},
+		{
+			name: "relay",
+			run: func(ctx context.Context) error {
+				return runRelayComponent(ctx, config, store)
+			},
+		},
+		{
+			name: "worker",
+			run: func(ctx context.Context) error {
+				return runWorkerComponent(ctx, config, store)
+			},
+		},
+	})
+}
+
+func superviseRuntimeRoles(parent context.Context, roles []runtimeRole) error {
+	if len(roles) == 0 {
+		return errors.New("no runtime roles configured")
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+
+	results := make(chan runtimeRoleResult, len(roles))
+	for _, role := range roles {
+		role := role
+		go func() {
+			zlog.Info().Str("component", role.name).Msg("runtime component starting")
+			err := role.run(ctx)
+			zlog.Info().Str("component", role.name).Err(err).Msg("runtime component stopped")
+			results <- runtimeRoleResult{name: role.name, err: err}
+		}()
+	}
+
+	first := <-results
+	parentCanceled := parent.Err() != nil
+	cancel()
+
+	completed := []runtimeRoleResult{first}
+	for len(completed) < len(roles) {
+		completed = append(completed, <-results)
+	}
+
+	for _, result := range completed {
+		if result.err != nil && !errors.Is(result.err, context.Canceled) {
+			return fmt.Errorf("%s runtime stopped: %w", result.name, result.err)
+		}
+	}
+	if parentCanceled {
+		return nil
+	}
+
+	return fmt.Errorf("%s runtime stopped unexpectedly", first.name)
+}
+
+func configureRuntimeServerAddress(config util.Config) (util.Config, error) {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		return config, nil
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		return config, fmt.Errorf("invalid PORT %q: %w", port, err)
+	}
+	if gin.Mode() == gin.DebugMode {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	config.ServerAddress = "0.0.0.0:" + port
+	return config, nil
+}
+
+func runAPI(config util.Config) error {
+	var err error
+	config, err = configureRuntimeServerAddress(config)
+	if err != nil {
+		return err
+	}
+	if err := util.ValidateAPIConfig(config); err != nil {
+		return fmt.Errorf("invalid API config: %w", err)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, store, err := openStore(ctx, config)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	return runAPIComponent(ctx, config, pool, store)
+}
+
+func runAPIComponent(
+	ctx context.Context,
+	config util.Config,
+	pool *pgxpool.Pool,
+	store db.Store,
+) error {
 	worker.ConfigureRedisLogging()
 	redisOptions, _, err := util.RedisOptions(config)
 	if err != nil {
@@ -193,7 +313,10 @@ func runRelay(config util.Config) error {
 		return err
 	}
 	defer pool.Close()
+	return runRelayComponent(ctx, config, store)
+}
 
+func runRelayComponent(ctx context.Context, config util.Config, store db.Store) error {
 	_, asynqOptions, err := util.RedisOptions(config)
 	if err != nil {
 		return err
@@ -227,7 +350,10 @@ func runWorker(config util.Config) error {
 		return err
 	}
 	defer pool.Close()
+	return runWorkerComponent(ctx, config, store)
+}
 
+func runWorkerComponent(ctx context.Context, config util.Config, store db.Store) error {
 	emailMailer, err := buildMailer(config)
 	if err != nil {
 		return err
@@ -263,7 +389,7 @@ func runWorker(config util.Config) error {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return err
 		}
-		return ctx.Err()
+		return nil
 	}
 }
 

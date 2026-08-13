@@ -26,11 +26,41 @@ real money.
 
 ## Architecture
 
-Monierave runs the same compiled binary in three long-lived roles:
+### Why a modular monolith
 
-- `api` handles HTTP, authentication, and synchronous business requests.
-- `relay` publishes committed outbox events to Redis without changing finances.
-- `worker` sends emails and updates durable job state only after provider acceptance.
+Monierave is a **modular monolith**, not a collection of microservices. The API,
+banking transactions, authentication, email orchestration, and operational
+tools live in one Go repository and are compiled into one binary. The code is
+still separated by responsibility: HTTP handlers own transport concerns,
+database transaction methods own business invariants, SQLC owns typed data
+access, and worker packages own asynchronous delivery.
+
+This design was chosen deliberately for a portfolio and learning project:
+
+- One codebase is easier to understand, test, deploy, and operate correctly.
+- PostgreSQL transactions can enforce financial rules without distributed
+  transactions or cross-service consistency problems.
+- Module boundaries demonstrate separation of concerns without introducing the
+  network failures, duplicated configuration, and operational cost of premature
+  microservices.
+- Components can still be separated into independent services later because
+  their runtime responsibilities and interfaces are already distinct.
+
+The monolith does not mean that all work happens inside an HTTP request. The
+same binary supports three long-lived runtime roles:
+
+- `api` authenticates requests, validates transport input, runs synchronous
+  business transactions, and returns stable HTTP responses.
+- `relay` reads committed outbox records from PostgreSQL and publishes their
+  jobs to Redis/Asynq. It does not send email and never changes financial state.
+- `worker` consumes queued jobs, calls the configured email provider, handles
+  retries, and persists the resulting job state.
+
+Docker Compose runs these roles as separate processes so they can be inspected
+and restarted independently. A constrained single-service host can run
+`./monierave all`; this supervises all three roles in one process while retaining
+the same internal boundaries. If one role fails, the combined process shuts
+down cleanly so the platform can restart the complete runtime.
 
 ```mermaid
 flowchart LR
@@ -47,9 +77,85 @@ flowchart LR
     Metrics["Prometheus scraper"] --> API
 ```
 
-PostgreSQL is the source of truth. A financial transaction and its postings,
-audit records, notification job, and outbox event commit atomically. Redis or
-Resend can be unavailable without rolling back an already committed transfer.
+### Why PostgreSQL is the source of truth
+
+PostgreSQL stores users, sessions, accounts, ledger postings, email jobs,
+outbox events, delivery events, and audit history. Redis is intentionally not
+the authoritative record for money or email intent. It is used as an ephemeral
+queue and rate-limiting store.
+
+Keeping durable state in PostgreSQL means a financial transaction and its
+postings, audit records, notification job, and outbox event can commit in one
+atomic database transaction. Redis or Resend may be temporarily unavailable
+without losing the fact that an email must eventually be sent or rolling back
+an already committed financial operation.
+
+### Why the transactional outbox is used
+
+Writing business data to PostgreSQL and separately publishing a Redis job would
+create a **dual-write problem**. For example, signup could save a user and then
+crash before queuing the verification email. Reversing the order is also unsafe:
+the worker could receive a job for a user whose database transaction later
+rolls back.
+
+Monierave avoids that failure window with the transactional outbox pattern:
+
+1. The API writes the business change, durable email job, audit record, and
+   outbox event in the same PostgreSQL transaction.
+2. The API can respond as soon as that transaction commits. The user does not
+   wait for Redis or the external email provider.
+3. The relay claims committed outbox events using a lease and publishes them to
+   Redis/Asynq. A crashed relay does not permanently own the event; another poll
+   can recover it after the lease expires.
+4. The worker consumes the uniquely identified job and sends the email. The job
+   is not marked sent merely because it was dequeued; it is updated only after
+   the provider accepts the request.
+5. Temporary failures are retried. Exhausted jobs are retained in the dead-letter
+   queue for inspection, replay, or permanent removal rather than disappearing.
+6. Signed Resend webhooks update later delivery outcomes such as delivered,
+   bounced, suppressed, or complained while preserving immutable event history.
+
+This provides **at-least-once processing**, not a claim that the network delivers
+every operation exactly once. Stable job UUIDs, Asynq task IDs, provider
+idempotency, transition rules, and database checks make repeated processing safe.
+Provider acceptance also does not mean the message reached the inbox; webhook
+events provide the later delivery truth.
+
+### Why the relay and worker are separate
+
+The relay and worker solve different reliability problems. The relay bridges
+the durable PostgreSQL outbox to the queue. The worker performs slow and
+failure-prone external I/O. Keeping them separate prevents HTTP latency from
+depending on Resend, prevents email-provider outages from blocking signup or
+financial commits, and allows queue publication and email delivery to have
+independent retries and observability.
+
+### Authentication versus email verification
+
+Monierave treats authentication and verification as different security checks:
+
+- **Authentication** proves that the request belongs to a valid, active session.
+- **Email verification** unlocks financial capabilities for that authenticated
+  user.
+
+An unverified user is therefore allowed to sign in and enter the authenticated
+dashboard shell. They can view their safe profile and verification state,
+change an incorrect email address, request another verification message,
+refresh their session, and log out. This avoids trapping a legitimate user
+outside the application when the original address was mistyped or an email was
+delayed.
+
+The dashboard access is intentionally limited. Unverified users cannot create
+or view accounts, balances, beneficiaries, transactions, statements, or send
+money. Those routes use the verification middleware and return `403 Forbidden`
+with stable allowed/restricted capability metadata. The frontend may show the
+product navigation and locked states for orientation, but it does not receive
+protected financial data.
+
+For this portfolio project, that limited dashboard is also useful because a
+reviewer can understand the product flow before completing email verification.
+That product-design goal does not override security: enforcement remains in the
+backend, so hiding or modifying frontend controls cannot bypass the restriction.
 
 ## Ledger terminology
 
@@ -121,9 +227,23 @@ docker compose down
 To run roles directly while PostgreSQL and Redis are available:
 
 ```bash
+go run main.go all
 go run main.go api
 go run main.go relay
 go run main.go worker
+```
+
+`all` is the production-friendly single-service command. It supervises the API,
+outbox relay, and email worker in one process and shares one bounded PostgreSQL
+pool between them. If any component fails, the process stops the other
+components and exits so the hosting platform can restart it. The separate role
+commands remain useful for Docker Compose and independent deployments.
+
+For a single-service Pxxl deployment, build the binary and start it with:
+
+```bash
+go build -trimpath -o monierave .
+./monierave all
 ```
 
 ## Configuration
