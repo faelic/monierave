@@ -542,10 +542,10 @@ a {
   inset: 0;
   background:
     radial-gradient(
-      ellipse 46% 72% at 97% -10%,
-      rgb(248 249 246 / 28%),
-      rgb(238 241 237 / 11%) 39%,
-      transparent 72%
+      ellipse 39% 62% at 97% -8%,
+      rgb(248 249 246 / 27%),
+      rgb(238 241 237 / 10%) 37%,
+      transparent 68%
     ),
     radial-gradient(
       ellipse 52% 12% at 62% 79%,
@@ -562,18 +562,18 @@ a {
   background: conic-gradient(
     from 0deg at 100% 0%,
     transparent 0deg,
-    transparent 188deg,
-    rgb(250 251 248 / 3%) 198deg,
-    rgb(245 247 243 / 13%) 216deg,
-    rgb(238 241 237 / 8%) 232deg,
-    transparent 250deg,
+    transparent 193deg,
+    rgb(250 251 248 / 3%) 202deg,
+    rgb(245 247 243 / 13%) 218deg,
+    rgb(238 241 237 / 7%) 232deg,
+    transparent 246deg,
     transparent 360deg
   );
   mask-image: radial-gradient(
     circle at 100% 0%,
     #000 0%,
-    rgb(0 0 0 / 88%) 52%,
-    transparent 96%
+    rgb(0 0 0 / 88%) 48%,
+    transparent 84%
   );
   filter: blur(2.75rem);
   content: "";
@@ -581,27 +581,27 @@ a {
 
 .landing-hero-light-field::after {
   position: absolute;
-  right: 5%;
-  bottom: 10%;
-  width: 66%;
-  height: 12%;
+  right: 9%;
+  bottom: 17%;
+  width: 52%;
+  height: 9%;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgb(211 201 162 / 8%), transparent 72%);
-  filter: blur(2.5rem);
+  background: radial-gradient(ellipse, rgb(211 201 162 / 6%), transparent 70%);
+  filter: blur(2.75rem);
   content: "";
 }
 
 .landing-hero-light-occlusion {
   position: absolute;
   z-index: 3;
-  top: 34%;
-  left: 19%;
-  width: 29%;
-  height: 8rem;
-  transform: rotate(-9deg);
+  top: 36%;
+  left: 25%;
+  width: 23%;
+  height: 6.5rem;
+  transform: rotate(-8deg);
   border-radius: 50%;
-  background: rgb(0 0 0 / 32%);
-  filter: blur(2.25rem);
+  background: rgb(0 0 0 / 28%);
+  filter: blur(2.75rem);
   pointer-events: none;
 }
 
@@ -622,10 +622,6 @@ a {
   min-height: calc(100svh - 5rem);
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
-}
-
-.landing-hero-frame [data-section-reveal-shell] {
-  background: transparent;
 }
 
 .landing-hero-frame > * {

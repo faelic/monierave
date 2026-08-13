@@ -1,4 +1,22 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function mockAnonymousSession(page: Page) {
+  await page.route("http://localhost:8080/**", async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204 });
+      return;
+    }
+
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        code: "unauthorized",
+        message: "unauthorized",
+      },
+      status: 401,
+    });
+  });
+}
 
 test("desktop marketing renders the rotating globe composition", async ({
   page,
@@ -17,6 +35,7 @@ test("desktop marketing renders the rotating globe composition", async ({
 test("authentication remains usable over its static visual atmosphere", async ({
   page,
 }) => {
+  await mockAnonymousSession(page);
   await page.setViewportSize({ height: 900, width: 1440 });
   await page.goto("/login");
 
