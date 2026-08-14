@@ -18,7 +18,10 @@ func RedisOptions(config Config) (*redis.Options, asynq.RedisClientOpt, error) {
 		if address == "" {
 			return nil, asynq.RedisClientOpt{}, fmt.Errorf("REDIS_URL or REDIS_ADDRESS is required")
 		}
-		return &redis.Options{Addr: address}, asynq.RedisClientOpt{Addr: address}, nil
+		return &redis.Options{
+			Addr:                  address,
+			ContextTimeoutEnabled: true,
+		}, asynq.RedisClientOpt{Addr: address}, nil
 	}
 
 	redisOptions, err := redis.ParseURL(config.RedisURL)
@@ -31,6 +34,7 @@ func RedisOptions(config Config) (*redis.Options, asynq.RedisClientOpt, error) {
 			redisOptions.TLSConfig.ServerName = host
 		}
 	}
+	redisOptions.ContextTimeoutEnabled = true
 
 	asynqOptions := asynq.RedisClientOpt{
 		Network:   redisOptions.Network,

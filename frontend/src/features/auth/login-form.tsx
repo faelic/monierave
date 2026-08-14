@@ -24,7 +24,7 @@ import type { User } from "@/lib/api/contracts";
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, restore, status, user } = useAuth();
+  const { login, status, user } = useAuth();
   const summaryRef = useRef<HTMLDivElement>(null);
   const [submitError, setSubmitError] = useState<string>();
   const {
@@ -62,10 +62,6 @@ export function LoginForm() {
 
   if (status === "restoring") {
     return <SessionCheck />;
-  }
-
-  if (status === "unavailable") {
-    return <AuthenticationUnavailable onRetry={() => void restore()} />;
   }
 
   return (
@@ -128,33 +124,6 @@ export function LoginForm() {
           Sign in
         </Button>
       </form>
-    </div>
-  );
-}
-
-function AuthenticationUnavailable({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="auth-form auth-form-enter text-center">
-      <p className="text-evergreen-700 text-sm font-bold tracking-[0.14em] uppercase">
-        Connection interrupted
-      </p>
-      <h1 className="auth-form-heading mt-3">
-        We’re having trouble connecting to Monierave.
-      </h1>
-      <p className="auth-form-switch mx-auto mt-4 max-w-md text-base leading-7">
-        Your account has not been changed. Check your connection and try again
-        shortly.
-      </p>
-      <div className="mt-7 grid gap-3 sm:grid-cols-2">
-        <Button onClick={onRetry}>Try again</Button>
-        <Button
-          asChild
-          className="border-white/14 bg-white/[0.04] text-white/78 hover:bg-white/[0.08] hover:text-white"
-          variant="secondary"
-        >
-          <Link href="/">Return home</Link>
-        </Button>
-      </div>
     </div>
   );
 }

@@ -235,6 +235,44 @@ func TestLoginRateLimit(t *testing.T) {
 	}
 }
 
+func TestResilientRateLimiterUsesBoundedFallback(t *testing.T) {
+	primary := &stubRateLimiter{err: errors.New("redis unavailable")}
+	limiter := NewResilientRateLimiter(primary, 10)
+	ctx := context.Background()
+
+	for range 2 {
+		allowed, _, err := limiter.Allow(ctx, "login:192.0.2.10", 2, time.Minute)
+		require.NoError(t, err)
+		require.True(t, allowed)
+	}
+
+	allowed, retryAfter, err := limiter.Allow(
+		ctx,
+		"login:192.0.2.10",
+		2,
+		time.Minute,
+	)
+	require.NoError(t, err)
+	require.False(t, allowed)
+	require.Positive(t, retryAfter)
+}
+
+func TestResilientRateLimiterPrefersDistributedResult(t *testing.T) {
+	primary := &stubRateLimiter{allowed: false, retryAfter: 30 * time.Second}
+	limiter := NewResilientRateLimiter(primary, 10)
+
+	allowed, retryAfter, err := limiter.Allow(
+		context.Background(),
+		"login:192.0.2.10",
+		5,
+		time.Minute,
+	)
+
+	require.NoError(t, err)
+	require.False(t, allowed)
+	require.Equal(t, 30*time.Second, retryAfter)
+}
+
 func TestSignupRateLimit(t *testing.T) {
 	limiter := &stubRateLimiter{retryAfter: time.Minute}
 	server := newOperationalTestServer(t, limiter, nil, nil)

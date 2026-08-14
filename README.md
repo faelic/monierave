@@ -666,8 +666,12 @@ Redis-backed rate limits currently protect:
 - Verification resend: 3 requests per hour per user.
 - Transfers: 30 requests per minute per user.
 
-Rate-limited responses return `429` and `Retry-After`. If Redis is unavailable,
-protected endpoints fail closed with `503`.
+Rate-limited responses return `429` and `Retry-After`. Redis is the distributed
+source of truth. If it is temporarily unavailable, the API falls back to a
+bounded per-process limiter rather than making public authentication endpoints
+unavailable. The fallback preserves protection for the current single-instance
+portfolio deployment; horizontally scaled production deployments should use a
+highly available shared Redis service.
 
 New passwords must contain 8 to 72 bytes, with at least 8 Unicode characters,
 and have no composition requirement. Signup and password changes check the

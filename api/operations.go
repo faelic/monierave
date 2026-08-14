@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/faelic/monierave/observability"
@@ -21,10 +22,11 @@ import (
 )
 
 const (
-	requestIDHeader     = "X-Request-ID"
-	correlationIDHeader = "X-Correlation-ID"
-	requestIDContextKey = "request_id"
-	correlationIDKey    = "correlation_id"
+	requestIDHeader          = "X-Request-ID"
+	correlationIDHeader      = "X-Correlation-ID"
+	requestIDContextKey      = "request_id"
+	correlationIDKey         = "correlation_id"
+	rateLimitFailoverTimeout = 750 * time.Millisecond
 )
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
@@ -50,6 +52,22 @@ type redisRateLimiter struct {
 	script *redis.Script
 }
 
+type resilientRateLimiter struct {
+	primary  RateLimiter
+	fallback RateLimiter
+}
+
+type memoryRateLimitEntry struct {
+	count     int64
+	expiresAt time.Time
+}
+
+type memoryRateLimiter struct {
+	mu         sync.Mutex
+	entries    map[string]memoryRateLimitEntry
+	maxEntries int
+}
+
 func NewRedisRateLimiter(client redis.UniversalClient) RateLimiter {
 	return &redisRateLimiter{
 		client: client,
@@ -64,6 +82,95 @@ if current > tonumber(ARGV[2]) then
 end
 return {1, ttl}
 `),
+	}
+}
+
+// NewResilientRateLimiter preserves per-instance protection when the shared
+// limiter is temporarily unavailable. Redis remains the source of truth while
+// it is healthy.
+func NewResilientRateLimiter(primary RateLimiter, maxFallbackEntries int) RateLimiter {
+	return &resilientRateLimiter{
+		primary: primary,
+		fallback: &memoryRateLimiter{
+			entries:    make(map[string]memoryRateLimitEntry),
+			maxEntries: maxFallbackEntries,
+		},
+	}
+}
+
+func (limiter *resilientRateLimiter) Allow(
+	ctx context.Context,
+	key string,
+	limit int64,
+	window time.Duration,
+) (bool, time.Duration, error) {
+	primaryCtx, cancel := context.WithTimeout(ctx, rateLimitFailoverTimeout)
+	defer cancel()
+	allowed, retryAfter, err := limiter.primary.Allow(primaryCtx, key, limit, window)
+	if err == nil {
+		return allowed, retryAfter, nil
+	}
+
+	log.Ctx(ctx).Warn().Err(err).
+		Msg("distributed rate limiter unavailable; using local fallback")
+	return limiter.fallback.Allow(ctx, key, limit, window)
+}
+
+func (limiter *resilientRateLimiter) Reset(ctx context.Context, key string) error {
+	fallbackErr := limiter.fallback.Reset(ctx, key)
+	primaryCtx, cancel := context.WithTimeout(ctx, rateLimitFailoverTimeout)
+	defer cancel()
+	primaryErr := limiter.primary.Reset(primaryCtx, key)
+	return errors.Join(primaryErr, fallbackErr)
+}
+
+func (limiter *memoryRateLimiter) Allow(
+	_ context.Context,
+	key string,
+	limit int64,
+	window time.Duration,
+) (bool, time.Duration, error) {
+	if key == "" || limit <= 0 || window <= 0 {
+		return false, 0, errors.New("invalid local rate-limit configuration")
+	}
+
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+
+	now := time.Now()
+	entry, exists := limiter.entries[key]
+	if exists && !now.Before(entry.expiresAt) {
+		delete(limiter.entries, key)
+		exists = false
+	}
+	if !exists {
+		if len(limiter.entries) >= limiter.maxEntries {
+			limiter.removeExpired(now)
+		}
+		if len(limiter.entries) >= limiter.maxEntries {
+			return false, 0, errors.New("local rate limiter capacity reached")
+		}
+		entry = memoryRateLimitEntry{expiresAt: now.Add(window)}
+	}
+
+	entry.count++
+	limiter.entries[key] = entry
+	retryAfter := max(time.Duration(0), time.Until(entry.expiresAt))
+	return entry.count <= limit, retryAfter, nil
+}
+
+func (limiter *memoryRateLimiter) Reset(_ context.Context, key string) error {
+	limiter.mu.Lock()
+	delete(limiter.entries, key)
+	limiter.mu.Unlock()
+	return nil
+}
+
+func (limiter *memoryRateLimiter) removeExpired(now time.Time) {
+	for key, entry := range limiter.entries {
+		if !now.Before(entry.expiresAt) {
+			delete(limiter.entries, key)
+		}
 	}
 }
 

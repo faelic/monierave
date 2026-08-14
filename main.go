@@ -274,7 +274,10 @@ func runAPIComponent(
 			func(ctx context.Context) error {
 				return redisClient.Ping(ctx).Err()
 			},
-			api.NewRedisRateLimiter(redisClient),
+			api.NewResilientRateLimiter(
+				api.NewRedisRateLimiter(redisClient),
+				10_000,
+			),
 			observability.Default,
 		),
 	)
