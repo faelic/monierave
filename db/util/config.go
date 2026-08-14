@@ -35,6 +35,10 @@ type Config struct {
 	DBConnectTimeout          time.Duration `mapstructure:"DB_CONNECT_TIMEOUT"`
 	MailerProvider            string        `mapstructure:"MAILER_PROVIDER"`
 	WorkerConcurrency         int           `mapstructure:"WORKER_CONCURRENCY"`
+	WorkerTaskCheckInterval   time.Duration `mapstructure:"WORKER_TASK_CHECK_INTERVAL"`
+	WorkerHealthCheckInterval time.Duration `mapstructure:"WORKER_HEALTH_CHECK_INTERVAL"`
+	WorkerDelayedTaskInterval time.Duration `mapstructure:"WORKER_DELAYED_TASK_CHECK_INTERVAL"`
+	WorkerJanitorInterval     time.Duration `mapstructure:"WORKER_JANITOR_INTERVAL"`
 	RelayBatchSize            int32         `mapstructure:"RELAY_BATCH_SIZE"`
 	RelayPollInterval         time.Duration `mapstructure:"RELAY_POLL_INTERVAL"`
 	RelayClaimLease           time.Duration `mapstructure:"RELAY_CLAIM_LEASE"`
@@ -77,6 +81,10 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("DB_CONNECT_TIMEOUT")
 	_ = viper.BindEnv("MAILER_PROVIDER")
 	_ = viper.BindEnv("WORKER_CONCURRENCY")
+	_ = viper.BindEnv("WORKER_TASK_CHECK_INTERVAL")
+	_ = viper.BindEnv("WORKER_HEALTH_CHECK_INTERVAL")
+	_ = viper.BindEnv("WORKER_DELAYED_TASK_CHECK_INTERVAL")
+	_ = viper.BindEnv("WORKER_JANITOR_INTERVAL")
 	_ = viper.BindEnv("RELAY_BATCH_SIZE")
 	_ = viper.BindEnv("RELAY_POLL_INTERVAL")
 	_ = viper.BindEnv("RELAY_CLAIM_LEASE")
@@ -103,7 +111,11 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetDefault("DB_MAX_CONN_LIFETIME", 30*time.Minute)
 	viper.SetDefault("DB_MAX_CONN_IDLE_TIME", 5*time.Minute)
 	viper.SetDefault("DB_CONNECT_TIMEOUT", 5*time.Second)
-	viper.SetDefault("WORKER_CONCURRENCY", 10)
+	viper.SetDefault("WORKER_CONCURRENCY", 1)
+	viper.SetDefault("WORKER_TASK_CHECK_INTERVAL", 15*time.Second)
+	viper.SetDefault("WORKER_HEALTH_CHECK_INTERVAL", 2*time.Minute)
+	viper.SetDefault("WORKER_DELAYED_TASK_CHECK_INTERVAL", time.Minute)
+	viper.SetDefault("WORKER_JANITOR_INTERVAL", time.Hour)
 	viper.SetDefault("RELAY_BATCH_SIZE", 50)
 	viper.SetDefault("RELAY_POLL_INTERVAL", time.Second)
 	viper.SetDefault("RELAY_CLAIM_LEASE", 30*time.Second)
@@ -299,6 +311,18 @@ func ValidateWorkerConfig(config Config) error {
 	}
 	if config.WorkerConcurrency <= 0 {
 		return fmt.Errorf("WORKER_CONCURRENCY must be greater than 0")
+	}
+	if config.WorkerTaskCheckInterval <= 0 {
+		return fmt.Errorf("WORKER_TASK_CHECK_INTERVAL must be greater than 0")
+	}
+	if config.WorkerHealthCheckInterval <= 0 {
+		return fmt.Errorf("WORKER_HEALTH_CHECK_INTERVAL must be greater than 0")
+	}
+	if config.WorkerDelayedTaskInterval <= 0 {
+		return fmt.Errorf("WORKER_DELAYED_TASK_CHECK_INTERVAL must be greater than 0")
+	}
+	if config.WorkerJanitorInterval <= 0 {
+		return fmt.Errorf("WORKER_JANITOR_INTERVAL must be greater than 0")
 	}
 	if config.PublicAPIURL == "" {
 		return fmt.Errorf("PUBLIC_API_URL is required")

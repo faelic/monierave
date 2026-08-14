@@ -35,18 +35,24 @@ type RedisTaskProcessor struct {
 	emailVerificationDuration time.Duration
 }
 
+type ProcessorConfig struct {
+	Concurrency              int
+	TaskCheckInterval        time.Duration
+	HealthCheckInterval      time.Duration
+	DelayedTaskCheckInterval time.Duration
+	JanitorInterval          time.Duration
+}
+
 func NewRedisTaskProcessor(
 	redisOpt asynq.RedisClientOpt,
 	store db.Store,
 	emailMailer mailer.Mailer,
-	concurrency int,
+	config ProcessorConfig,
 	emailVerificationMaker token.EmailVerificationMaker,
 	publicAPIURL string,
 	emailVerificationDuration time.Duration,
 ) TaskProcessor {
-	if concurrency <= 0 {
-		concurrency = 10
-	}
+	config = normalizeProcessorConfig(config)
 
 	ConfigureRedisLogging()
 
@@ -61,7 +67,11 @@ func NewRedisTaskProcessor(
 	server := asynq.NewServer(
 		redisOpt,
 		asynq.Config{
-			Concurrency: concurrency,
+			Concurrency:              config.Concurrency,
+			TaskCheckInterval:        config.TaskCheckInterval,
+			HealthCheckInterval:      config.HealthCheckInterval,
+			DelayedTaskCheckInterval: config.DelayedTaskCheckInterval,
+			JanitorInterval:          config.JanitorInterval,
 			Queues: map[string]int{
 				QueueCritical: 10,
 				QueueDefault:  5,
@@ -75,6 +85,25 @@ func NewRedisTaskProcessor(
 
 	processor.server = server
 	return processor
+}
+
+func normalizeProcessorConfig(config ProcessorConfig) ProcessorConfig {
+	if config.Concurrency <= 0 {
+		config.Concurrency = 1
+	}
+	if config.TaskCheckInterval <= 0 {
+		config.TaskCheckInterval = 15 * time.Second
+	}
+	if config.HealthCheckInterval <= 0 {
+		config.HealthCheckInterval = 2 * time.Minute
+	}
+	if config.DelayedTaskCheckInterval <= 0 {
+		config.DelayedTaskCheckInterval = time.Minute
+	}
+	if config.JanitorInterval <= 0 {
+		config.JanitorInterval = time.Hour
+	}
+	return config
 }
 
 func (processor *RedisTaskProcessor) Run() error {

@@ -278,6 +278,10 @@ keeps local Docker and separate-service deployments unchanged.
 | `REDIS_URL` | Authenticated Redis URL. Production requires `rediss://`; this takes precedence over `REDIS_ADDRESS`. |
 | `REDIS_ADDRESS` | Local Redis address used by rate limits, relay, and worker. Use `REDIS_URL` in production. |
 | `WORKER_CONCURRENCY` | Number of concurrent Asynq worker handlers. |
+| `WORKER_TASK_CHECK_INTERVAL` | Empty-queue polling interval. Increase this on command-metered Redis plans; the default is `15s`. |
+| `WORKER_HEALTH_CHECK_INTERVAL` | Redis worker health-check interval, default `2m`. |
+| `WORKER_DELAYED_TASK_CHECK_INTERVAL` | Interval for promoting scheduled and retry tasks, default `1m`. |
+| `WORKER_JANITOR_INTERVAL` | Interval for cleaning expired completed tasks, default `1h`. |
 | `RELAY_BATCH_SIZE` | Maximum outbox events claimed per relay poll. |
 | `RELAY_POLL_INTERVAL` | Delay between outbox relay polls. |
 | `RELAY_CLAIM_LEASE` | Recovery lease for claimed outbox events. |

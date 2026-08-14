@@ -13,6 +13,10 @@ func TestValidateWorkerConfig(t *testing.T) {
 		RedisAddress:              "localhost:6379",
 		MailerProvider:            "log",
 		WorkerConcurrency:         10,
+		WorkerTaskCheckInterval:   15 * time.Second,
+		WorkerHealthCheckInterval: 2 * time.Minute,
+		WorkerDelayedTaskInterval: time.Minute,
+		WorkerJanitorInterval:     time.Hour,
 		PublicAPIURL:              "http://localhost:8080",
 		EmailVerificationDuration: 24 * time.Hour,
 	})
@@ -55,6 +59,34 @@ func TestValidateWorkerConfig(t *testing.T) {
 				config.MailerProvider = "smtp"
 			},
 			wantErr: "unsupported MAILER_PROVIDER",
+		},
+		{
+			name: "invalid task check interval",
+			mutate: func(config *Config) {
+				config.WorkerTaskCheckInterval = 0
+			},
+			wantErr: "WORKER_TASK_CHECK_INTERVAL must be greater than 0",
+		},
+		{
+			name: "invalid health check interval",
+			mutate: func(config *Config) {
+				config.WorkerHealthCheckInterval = 0
+			},
+			wantErr: "WORKER_HEALTH_CHECK_INTERVAL must be greater than 0",
+		},
+		{
+			name: "invalid delayed task interval",
+			mutate: func(config *Config) {
+				config.WorkerDelayedTaskInterval = 0
+			},
+			wantErr: "WORKER_DELAYED_TASK_CHECK_INTERVAL must be greater than 0",
+		},
+		{
+			name: "invalid janitor interval",
+			mutate: func(config *Config) {
+				config.WorkerJanitorInterval = 0
+			},
+			wantErr: "WORKER_JANITOR_INTERVAL must be greater than 0",
 		},
 	}
 
